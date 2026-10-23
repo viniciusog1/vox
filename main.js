@@ -1,0 +1,414 @@
+const { app, BrowserWindow, ipcMain, session, desktopCapturer } = require('electron');
+const path = require('path');
+const http = require('http');
+const { Server } = require('socket.io');
+const fs = require('fs');
+const os = require('os');
+const crypto = require('crypto');
+
+// ---------- Banco simples (arquivos JSON) ----------
+// Em desenvolvimento os dados ficam na pasta do projeto.
+// No app instalado, ficam na pasta de dados do usuário (o app.asar é somente leitura).
+const DATA_DIR = app.isPackaged ? app.getPath('userData') : __dirname;
+fs.mkdirSync(DATA_DIR, { recursive: true });
+const DB_PATH = path.join(DATA_DIR, 'messages.json');
+const USERS_PATH = path.join(DATA_DIR, 'users.json');
+
+function readJsonFile(file) {
+  try {
+    const raw = fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, '');
+    return JSON.parse(raw);
+  } catch (e) {
+    return {};
+  }
+}
+
+function loadMessages() {
+  return readJsonFile(DB_PATH);
+}
+function saveMessages(data) {
+  fs.writeFileSync(DB_PATH, JSON.stringify(data, null, 2));
+}
+function loadUsers() {
+  return readJsonFile(USERS_PATH);
+}
+function saveUsers(data) {
+  fs.writeFileSync(USERS_PATH, JSON.stringify(data, null, 2));
+}
+
+let messages = loadMessages();
+let users = loadUsers();
+
+const authenticated = new Map(); // socket.id -> username
+const roomUsers = new Map();     // room -> Map(socket.id -> { username, muted })
+
+let mainWindow = null;
+let io = null;
+let pendingDisplayCallback = null;
+
+// ---------- Janela ----------
+function createWindow() {
+  mainWindow = new BrowserWindow({
+    width: 1280,
+    height: 820,
+    minWidth: 900,
+    minHeight: 600,
+    backgroundColor: '#0d0f13',
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false
+    },
+    autoHideMenuBar: true
+  });
+  mainWindow.loadFile('index.html');
+}
+
+// ---------- Utilidades de presença ----------
+// Monta a lista de usuários de uma sala para um visualizador específico.
+// Usuários "invisíveis" não aparecem para os outros, mas aparecem para si mesmos.
+function buildRoomUserList(room, viewerId) {
+  const map = roomUsers.get(room);
+  const list = [];
+
+  if (map) {
+    for (const [id, u] of map) {
+      if (u.status === 'invisible' && id !== viewerId) continue;
+      list.push({
+        id,
+        username: u.username,
+        muted: !!u.muted,
+        status: u.status || 'online'
+      });
+    }
+  }
+
+  return list;
+}
+
+function broadcastRoomUsers(room) {
+  if (!io) return;
+  const sockets = io.sockets.adapter.rooms.get(room);
+  if (!sockets) return;
+
+  for (const socketId of sockets) {
+    io.to(socketId).emit('room-users', buildRoomUserList(room, socketId));
+  }
+}
+
+function buildVoiceRooms(viewerId) {
+  const result = {};
+  for (const [room, map] of roomUsers) {
+    if (!room.startsWith('voz-')) continue;
+    const list = [];
+    for (const [id, u] of map) {
+      if (u.status === 'invisible' && id !== viewerId) continue;
+      list.push({
+        id,
+        username: u.username,
+        muted: !!u.muted,
+        status: u.status || 'online'
+      });
+    }
+    if (list.length) result[room] = list;
+  }
+  return result;
+}
+
+function broadcastVoiceRooms() {
+  if (!io) return;
+  for (const socketId of authenticated.keys()) {
+    io.to(socketId).emit('voice-rooms', buildVoiceRooms(socketId));
+  }
+}
+
+// ---------- Retenção de mensagens (7 dias) ----------
+const RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+
+function purgeOldMessages() {
+  const cutoff = Date.now() - RETENTION_MS;
+  let changed = false;
+
+  for (const room of Object.keys(messages)) {
+    const before = messages[room].length;
+    messages[room] = messages[room].filter((m) => {
+      const t = Date.parse(m.created_at);
+      return Number.isNaN(t) ? true : t >= cutoff;
+    });
+    if (messages[room].length !== before) changed = true;
+    if (messages[room].length === 0) {
+      delete messages[room];
+      changed = true;
+    }
+  }
+
+  if (changed) {
+    saveMessages(messages);
+    console.log('[RETENÇÃO] Mensagens com mais de 7 dias foram removidas.');
+  }
+}
+
+purgeOldMessages();
+setInterval(purgeOldMessages, 60 * 60 * 1000);
+
+function removeSocketFromRooms(socketId) {
+  for (const [room, map] of roomUsers) {
+    if (map.has(socketId)) {
+      map.delete(socketId);
+      if (map.size === 0) {
+        roomUsers.delete(room);
+      }
+      broadcastRoomUsers(room);
+    }
+  }
+  broadcastVoiceRooms();
+}
+
+// ---------- App ----------
+app.whenReady().then(() => {
+  createWindow();
+
+  // Permissões de câmera, microfone e captura de tela
+  session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
+    const allowed = ['media', 'display-capture', 'notifications', 'clipboard-read', 'clipboard-sanitized-write'];
+    callback(allowed.includes(permission));
+  });
+  session.defaultSession.setPermissionCheckHandler((webContents, permission) => {
+    return ['media', 'display-capture'].includes(permission);
+  });
+
+  // Seletor nativo de tela (necessário para getDisplayMedia funcionar no Electron)
+  session.defaultSession.setDisplayMediaRequestHandler(async (request, callback) => {
+    try {
+      const sources = await desktopCapturer.getSources({
+        types: ['screen', 'window'],
+        thumbnailSize: { width: 320, height: 180 }
+      });
+
+      const list = sources.map((s) => ({
+        id: s.id,
+        name: s.name,
+        thumbnail: s.thumbnail.toDataURL()
+      }));
+
+      mainWindow.webContents.send('display-sources', list);
+
+      pendingDisplayCallback = async (sourceId) => {
+        if (!sourceId) return callback({});
+        const fresh = await desktopCapturer.getSources({ types: ['screen', 'window'] });
+        const chosen = fresh.find((s) => s.id === sourceId);
+        if (chosen) return callback({ video: chosen });
+        return callback({});
+      };
+    } catch (e) {
+      console.error('[DISPLAY] Erro ao listar fontes:', e);
+      callback({});
+    }
+  });
+
+  ipcMain.on('display-source-selected', async (event, sourceId) => {
+    const cb = pendingDisplayCallback;
+    pendingDisplayCallback = null;
+    if (cb) await cb(sourceId);
+  });
+
+  ipcMain.on('display-source-cancelled', () => {
+    const cb = pendingDisplayCallback;
+    pendingDisplayCallback = null;
+    if (cb) cb(null);
+  });
+
+  // ---------- Servidor HTTP + Socket.io ----------
+  const server = http.createServer();
+  io = new Server(server, { cors: { origin: '*' } });
+
+  io.on('connection', (socket) => {
+    console.log('[SOCKET] Conectado:', socket.id);
+
+    socket.on('register', ({ username, password }, callback) => {
+      if (!username || !password) return callback({ success: false, message: 'Preencha usuário e senha' });
+      if (users[username]) return callback({ success: false, message: 'Usuário já existe' });
+
+      const salt = crypto.randomBytes(16).toString('hex');
+      const hash = crypto.pbkdf2Sync(password, salt, 100000, 64, 'sha512').toString('hex');
+      users[username] = { salt, hash, created_at: new Date().toISOString() };
+      saveUsers(users);
+      authenticated.set(socket.id, username);
+      callback({ success: true, username });
+    });
+
+    socket.on('login', ({ username, password }, callback) => {
+      const user = users[username];
+      if (!user) return callback({ success: false, message: 'Usuário não encontrado' });
+
+      const hash = crypto.pbkdf2Sync(password, user.salt, 100000, 64, 'sha512').toString('hex');
+      if (hash !== user.hash) return callback({ success: false, message: 'Senha incorreta' });
+
+      authenticated.set(socket.id, username);
+      callback({ success: true, username });
+    });
+
+    socket.on('logout', (callback) => {
+      const username = authenticated.get(socket.id);
+      if (username) {
+        removeSocketFromRooms(socket.id);
+        authenticated.delete(socket.id);
+        socket.data.room = null;
+        broadcastVoiceRooms();
+      }
+      if (callback) callback({ success: true });
+    });
+
+    function requireAuth(callback) {
+      if (!authenticated.has(socket.id)) {
+        if (callback) callback({ success: false, message: 'Não autenticado' });
+        return false;
+      }
+      return true;
+    }
+
+    socket.on('join-room', (room) => {
+      if (!requireAuth()) return;
+      const username = authenticated.get(socket.id);
+
+      socket.join(room);
+      socket.data.room = room;
+
+      if (!roomUsers.has(room)) roomUsers.set(room, new Map());
+      roomUsers.get(room).set(socket.id, {
+        username,
+        muted: !!socket.data.muted,
+        status: socket.data.status || 'online'
+      });
+
+      if ((socket.data.status || 'online') !== 'invisible') {
+        socket.to(room).emit('user-joined', socket.id);
+      }
+      broadcastRoomUsers(room);
+      broadcastVoiceRooms();
+    });
+
+    socket.on('leave-room', (room) => {
+      socket.leave(room);
+      if (socket.data.room === room) socket.data.room = null;
+      const map = roomUsers.get(room);
+      if (map && map.has(socket.id)) {
+        map.delete(socket.id);
+        if (map.size === 0) roomUsers.delete(room);
+        broadcastRoomUsers(room);
+        broadcastVoiceRooms();
+      }
+    });
+
+    socket.on('update-state', ({ muted, status }) => {
+      if (!requireAuth()) return;
+      const room = socket.data.room;
+      if (!room) return;
+      const map = roomUsers.get(room);
+      if (!map || !map.has(socket.id)) return;
+
+      if (typeof muted === 'boolean') {
+        map.get(socket.id).muted = muted;
+        socket.data.muted = muted;
+      }
+
+      const allowed = ['online', 'busy', 'away', 'invisible'];
+      const before = map.get(socket.id).status || 'online';
+      if (typeof status === 'string' && allowed.includes(status)) {
+        map.get(socket.id).status = status;
+        socket.data.status = status;
+      }
+      const after = map.get(socket.id).status || 'online';
+
+      // Ao voltar de invisível, os outros precisam refazer a conexão de mídia
+      if (before === 'invisible' && after !== 'invisible') {
+        socket.to(room).emit('user-joined', socket.id);
+      }
+
+      broadcastRoomUsers(room);
+      broadcastVoiceRooms();
+    });
+
+    socket.on('signal', ({ to, data }) => {
+      if (!requireAuth()) return;
+      io.to(to).emit('signal', { from: socket.id, data });
+    });
+
+    socket.on('save-message', ({ room, user, text }) => {
+      if (!requireAuth()) return;
+      purgeOldMessages();
+      if (!messages[room]) messages[room] = [];
+      const msg = { user, text, created_at: new Date().toISOString() };
+      messages[room].push(msg);
+      if (messages[room].length > 200) messages[room] = messages[room].slice(-200);
+      saveMessages(messages);
+      // Envia para todos da sala, menos para quem enviou (o cliente já exibe localmente)
+      socket.to(room).emit('new-message', msg);
+    });
+
+    socket.on('get-messages', (room, callback) => {
+      if (!requireAuth()) { callback([]); return; }
+      purgeOldMessages();
+      callback(messages[room] || []);
+    });
+
+    // Apaga apenas as mensagens do próprio usuário em um canal
+    socket.on('delete-my-messages', ({ room }, callback) => {
+      if (!requireAuth()) return;
+      const username = authenticated.get(socket.id);
+      let removed = 0;
+
+      if (messages[room]) {
+        const before = messages[room].length;
+        messages[room] = messages[room].filter((m) => m.user !== username);
+        removed = before - messages[room].length;
+        if (messages[room].length === 0) delete messages[room];
+        saveMessages(messages);
+      }
+
+      io.to(room).emit('messages-cleared', { user: username });
+      if (callback) callback({ success: true, count: removed });
+    });
+
+    socket.on('disconnect', () => {
+      removeSocketFromRooms(socket.id);
+      authenticated.delete(socket.id);
+      console.log('[SOCKET] Desconectado:', socket.id);
+    });
+  });
+
+  server.on('error', (err) => {
+    // Se outra instância já estiver usando a porta, o app ainda pode se conectar a ela.
+    console.error('[SERVER] Falha ao iniciar:', err.message);
+  });
+
+  server.listen(3000, '0.0.0.0', () => {
+    const nets = os.networkInterfaces();
+    const ips = [];
+    Object.values(nets).forEach((list) => {
+      (list || []).forEach((net) => {
+        if (net.family === 'IPv4' && !net.internal) ips.push(net.address);
+      });
+    });
+    console.log('[SERVER] Rodando em http://127.0.0.1:3000');
+    if (ips.length) {
+      console.log('[SERVER] Na rede local: ' + ips.map((ip) => `http://${ip}:3000`).join(', '));
+    }
+  });
+
+  // ---------- Controles de janela ----------
+  ipcMain.on('window-minimize', () => mainWindow.minimize());
+  ipcMain.on('window-maximize', () => {
+    if (mainWindow.isMaximized()) mainWindow.unmaximize();
+    else mainWindow.maximize();
+  });
+  ipcMain.on('window-close', () => mainWindow.close());
+
+  app.on('window-all-closed', () => {
+    if (process.platform !== 'darwin') app.quit();
+  });
+});
+
+app.on('activate', () => {
+  if (BrowserWindow.getAllWindows().length === 0) createWindow();
+});

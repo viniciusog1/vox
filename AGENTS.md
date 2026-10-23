@@ -1,0 +1,336 @@
+# AGENTS.md — Concord
+
+Guia para agentes de IA que forem alterar este projeto. Leia antes de editar.
+
+## 1. Contexto
+
+- Aplicativo desktop para Windows 11 inspirado no Discord.
+- Nome do produto: **Concord**. Não usar “MeuDiscord”.
+- Stack: **Electron 28 + Node.js + Socket.io 4 + WebRTC**.
+- Interface em português.
+- Não há banco de dados: usuários e mensagens ficam em arquivos JSON.
+- O servidor Socket.io é embutido no processo principal do Electron e escuta em `0.0.0.0:3000`.
+- Não há nuvem central: o PC do host é o servidor.
+- Não há repositório git configurado neste workspace; não assuma comandos git.
+
+Caminhos principais:
+
+```text
+Projeto:              C:\Users\Usuario\discord-clone-windows
+App instalado:        C:\Users\Usuario\AppData\Local\Programs\Concord\Concord.exe
+Dados do instalado:   C:\Users\Usuario\AppData\Roaming\Concord
+Instalador gerado:    C:\Users\Usuario\discord-clone-windows\dist\Concord Setup 1.0.0.exe
+Ferramenta de túnel:  C:\Users\Usuario\discord-clone-windows\tools\cloudflared.exe
+Atalho do túnel:      C:\Users\Usuario\discord-clone-windows\IniciarTunelConcord.bat
+```
+
+## 2. Comandos rápidos
+
+O Node.js **não está no PATH** deste ambiente. Use o caminho completo ou ajuste o PATH:
+
+```powershell
+$env:Path = 'C:\Program Files\nodejs;' + $env:Path
+```
+
+### Rodar em desenvolvimento
+
+```powershell
+cd C:\Users\Usuario\discord-clone-windows
+$env:Path = 'C:\Program Files\nodejs;' + $env:Path
+npm start
+```
+
+Alternativa sem `npm`:
+
+```powershell
+Start-Process -FilePath 'C:\Users\Usuario\discord-clone-windows\node_modules\electron\dist\electron.exe' `
+  -ArgumentList '.' -WorkingDirectory 'C:\Users\Usuario\discord-clone-windows'
+```
+
+### Verificar sintaxe
+
+```powershell
+& 'C:\Program Files\nodejs\node.exe' --check main.js
+& 'C:\Program Files\nodejs\node.exe' --check renderer.js
+```
+
+### Gerar instalador
+
+```powershell
+cd C:\Users\Usuario\discord-clone-windows
+$env:Path = 'C:\Program Files\nodejs;' + $env:Path
+npm run dist
+```
+
+Saída: `dist\Concord Setup 1.0.0.exe`.
+
+### Instalar/testar o pacote
+
+- Feche o app de desenvolvimento antes de abrir o instalado: ambos usam a porta 3000.
+- Para testar sem instalar: `dist\win-unpacked\Concord.exe`.
+- O app instalado é um snapshot; alterações no código só aparecem depois de rodar `npm run dist` e reinstalar.
+
+## 3. Mapa de arquivos
+
+| Arquivo | Responsabilidade |
+| --- | --- |
+| `main.js` | Processo principal: janela, permissões, servidor Socket.io, autenticação, presença, salas, mensagens, retenção, `desktopCapturer` e seletor de tela. |
+| `renderer.js` | Interface e lógica do cliente: login, canais, chat, WebRTC, câmera/microfone, compartilhamento de tela, status, configurações de áudio. |
+| `preload.js` | Ponte segura `contextBridge` para controles da janela e IPC do seletor de tela. |
+| `index.html` | Layout e CSS de toda a interface; também contém os modais e a tela de login. |
+| `package.json` | Scripts, dependências e configuração do electron-builder. |
+| `socket.io.min.js` | Bundle do cliente Socket.io copiado pelo `postinstall`; **não editar à mão**. |
+| `users.json` | Dados de desenvolvimento das contas. Não faz parte do instalador. |
+| `messages.json` | Dados de desenvolvimento das mensagens. Não faz parte do instalador. |
+| `README.md` | Documentação para o usuário final. |
+| `AGENTS.md` | Este guia. |
+| `tools/cloudflared.exe` | Cloudflare Tunnel para o host. Não faz parte do instalador. |
+| `IniciarTunelConcord.bat` | Inicia o túnel no host. Não faz parte do instalador. |
+
+## 4. Arquitetura
+
+### Processo principal (`main.js`)
+
+- Cria a `BrowserWindow` e carrega `index.html`.
+- Configura permissões de câmera, microfone, tela e clipboard.
+- Inicia `http.createServer()` + `new Server(server, { cors: { origin: '*' } })`.
+- Escuta em `0.0.0.0:3000` para permitir acesso pela rede local.
+- Mantém em memória:
+  - `authenticated`: `socket.id -> username`;
+  - `roomUsers`: `room -> Map(socket.id -> { username, muted, status })`;
+  - `users`: objeto carregado de `users.json`;
+  - `messages`: objeto carregado de `messages.json`.
+- Usa `desktopCapturer` + `session.setDisplayMediaRequestHandler` para o seletor de tela personalizado.
+
+### Renderer (`renderer.js`)
+
+- Conexão Socket.io no topo:
+  ```js
+  const SERVER_URL = localStorage.getItem('concord-server-url') || 'http://127.0.0.1:3000';
+  const socket = io(SERVER_URL);
+  ```
+- Campos da tela de login: `#server-url`, `#server-apply`, `#server-status`.
+- WebRTC:
+  - Topologia **P2P mesh**: um `RTCPeerConnection` por participante.
+  - STUN do Google em `ICE_CONFIG`.
+  - **Não há TURN configurado.**
+  - Um transceiver de vídeo é criado mesmo com a câmera desligada, para permitir `replaceTrack` depois sem renegociação.
+  - Streams remotos sem vídeo ativo mostram avatar e um `<audio class="remote-audio">` escondido.
+- Compartilhamento de tela:
+  - `getDisplayMedia({ video: currentShareVideoConstraints(), audio: false })`.
+  - Qualidade escolhida no seletor: `#share-resolution` (480/720/1080) e `#share-fps` (30/60), padrão 1080p30.
+  - Persistência em `concord-share-resolution` e `concord-share-fps`.
+  - O track da tela substitui o da câmera em todos os peers via `replaceVideoTrackEverywhere`.
+  - Ao parar, volta para a câmera (se ligada) ou remove o vídeo.
+  - Visualização em tela cheia: cada tile com vídeo tem botão ⛶ e duplo clique; usa `#fullscreen-view` + `requestFullscreen`.
+- Áudio do microfone:
+  - Pipeline de redução de ruído: high-pass (85 Hz) → gate (AudioWorklet `concord-noise-gate` via Blob) → compressor → gain → `MediaStreamAudioDestination`.
+  - `micProcessedTrack` é a faixa enviada aos peers; `getOutboundAudioTracks()` decide entre processada e bruta.
+  - Modos em `concord-noise-suppression`: `off`, `browser`, `strong`. Intensidade em `concord-noise-gate-level`.
+  - O monitor do próprio microfone toca a faixa processada.
+- O indicador de áudio analisa **somente streams remotos**. O microfone local não entra na barra; para testar o próprio microfone existe o toggle de monitoramento nas configurações.
+
+### Eventos Socket.io principais
+
+- `register`, `login`
+- `join-room`, `leave-room`
+- `room-users`
+- `user-joined`, `user-left`
+- `update-state` (mudo/status)
+- `signal` (offer, answer, candidate)
+- `save-message`, `get-messages`, `new-message`, `messages-cleared`
+- `delete-my-messages`
+- `disconnect`
+
+O servidor atualmente confia no campo `user` enviado em `save-message`. Para endurecer a segurança, troque para o username autenticado do socket.
+
+### Presença e status
+
+- Modos: `online`, `busy`, `invisible`.
+- `away` é automático após 5 minutos de inatividade, apenas no modo `online`.
+- Usuários invisíveis não aparecem para os outros; o servidor filtra a lista por socket.
+- Ao ficar invisível, o cliente fecha os peers de mídia; ao voltar, recria.
+- Não reintroduzir participantes fantasma/de teste: foram removidos.
+
+### Chat e retenção
+
+- Cada canal guarda no máximo **200 mensagens**.
+- Mensagens com mais de **7 dias** são removidas:
+  - ao iniciar;
+  - a cada hora;
+  - antes de ler/gravar mensagens.
+- O botão de configurações permite apagar todas as mensagens do próprio usuário no canal atual.
+
+## 5. Dados e persistência
+
+### Caminhos
+
+Em desenvolvimento (`app.isPackaged === false`):
+
+```text
+C:\Users\Usuario\discord-clone-windows\users.json
+C:\Users\Usuario\discord-clone-windows\messages.json
+```
+
+No app instalado:
+
+```text
+C:\Users\Usuario\AppData\Roaming\Concord\users.json
+C:\Users\Usuario\AppData\Roaming\Concord\messages.json
+```
+
+Código relevante:
+
+```js
+const DATA_DIR = app.isPackaged ? app.getPath('userData') : __dirname;
+```
+
+### Formato
+
+`users.json`:
+
+```json
+{
+  "usuario": {
+    "salt": "16 bytes em hex",
+    "hash": "PBKDF2-SHA512, 100000 iteracoes, 64 bytes em hex",
+    "created_at": "ISO-8601"
+  }
+}
+```
+
+- Senhas nunca são gravadas em texto puro.
+- Salt individual por usuário.
+
+`messages.json`:
+
+```json
+{
+  "canal": [
+    { "user": "usuario", "text": "mensagem", "created_at": "ISO-8601" }
+  ]
+}
+```
+
+### Preferências no localStorage
+
+- `concord-server-url`
+- `audioInputId`
+- `audioOutputId`
+- `monitorEnabled`
+
+Ficam no perfil do Electron em `%APPDATA%\Concord`.
+
+### Regras
+
+- Nunca apagar `users.json` ou `messages.json` sem autorização explícita.
+- Ao testar cadastro, remover a conta de teste depois e restaurar o estado.
+- Não usar PowerShell 5.1 `Set-Content -Encoding UTF8` para editar JSON: ele adiciona BOM. O leitor remove BOM, mas o ideal é gravar sem BOM com Node (`fs.writeFileSync`) ou com a ferramenta de edição.
+- O instalador não deve incluir dados de usuário, `tools/`, `AGENTS.md` nem o `.bat` do túnel.
+
+## 6. Invariantes do produto
+
+Manter estas decisões, salvo pedido explícito do usuário:
+
+- A primeira tela é o login/cadastro.
+- O layout do chat não pode crescer com o histórico; use grids/flex com altura fixa e scroll interno.
+- Câmera começa **desligada**; o usuário liga manualmente.
+- Microfone começa ligado.
+- Status Online/Ocupado/Invisível + Ausente automático após 5 minutos.
+- Configurações de entrada/saída de áudio e monitoramento do próprio microfone.
+- Compartilhamento de tela com seletor de janela/tela.
+- Sem participantes fantasma.
+- Mensagens apagadas após 7 dias e limite de 200 por canal.
+- Não usar serviços pagos.
+
+## 7. Armadilhas conhecidas
+
+### Node fora do PATH
+
+`electron-builder` chama `node` internamente. Sem ajustar o PATH, o build falha com `'"node"' não é reconhecido`.
+
+### electron-builder e symlinks
+
+No Windows sem privilégio de symlink, a extração do `winCodeSign` falha. Por isso `package.json` usa:
+
+```json
+"win": {
+  "target": "nsis",
+  "signAndEditExecutable": false
+}
+```
+
+Não remova isso sem testar. Consequências atuais:
+
+- instalador **sem assinatura digital**;
+- ícone padrão do Electron;
+- SmartScreen pode avisar.
+
+### Porta 3000
+
+- Só uma instância deve usar a porta.
+- Feche o app instalado antes de rodar `npm start`.
+- Feche o app de desenvolvimento antes de abrir o instalado.
+- `main.js` tem `server.on('error')` para logar conflito de porta, mas não resolve dados divergentes entre dev e instalado.
+
+### Dados separados
+
+O app instalado e o de desenvolvimento usam pastas diferentes. Copiar código não copia dados. Se precisar migrar:
+
+```powershell
+Copy-Item users.json "$env:APPDATA\Concord\users.json" -Force
+Copy-Item messages.json "$env:APPDATA\Concord\messages.json" -Force
+```
+
+Pare o app antes de copiar.
+
+### Túnel
+
+- O túnel gratuito do Cloudflare muda de URL quando reinicia.
+- Não hardcodar a URL do túnel no código.
+- O host continua usando `http://127.0.0.1:3000`; o amigo usa a URL pública.
+- O túnel carrega Socket.io (login, chat, presença, sinalização), **não** carrega áudio/vídeo.
+- Sem TURN, chamadas entre redes restritivas podem falhar.
+
+### Áudio
+
+- A barra “Ninguém falando” é normal quando se está sozinho: ela só analisa áudio remoto.
+- Para testar o microfone, use “Ouvir meu microfone (teste)” com fones.
+- Ao mexer no áudio local, cuidado para não criar loop/feedback.
+
+### Bundle do Socket.io
+
+`socket.io.min.js` é copiado de `node_modules/socket.io/client-dist/socket.io.min.js` pelo `postinstall`. Não editar manualmente; rode `npm install` se precisar regenerar.
+
+## 8. Checklist de teste
+
+Antes de considerar uma alteração concluída:
+
+1. `node --check main.js` e `node --check renderer.js`.
+2. Abrir em desenvolvimento e conferir:
+   - título da janela **Concord**;
+   - tela de login;
+   - porta 3000 ativa;
+   - console sem exceções.
+3. Testar câmera:
+   - entra sem track de vídeo;
+   - botão “Cam Off”;
+   - ligar mostra vídeo local;
+   - desligar remove o vídeo.
+4. Testar login/cadastro e chat em um canal.
+5. Testar entrada/saída de canal de voz e botão de sair.
+6. Testar compartilhamento de tela: abrir seletor, escolher, parar.
+7. Testar layout com muitas mensagens: a janela não deve crescer.
+8. Gerar instalador e, se possível, testar `dist\win-unpacked\Concord.exe`.
+9. Se testar conta temporária, removê-la e restaurar `users.json`/`messages.json`.
+10. Deixar o app em estado limpo: sem instâncias duplicadas, sem contas de teste.
+
+## 9. Estado atual conhecido
+
+- Versão `1.0.2` (qualidade do compartilhamento: 480p/720p/1080p e 30/60 fps, padrão 1080p30).
+- Instaladores preservados: `dist\Concord Setup 1.0.0.exe`, `1.0.1.exe` e `1.0.2.exe`.
+- Instalador NSIS gerado, sem assinatura e com ícone padrão do Electron.
+- App instalado nesta máquina em `%LOCALAPPDATA%\Programs\Concord`.
+- Dados do instalado em `%APPDATA%\Concord`; a conta `vinicius` e o histórico do canal `geral` foram copiados para lá.
+- O app instalado e o de desenvolvimento podem estar em estados diferentes; sempre confirme qual está rodando.
+- O Cloudflare Tunnel pode estar ativo. A URL é temporária e não deve ser documentada como fixa.
