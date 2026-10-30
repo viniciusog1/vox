@@ -27,9 +27,6 @@ const btnMicMini = document.getElementById('btn-mic-mini');
 const channelName = document.getElementById('channel-name');
 const videoGrid = document.getElementById('video-grid');
 const callEmpty = document.getElementById('call-empty');
-const audioLevelEl = document.getElementById('audio-level');
-const audioLabel = document.getElementById('audio-label');
-const audioIndicator = document.getElementById('audio-indicator');
 
 const messagesEl = document.getElementById('messages');
 const msgInput = document.getElementById('msg-input');
@@ -752,7 +749,7 @@ async function joinVoice(room) {
     resetMusic(); // o servidor manda o music-state do canal novo no join-voice
   }
   currentVoiceRoom = room;
-  voiceConnName.textContent = 'Conectado a ' + roomDisplayName(room);
+  voiceConnName.textContent = roomDisplayName(room);
   voiceConnection.classList.remove('hidden');
   updateActiveChannel();
   updateVoiceDependentControls();
@@ -874,6 +871,13 @@ socket.on('voice-rooms', (data) => {
   renderMembers();
 });
 
+// Canais de voz com música tocando (vem do servidor em 'music-rooms')
+let musicRooms = new Set();
+socket.on('music-rooms', (list) => {
+  musicRooms = new Set(Array.isArray(list) ? list : []);
+  renderMembers();
+});
+
 function renderMembers() {
   memberList.innerHTML = '';
   const users = currentVoiceRoom ? [...userMap.values()] : [];
@@ -930,6 +934,15 @@ function renderMembers() {
   // Mostra os usuários embaixo do canal de voz correspondente
   document.querySelectorAll('.channel.voice').forEach((channelEl) => {
     const room = channelEl.dataset.room;
+    // Ícone do YouTube no canal que está com música
+    const ytIcon = channelEl.querySelector('.channel-yt');
+    if (musicRooms.has(room) && !ytIcon) {
+      const icon = youtubeIcon();
+      icon.classList.add('channel-yt');
+      channelEl.appendChild(icon);
+    } else if (!musicRooms.has(room) && ytIcon) {
+      ytIcon.remove();
+    }
     let listEl = channelEl.nextElementSibling;
     if (!listEl || !listEl.classList.contains('voice-users')) {
       listEl = document.createElement('div');
@@ -988,7 +1001,6 @@ function renderTiles() {
 
   // Sem voz: área de chamada mostra só o estado vazio
   callEmpty.style.display = currentVoiceRoom ? 'none' : '';
-  audioIndicator.style.display = currentVoiceRoom ? '' : 'none';
   if (!currentVoiceRoom) {
     // Solta os <video> reaproveitados da chamada que acabou
     videoElements.forEach((video) => { video.srcObject = null; });
@@ -1807,23 +1819,6 @@ function startAudioLoop() {
   if (rafId) return;
   const loop = () => {
     if (currentVoiceRoom) updateSpeakingRings();
-    if (analysers.size === 0) {
-      audioLevelEl.style.width = '0%';
-      audioLabel.textContent = 'Ninguém falando';
-    } else {
-      let max = 0;
-      analysers.forEach((analyser) => {
-        const data = new Uint8Array(analyser.frequencyBinCount);
-        analyser.getByteFrequencyData(data);
-        let sum = 0;
-        for (let i = 0; i < 24; i++) sum += data[i];
-        const avg = sum / 24 / 255;
-        if (avg > max) max = avg;
-      });
-      const pct = Math.min(100, Math.round(max * 160));
-      audioLevelEl.style.width = pct + '%';
-      audioLabel.textContent = pct > 12 ? 'Falando...' : 'Ninguém falando';
-    }
     rafId = requestAnimationFrame(loop);
   };
   loop();
@@ -2017,7 +2012,7 @@ btnSettings.addEventListener('click', async () => {
   settingsError.textContent = '';
   renderThemePicker();
   document.getElementById('account-name').textContent = currentUser || '—';
-  showSettingsTab('aparencia');
+  showSettingsTab('audio');
   settingsModal.classList.remove('hidden');
   monitorToggle.checked = monitorEnabled;
   applyNoiseSuppressionUI();
@@ -2452,9 +2447,6 @@ function leaveVoice() {
   currentVoiceRoom = '';
   userMap.clear();
   lastUsersSignature = '';
-
-  audioLevelEl.style.width = '0%';
-  audioLabel.textContent = 'Ninguém falando';
 
   btnScreen.textContent = '🖥️ Tela';
   btnScreen.classList.remove('danger');
