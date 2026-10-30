@@ -47,6 +47,12 @@ Start-Process -FilePath 'C:\Users\Usuario\discord-clone-windows\node_modules\ele
   -ArgumentList '.' -WorkingDirectory 'C:\Users\Usuario\discord-clone-windows'
 ```
 
+### Testes
+
+```powershell
+npm test
+```
+
 ### Verificar sintaxe
 
 ```powershell
@@ -76,6 +82,10 @@ Saída: `dist\Concord Setup 1.0.0.exe`.
 | --- | --- |
 | `main.js` | Processo principal: janela, permissões, servidor Socket.io, autenticação, presença, salas, mensagens, retenção, `desktopCapturer` e seletor de tela. |
 | `renderer.js` | Interface e lógica do cliente: login, canais, chat, WebRTC, câmera/microfone, compartilhamento de tela, status, configurações de áudio. |
+| `themes.js` | Os 13 temas (paletas, id padrão `escuro`), leitura/gravação em `localStorage['concord-theme']` e `applyTheme`. Carregado no `<head>` antes do CSS para aplicar o tema antes da primeira pintura. Também é módulo Node (testes). |
+| `speaking.js` | Detecção de "falando" com histerese (liga ≥ 0.12, desliga após 250 ms abaixo) para o anel do avatar. |
+| `room-state.js` | Estado público do usuário na sala (`publicUser`, `applyStatePatch`: `muted`, `status`, `sharing`). Usado por `main.js`. |
+| `test/` | Testes `node:test` (`npm test`): paletas e contraste, CSS sem cores fixas, estado da sala, detecção de fala. Fora do instalador. |
 | `preload.js` | Ponte segura `contextBridge` para controles da janela e IPC do seletor de tela. |
 | `index.html` | Layout e CSS de toda a interface; também contém os modais e a tela de login. |
 | `package.json` | Scripts, dependências e configuração do electron-builder. |
@@ -97,7 +107,7 @@ Saída: `dist\Concord Setup 1.0.0.exe`.
 - Escuta em `0.0.0.0:3000` para permitir acesso pela rede local.
 - Mantém em memória:
   - `authenticated`: `socket.id -> username`;
-  - `roomUsers`: `room -> Map(socket.id -> { username, muted, status })`;
+  - `roomUsers`: `room -> Map(socket.id -> { username, muted, status, sharing })`;
   - `users`: objeto carregado de `users.json`;
   - `messages`: objeto carregado de `messages.json`.
 - Usa `desktopCapturer` + `session.setDisplayMediaRequestHandler` para o seletor de tela personalizado.
@@ -136,7 +146,7 @@ Saída: `dist\Concord Setup 1.0.0.exe`.
 - `join-room`, `leave-room`
 - `room-users`
 - `user-joined`, `user-left`
-- `update-state` (mudo/status)
+- `update-state` (mudo/status/`sharing` — compartilhando tela)
 - `signal` (offer, answer, candidate)
 - `save-message`, `get-messages`, `new-message`, `messages-cleared`
 - `delete-my-messages`
@@ -218,6 +228,7 @@ const DATA_DIR = app.isPackaged ? app.getPath('userData') : __dirname;
 - `audioInputId`
 - `audioOutputId`
 - `monitorEnabled`
+- `concord-theme` (id do tema; inválido ou ausente → `escuro`)
 
 Ficam no perfil do Electron em `%APPDATA%\Concord`.
 
@@ -297,6 +308,12 @@ Pare o app antes de copiar.
 - A barra “Ninguém falando” é normal quando se está sozinho: ela só analisa áudio remoto.
 - Para testar o microfone, use “Ouvir meu microfone (teste)” com fones.
 - Ao mexer no áudio local, cuidado para não criar loop/feedback.
+
+### Temas e cores
+
+- Todo o CSS de `index.html` usa só variáveis do tema (`var(--bg)`, `var(--accent)`…); tons derivados usam `color-mix()`. `test/css-tokens.test.js` falha se aparecer cor fixa (só `#fff`, `#000` e `rgba(0,0,0,…)` são aceitos).
+- Contraste mínimo 4.5:1 testado em `test/themes.test.js`. `accent` é fundo (texto `on-accent`); para texto destacado use `--link`. Fundo de botão de perigo e selo AO VIVO: `--danger-bg`.
+- Cores das bolinhas de avatar (`AVATAR_COLORS`) não mudam por tema.
 
 ### Bundle do Socket.io
 
