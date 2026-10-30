@@ -187,3 +187,13 @@ test('migrateLegacyStorage copia concord-* para vox-* sem sobrescrever', () => {
   assert.equal(data['vox-server-url'], 'http://novo');
   assert.doesNotThrow(() => themes.migrateLegacyStorage(null));
 });
+
+test('Mangá só usa preto, branco e cinza', () => {
+  const vars = themes.themeCssVars(themes.getTheme('manga'));
+  for (const [name, value] of Object.entries(vars)) {
+    for (const hex of String(value).match(/#[0-9a-f]{6}/gi) || []) {
+      const [r, g, b] = [1, 3, 5].map((i) => hex.slice(i, i + 2).toLowerCase());
+      assert.ok(r === g && g === b, `${name} = ${hex} não é cinza`);
+    }
+  }
+});

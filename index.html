@@ -697,6 +697,15 @@
     box-shadow: 0 0 0 2px var(--bg-2), 0 0 0 4px var(--text);
     animation: fx-shake .2s steps(2) infinite;
   }
+  /* Mangá é só preto e branco: avatares, ícone do YouTube e status sem cor.
+     Status pela forma: online cheio, ausente cinza, ocupado anel, invisível vazado. */
+  :root[data-theme="manga"] .avatar { background: var(--text) !important; color: var(--bg); }
+  :root[data-theme="manga"] .yt-icon rect { fill: var(--text); }
+  :root[data-theme="manga"] .yt-icon path { fill: var(--bg); }
+  :root[data-theme="manga"] .status-dot { box-shadow: none; }
+  :root[data-theme="manga"] .status-dot.busy { background: var(--bg); box-shadow: inset 0 0 0 2.5px var(--text); }
+  :root[data-theme="manga"] .status-dot.invisible { background: var(--bg); box-shadow: inset 0 0 0 1.5px var(--muted); }
+  :root[data-theme="manga"] .voice-dot { box-shadow: none; }
   @keyframes fx-shake { 0% { transform: translate(0, 0); } 50% { transform: translate(1px, -1px); } }
 
   /* Ninja: preto e laranja com tinta vermelha, kanji 忍 em pincel, espiral girando,

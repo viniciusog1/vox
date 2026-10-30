@@ -29,7 +29,7 @@
     // Anime: efeitos extras (fundos, animações) no CSS por [data-theme]
     ['bizarro', 'Bizarro', 'dark', 'anime', '#1a0b2e #220f3d #2d1550 #12071f #4b2a7a #fff4d6 #f0dcae #b9a0d8 #ffd23f #2a1400 #b8ff3c #b8ff3c #ff6b95 #c2185b',
       '0 0 10px rgba(255,210,63,.55)', 'inset 2px 0 0 #ffd23f, 0 0 8px rgba(184,255,60,.2)'],
-    ['manga', 'Mangá', 'light', 'anime', '#ffffff #f4f4f4 #e6e6e6 #ececec #1a1a1a #111111 #2b2b2b #555555 #111111 #ffffff #c4122f #111111 #c4122f #c4122f'],
+    ['manga', 'Mangá', 'light', 'anime', '#ffffff #f4f4f4 #e6e6e6 #ececec #1a1a1a #111111 #2b2b2b #555555 #111111 #ffffff #111111 #111111 #111111 #111111'],
     ['ninja', 'Ninja', 'dark', 'anime', '#0c0a09 #14100d #1f1813 #080605 #3a2a1f #fff1e0 #f0d6bb #b39a85 #ff6a00 #1a0800 #ff9f43 #ff8c1a #ff5a48 #c0261b',
       '0 0 12px rgba(255,106,0,.6)', 'inset 2px 0 0 #ff6a00, 0 0 8px rgba(192,38,27,.3)'],
     ['claro', 'Claro', 'light', 'claros', '#ffffff #f3f4f7 #e6e8ee #e3e5eb #d7dae2 #1d2129 #3a404c #616774 #4f5bd5 #ffffff #3b47c4 #23934a #d3292c #d7393c'],
@@ -41,11 +41,16 @@
   // Grupos do seletor de tema, na ordem em que aparecem
   const THEME_GROUPS = [['escuros', 'Escuros'], ['neon', 'Neon'], ['anime', 'Anime'], ['claros', 'Claros']];
 
+  // Temas só em preto, branco e cinza: status em tons de cinza (a diferença de
+  // forma entre os status fica no CSS por [data-theme])
+  const MONO_THEMES = new Set(['manga']);
+  const MONO_VARS = { '--green': '#111111', '--yellow': '#8a8a8a', '--gray': '#c4c4c4' };
+
   const THEMES = PALETTES.map(([id, name, kind, group, values, glow = 'none', glowSoft = 'none']) => {
     const list = values.split(' ');
     const tokens = {};
     TOKEN_ORDER.forEach((k, i) => { tokens[k] = list[i]; });
-    return { id, name, kind, group, tokens, glow, glowSoft };
+    return { id, name, kind, group, tokens, glow, glowSoft, mono: MONO_THEMES.has(id) };
   });
 
   // Iguais em todos os temas: cores de status
@@ -99,10 +104,14 @@
     TOKEN_ORDER.forEach((k) => { vars[CSS_NAMES[k]] = theme.tokens[k]; });
     vars['--glow'] = theme.glow;
     vars['--glow-soft'] = theme.glowSoft;
-    Object.assign(vars, FIXED_VARS);
+    Object.assign(vars, theme.mono ? MONO_VARS : FIXED_VARS);
     // Texto de status (Online/Ausente/Ocupado, "Conectado a…", erros, botão de
     // perigo contornado). Fundos: painel do usuário, colunas e as faixas tingidas.
     const k = theme.tokens;
+    if (theme.mono) {
+      vars['--ok-text'] = vars['--warn-text'] = vars['--danger-text'] = k.text;
+      return vars;
+    }
     vars['--ok-text'] = readableOn(FIXED_VARS['--green'], [k.rail, k.bg2, mix(FIXED_VARS['--green'], k.bg2, 0.10)], k.text);
     vars['--warn-text'] = readableOn(FIXED_VARS['--yellow'], [k.rail, k.bg2], k.text);
     vars['--danger-text'] = readableOn(k.red, [k.rail, k.bg2, mix(k.red, k.bg2, 0.12)], k.text);
