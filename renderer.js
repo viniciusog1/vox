@@ -1961,6 +1961,7 @@ function buildThemeOption(theme, currentId) {
 
   const thumb = document.createElement('div');
   thumb.className = 'theme-thumb';
+  thumb.dataset.preview = theme.id;
   const vars = themeCssVars(theme);
   Object.keys(vars).forEach((k) => thumb.style.setProperty(k, vars[k]));
   thumb.innerHTML = `
@@ -1984,6 +1985,15 @@ function buildThemeOption(theme, currentId) {
     });
   });
   return btn;
+}
+
+const reduceMotionBox = document.getElementById('reduce-motion');
+if (reduceMotionBox && window.ConcordThemes) {
+  reduceMotionBox.checked = window.ConcordThemes.loadReduceMotion(themeStorage);
+  reduceMotionBox.addEventListener('change', () => {
+    window.ConcordThemes.saveReduceMotion(themeStorage, reduceMotionBox.checked);
+    window.ConcordThemes.applyReduceMotion(reduceMotionBox.checked);
+  });
 }
 
 function renderThemePicker() {
