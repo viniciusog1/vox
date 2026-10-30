@@ -11,22 +11,26 @@ App desktop para Windows 11 de chat, voz, vídeo e compartilhamento de tela, fei
 - Chamada de voz e vídeo P2P (WebRTC); câmera e compartilhamento de tela só com a voz conectada
 - Compartilhamento de tela com seletor de janela/tela
 - Qualidade do compartilhamento: 480p, 720p ou 1080p e 30 ou 60 FPS (padrão 1080p 30 FPS)
-- Visualização do compartilhamento em tela cheia (botão ⛶ ou duplo clique)
+- Visualização do compartilhamento em tela cheia (botão de tela cheia no bloco ou duplo clique)
 - Redução de ruído do microfone (gate + filtro + compressor), com níveis de intensidade
-- Painel de participantes com indicação de microfone mudo
-- Canal de voz mostrando quem está conectado, com avatar, anel de quem está falando, 🔇 e selo "AO VIVO" para quem compartilha a tela
-- Música do YouTube na chamada: cole um link do YouTube no painel 🎵 e ele entra na fila do canal de voz. Todos na chamada ouvem a mesma música, sincronizada, e qualquer pessoa da chamada pode pausar, pular ou remover músicas da fila. A fila aparece como o primeiro bloco da grade de participantes; clique nele ou no botão 🎵 da barra superior para abrir o painel, onde também ficam o volume (só no seu computador) e a capa e o título de cada música
-- O vídeo do YouTube aparece no próprio Vox; nada é baixado. Cada pessoa usa o player oficial do YouTube. Ao sair da voz, a música para para você. Em tela cheia, o player vai para um canto da própria visualização
-- 15 temas de cor (Configurações → aba Aparência), salvos no próprio computador e organizados em três grupos — Escuros: Escuro, Grafite, Drácula, Nord, Aquático, Natureza, Pôr do sol; Neon: Cyberpunk, Neon Verde, Neon Vermelho, Neon Azul; Claros: Claro, Sépia, Lavanda / Sakura, Algodão-doce
-- Indicador visual de áudio (quem está falando)
-- Layout com rail de servidores, canais, chat e participantes
+- Coluna **Membros** com todas as contas do servidor, separadas em Online e Offline, com bolinha de status sobre o avatar e, para quem está na sua chamada, o estado da conexão e o ping ("Conectando…", "Conectado · 32 ms", "Reconectando…", "Falhou")
+- Canal de voz mostrando quem está conectado, com avatar, bolinha de status, anel de quem está falando, ícone de microfone desligado e selo "AO VIVO" para quem compartilha a tela
+- Painel compacto da voz conectada (nome do canal + botão de desligar) logo acima do seu perfil
+- A grade da chamada ajusta o tamanho dos blocos ao espaço disponível, inclusive em monitores grandes
+- Música do YouTube na chamada: cole um link do YouTube no painel de música (botão do YouTube na barra superior) e ele entra na fila do canal de voz. Todos na chamada ouvem a mesma música, sincronizada, e qualquer pessoa da chamada pode pausar, pular ou remover músicas da fila. A fila aparece como o primeiro bloco da grade de participantes; clique nele ou no botão do YouTube da barra superior para abrir o painel, onde também ficam o volume (só no seu computador) e a capa e o título de cada música
+- O vídeo do YouTube aparece no próprio Vox; nada é baixado. Cada pessoa usa o player oficial do YouTube. Ao sair da voz, a música para para você. Em tela cheia, o player vai para um canto da própria visualização, e o vídeo da música também pode ser aberto sozinho em tela cheia. O canal de voz com música mostra o ícone do YouTube ao lado do nome
+- 18 temas (Configurações → aba Aparência), salvos no próprio computador e organizados em quatro grupos — Escuros: Escuro, Grafite, Drácula, Nord, Aquático, Natureza, Pôr do sol; Neon: Cyberpunk, Neon Verde, Neon Vermelho, Neon Azul; Anime: Bizarro, Mangá, Ninja; Claros: Claro, Sépia, Lavanda / Sakura, Algodão-doce
+- Os temas Anime têm efeitos além das cores (fundos com degradês e padrões, animações e efeitos em quem está falando), sempre atrás dos vídeos. A opção "Reduzir animações dos temas" desliga as animações; a preferência do sistema por menos movimento também é respeitada
+- Configurações em abas: Áudio, Conta (nome da conta e botão Sair da conta) e Aparência
+- Ícones SVG próprios, iguais em qualquer sistema (sem depender de emojis)
+- Layout com rail de servidores, canais, chat e membros; a janela usa os botões nativos do sistema
 - Status Online, Ausente, Ocupado e Invisível. Ausente pode ser escolhido no menu e também é automático após 5 minutos sem atividade (a partir de Online)
 - Configuração do microfone e do dispositivo de saída de áudio
 - Opção de ouvir o próprio microfone para testar (use fones)
 - Histórico mantido por 7 dias e apagado automaticamente depois
-- Botão para apagar as próprias mensagens do canal atual
+- Botão para apagar as próprias mensagens do canal atual (Configurações → aba Áudio, no fim)
 
-Os temas Drácula e Nord usam as paletas dos projetos [Dracula](https://draculatheme.com) e [Nord](https://www.nordtheme.com), ambos com licença MIT.
+Os temas Drácula e Nord usam as paletas dos projetos [Dracula](https://draculatheme.com) e [Nord](https://www.nordtheme.com), ambos com licença MIT. Os ícones são do [Lucide](https://lucide.dev) (licença ISC). Os temas Anime são apenas inspirados em estilos de anime: não usam imagens, logos nem nomes oficiais das obras.
 
 ## Pré-requisitos
 
@@ -34,13 +38,16 @@ Para usar o instalador, não é necessário instalar nada além do próprio Vox.
 
 ## Rodar
 
-Abra o PowerShell na pasta do projeto:
+Clone o repositório e rode na pasta do projeto (PowerShell no Windows ou terminal no macOS):
 
 ```powershell
-cd C:\Users\Usuario\discord-clone-windows
+git clone https://github.com/viniciusog1/vox
+cd vox
 npm install
 npm start
 ```
+
+Testes: `npm test`.
 
 A primeira tela é o login. Crie uma conta ou entre com uma existente.
 
@@ -50,10 +57,11 @@ A primeira tela é o login. Crie uma conta ou entre com uma existente.
 npm run dist
 ```
 
-O instalador fica em `dist/Vox Setup 1.0.0.exe`.
+O instalador fica em `dist/Vox Setup <versão>.exe` (a versão vem de `package.json`, hoje `1.1.0`).
 
 - O instalador é **sem assinatura digital** (para não exigir certificado pago). O Windows pode mostrar o aviso do SmartScreen: clique em **Mais informações → Executar assim mesmo**.
 - O app instalado grava usuários e mensagens em `%APPDATA%\Vox`.
+- O app se chamava **Concord**. Na primeira vez que o Vox abre, ele copia os dados da pasta antiga (`%APPDATA%\Concord`: contas, mensagens, tema e preferências) para a nova. A pasta antiga não é apagada.
 - A versão de desenvolvimento (`npm start`) continua usando os arquivos da pasta do projeto.
 - O instalador usa o ícone padrão do Electron. Para trocar, adicione um `icon.ico` e ajuste a configuração em `package.json`.
 
@@ -85,7 +93,7 @@ O servidor já escuta na rede local (`0.0.0.0:3000`). Não é mais preciso edita
 
 O Cloudflare Tunnel já está baixado em `tools/cloudflared.exe`. A URL do túnel gratuito muda quando ele é reiniciado; se isso acontecer, envie a nova URL para seu amigo.
 
-> Chamadas de voz/vídeo entre redes diferentes podem precisar de um servidor TURN (ex.: Coturn). Sem TURN, algumas conexões podem falhar. Na mesma rede, não é necessário.
+> Chamadas de voz/vídeo entre redes diferentes podem precisar de um servidor TURN (ex.: Coturn). Sem TURN, algumas conexões podem falhar (a coluna Membros mostra "Falhou" para essa pessoa). Na mesma rede, não é necessário.
 
 ## Observações
 
