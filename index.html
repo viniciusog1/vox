@@ -506,7 +506,15 @@
     font-size: 12px; font-weight: 700; letter-spacing: .6px; text-transform: uppercase;
     color: var(--muted); margin: 4px 0 10px;
   }
-  #theme-grid { margin-bottom: 22px; }
+  #theme-grid { margin-bottom: 8px; }
+  .settings-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 16px; }
+  .settings-tab {
+    border: none; background: transparent; color: var(--muted); font: inherit; font-size: 13px; font-weight: 600;
+    padding: 8px 12px; border-bottom: 2px solid transparent; margin-bottom: -1px; cursor: pointer;
+  }
+  .settings-tab:hover { color: var(--text); }
+  .settings-tab.active { color: var(--text); border-bottom-color: var(--accent); }
+  .settings-panel { min-height: 300px; }
   .theme-group-title { font-size: 12px; color: var(--muted); font-weight: 600; margin: 6px 0 8px; }
   .theme-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 8px; }
   .theme-option {
@@ -800,10 +808,16 @@
   <div class="settings-card">
     <h3>Configurações</h3>
 
-    <h4 class="settings-section">Aparência</h4>
-    <div id="theme-grid"></div>
+    <div class="settings-tabs" role="tablist" aria-label="Seções das configurações">
+      <button type="button" class="settings-tab active" role="tab" id="settings-tabbtn-aparencia" aria-selected="true" aria-controls="settings-tab-aparencia" data-tab="aparencia">Aparência</button>
+      <button type="button" class="settings-tab" role="tab" id="settings-tabbtn-audio" aria-selected="false" aria-controls="settings-tab-audio" data-tab="audio">Áudio</button>
+    </div>
 
-    <h4 class="settings-section">Áudio</h4>
+    <div class="settings-panel" id="settings-tab-aparencia" role="tabpanel" aria-labelledby="settings-tabbtn-aparencia">
+      <div id="theme-grid"></div>
+    </div>
+
+    <div class="settings-panel hidden" id="settings-tab-audio" role="tabpanel" aria-labelledby="settings-tabbtn-audio">
 
     <div class="field">
       <label>Entrada (microfone)</label>
@@ -835,6 +849,8 @@
       <span>Ouvir meu microfone (teste)</span>
     </label>
     <p class="settings-hint">Ao ativar, você ouvirá sua própria voz. Use fones de ouvido para evitar microfonia.</p>
+    </div>
+
     <p class="settings-hint">As mensagens ficam salvas por 7 dias e depois são apagadas automaticamente.</p>
 
     <div id="settings-error" class="auth-error"></div>

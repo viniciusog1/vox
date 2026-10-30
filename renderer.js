@@ -1827,18 +1827,34 @@ function renderThemePicker() {
   if (!themeGrid || !window.ConcordThemes) return;
   const currentId = document.documentElement.dataset.theme || window.ConcordThemes.DEFAULT_THEME_ID;
   themeGrid.innerHTML = '';
-  [['dark', 'Escuros'], ['light', 'Claros']].forEach(([kind, label]) => {
+  window.ConcordThemes.THEME_GROUPS.forEach(([group, label]) => {
     const title = document.createElement('div');
     title.className = 'theme-group-title';
     title.textContent = label;
     const row = document.createElement('div');
     row.className = 'theme-row';
-    row.dataset.kind = kind;
-    window.ConcordThemes.THEMES.filter((t) => t.kind === kind)
+    row.dataset.group = group;
+    window.ConcordThemes.THEMES.filter((t) => t.group === group)
       .forEach((t) => row.appendChild(buildThemeOption(t, currentId)));
     themeGrid.append(title, row);
   });
 }
+
+// Abas das configurações (Aparência / Áudio)
+function showSettingsTab(name) {
+  document.querySelectorAll('.settings-tab').forEach((btn) => {
+    const on = btn.dataset.tab === name;
+    btn.classList.toggle('active', on);
+    btn.setAttribute('aria-selected', String(on));
+  });
+  document.querySelectorAll('.settings-panel').forEach((panel) => {
+    panel.classList.toggle('hidden', panel.id !== 'settings-tab-' + name);
+  });
+}
+
+document.querySelectorAll('.settings-tab').forEach((btn) => {
+  btn.addEventListener('click', () => showSettingsTab(btn.dataset.tab));
+});
 
 /* ================= DISPOSITIVOS DE ÁUDIO ================= */
 function fillDeviceSelect(select, devices, savedId, defaultLabel) {
@@ -1954,6 +1970,7 @@ btnSettings.addEventListener('click', async () => {
   statusMenu.classList.add('hidden');
   settingsError.textContent = '';
   renderThemePicker();
+  showSettingsTab('aparencia');
   settingsModal.classList.remove('hidden');
   monitorToggle.checked = monitorEnabled;
   applyNoiseSuppressionUI();
