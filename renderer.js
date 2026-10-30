@@ -96,7 +96,6 @@ const musicEmptyEl = document.getElementById('music-empty');
 const { DEFAULT_TEXT_CHANNEL, DEFAULT_VOICE_CHANNEL, isTextChannel, isVoiceChannel } = window.ConcordChannels;
 const { PROTOCOL_VERSION, VERSION_MISMATCH_MESSAGE, isCompatible } = window.ConcordProtocol;
 const { targetPositionMs, shouldCorrectSeek } = window.ConcordMusic;
-const NO_VOICE_TEXT = 'Você não está em um canal de voz';
 
 let currentUser = '';
 let currentTextRoom = '';  // sempre preenchido depois do login
@@ -939,70 +938,76 @@ socket.on('music-rooms', (list) => {
   renderMembers();
 });
 
-function renderMembers() {
-  memberList.innerHTML = '';
-  const users = currentVoiceRoom ? [...userMap.values()] : [];
+// Membros do servidor (todas as contas), vindos do servidor em 'server-members'
+let serverMembers = [];
+socket.on('server-members', (list) => {
+  serverMembers = Array.isArray(list) ? list : [];
+  renderMembers();
+});
 
-  if (!currentVoiceRoom) {
-    const empty = document.createElement('div');
-    empty.className = 'members-empty';
-    empty.textContent = NO_VOICE_TEXT;
-    memberList.appendChild(empty);
-  }
-
-  // Inclui você mesmo, caso o servidor ainda não tenha enviado a lista
-  if (currentVoiceRoom && users.length === 0 && currentUser) {
-    users.push({ id: 'me', username: currentUser, muted: !micEnabled });
-  }
-
-  memberCount.textContent = users.length;
-
-  users.forEach((u) => {
-    const isMe = u.username === currentUser;
-    const row = document.createElement('div');
-    row.className = 'member';
-    // Bolinha de status sobre o avatar, como na lista do canal de voz
-    const avatarWrap = document.createElement('span');
-    avatarWrap.className = 'avatar-wrap';
-    avatarWrap.appendChild(makeAvatar(u.username));
+function appendMemberRow(u) {
+  const isMe = u.username === currentUser;
+  const inMyCall = !!(currentVoiceRoom && u.voiceRoom === currentVoiceRoom);
+  const row = document.createElement('div');
+  row.className = 'member' + (u.online ? '' : ' offline');
+  // Bolinha de status sobre o avatar, como na lista do canal de voz (offline: sem bolinha)
+  const avatarWrap = document.createElement('span');
+  avatarWrap.className = 'avatar-wrap';
+  avatarWrap.appendChild(makeAvatar(u.username));
+  if (u.online) {
     const dot = document.createElement('span');
     dot.className = 'status-dot member-status-dot ' + (u.status || 'online');
     avatarWrap.appendChild(dot);
-    row.appendChild(avatarWrap);
+  }
+  row.appendChild(avatarWrap);
 
-    const name = document.createElement('div');
-    name.className = 'member-name';
-    name.appendChild(document.createTextNode(u.username));
+  const name = document.createElement('div');
+  name.className = 'member-name';
+  name.appendChild(document.createTextNode(u.username));
+  if (isMe) {
+    const you = document.createElement('span');
+    you.className = 'you';
+    you.textContent = '(você)';
+    name.appendChild(you);
+  }
+  if (!isMe && inMyCall && u.id) {
+    // Nome em cima, estado da conexão embaixo
+    const nameBox = document.createElement('div');
+    nameBox.className = 'member-name-box';
+    const conn = document.createElement('span');
+    conn.className = 'member-conn';
+    conn.dataset.id = u.id;
+    conn.dataset.state = (peerConn.get(u.id) || {}).state || 'connecting';
+    conn.textContent = connLabelText(u.id);
+    nameBox.append(name, conn);
+    row.appendChild(nameBox);
+  } else {
+    row.appendChild(name);
+  }
+  row.title = u.online ? (STATUS_LABELS[u.status || 'online'] || 'Online') : 'Offline';
 
-    if (isMe) {
-      const you = document.createElement('span');
-      you.className = 'you';
-      you.textContent = '(você)';
-      name.appendChild(you);
-    }
-    if (!isMe && currentVoiceRoom && u.id) {
-      // Nome em cima, estado da conexão embaixo
-      const nameBox = document.createElement('div');
-      nameBox.className = 'member-name-box';
-      const conn = document.createElement('span');
-      conn.className = 'member-conn';
-      conn.dataset.id = u.id;
-      conn.dataset.state = (peerConn.get(u.id) || {}).state || 'connecting';
-      conn.textContent = connLabelText(u.id);
-      nameBox.append(name, conn);
-      row.appendChild(nameBox);
-    } else {
-      row.appendChild(name);
-    }
-    row.title = STATUS_LABELS[u.status || 'online'] || 'Online';
-
+  // Microfone só para quem está em algum canal de voz
+  if (u.voiceRoom) {
     const status = document.createElement('span');
     status.className = 'muted-icon';
     ConcordIcons.setIcon(status, u.muted ? 'mic-off' : 'mic', '', 14);
     status.style.opacity = u.muted ? '1' : '.35';
     row.appendChild(status);
+  }
+  memberList.appendChild(row);
+}
 
-    memberList.appendChild(row);
+function renderMembers() {
+  memberList.innerHTML = '';
+  memberCount.textContent = serverMembers.length;
+  const groups = [['Online', serverMembers.filter((m) => m.online)], ['Offline', serverMembers.filter((m) => !m.online)]];
+  groups.forEach(([label, list]) => {
+    if (!list.length) return;
+    const title = document.createElement('div');
+    title.className = 'members-section';
+    title.textContent = `${label} — ${list.length}`;
+    memberList.appendChild(title);
+    list.forEach(appendMemberRow);
   });
 
   // Mostra os usuários embaixo do canal de voz correspondente
@@ -2582,6 +2587,7 @@ btnLeaveVoice.addEventListener('click', leaveVoice);
 
 function logout() {
   if (!window.confirm('Sair da conta?')) return;
+  serverMembers = [];
   settingsModal.classList.add('hidden');
   socket.emit('logout');
   leaveVoice();
