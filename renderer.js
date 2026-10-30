@@ -124,6 +124,8 @@ function setPeerVolume(name, vol) {
   applyPeerVolume(name);
 }
 const analysers = new Map();      // socketId -> AnalyserNode
+const speakingStates = new Map(); // socketId (inclusive o próprio) -> estado do anel de fala
+let localAnalyser = null;         // { trackId, analyser } do microfone enviado
 
 let audioContext = null;
 let rafId = null;
@@ -207,14 +209,14 @@ function updateMyStatusUI() {
   const s = effectiveStatus();
   myStatusEl.textContent = STATUS_LABELS[s] || 'Online';
   myStatusEl.style.color =
-    s === 'busy' ? 'var(--red)' :
-    s === 'away' ? 'var(--yellow)' :
-    s === 'invisible' ? 'var(--muted)' : 'var(--green)';
+    s === 'busy' ? 'var(--danger-text)' :
+    s === 'away' ? 'var(--warn-text)' :
+    s === 'invisible' ? 'var(--muted)' : 'var(--ok-text)';
   myStatusDot.className = 'status-dot ' + s;
 }
 
 function sendStatus() {
-  socket.emit('update-state', { muted: !micEnabled, status: effectiveStatus() });
+  socket.emit('update-state', { muted: !micEnabled, status: effectiveStatus(), sharing: sharingScreen });
 }
 
 function resetIdleTimer() {
@@ -302,7 +304,7 @@ function applyServerUrl() {
     new URL(url);
   } catch (e) {
     serverStatus.textContent = 'Endereço inválido.';
-    serverStatus.style.color = 'var(--red)';
+    serverStatus.style.color = 'var(--danger-text)';
     return;
   }
 
@@ -317,20 +319,20 @@ serverUrlInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') apply
 
 socket.on('connect', () => {
   serverStatus.textContent = `Conectado: ${SERVER_URL}`;
-  serverStatus.style.color = 'var(--green)';
+  serverStatus.style.color = 'var(--ok-text)';
 });
 socket.on('connect_error', () => {
   serverStatus.textContent = 'Sem conexão. Confira o endereço do servidor.';
-  serverStatus.style.color = 'var(--red)';
+  serverStatus.style.color = 'var(--danger-text)';
 });
 socket.on('disconnect', () => {
   serverStatus.textContent = 'Desconectado do servidor.';
-  serverStatus.style.color = 'var(--red)';
+  serverStatus.style.color = 'var(--danger-text)';
 });
 
 if (socket.connected) {
   serverStatus.textContent = `Conectado: ${SERVER_URL}`;
-  serverStatus.style.color = 'var(--green)';
+  serverStatus.style.color = 'var(--ok-text)';
 } else {
   serverStatus.textContent = 'Conectando ao servidor...';
   serverStatus.style.color = 'var(--muted)';
@@ -725,19 +727,24 @@ function renderMembers() {
     list.forEach((u) => {
       const line = document.createElement('div');
       line.className = 'voice-user';
-      const dot = document.createElement('span');
-      dot.className = 'status-dot ' + (u.status || 'online');
-      dot.style.width = '8px';
-      dot.style.height = '8px';
-      line.appendChild(dot);
-      line.appendChild(document.createTextNode(u.username));
-      if (u.muted) {
-        const mute = document.createElement('span');
-        mute.textContent = '🔇';
-        mute.style.marginLeft = '4px';
-        mute.style.fontSize = '11px';
-        line.appendChild(mute);
+      line.dataset.id = u.id;
+      const state = speakingStates.get(u.id);
+      if (state && state.speaking) line.classList.add('speaking');
+      line.appendChild(makeAvatar(u.username, 'vu-avatar'));
+      const name = document.createElement('span');
+      name.className = 'vu-name';
+      name.textContent = u.username;
+      line.appendChild(name);
+      const icons = document.createElement('span');
+      icons.className = 'vu-icons';
+      if (u.muted) icons.appendChild(document.createTextNode('🔇'));
+      if (u.sharing) {
+        const live = document.createElement('span');
+        live.className = 'live-badge';
+        live.textContent = 'AO VIVO';
+        icons.appendChild(live);
       }
+      if (icons.childNodes.length) line.appendChild(icons);
       listEl.appendChild(line);
     });
 
@@ -776,7 +783,7 @@ function renderTiles() {
     const empty = document.createElement('div');
     empty.className = 'tile';
     empty.style.borderStyle = 'dashed';
-    empty.style.background = 'rgba(255,255,255,.02)';
+    empty.style.background = 'color-mix(in srgb, var(--text) 2%, transparent)';
     empty.innerHTML = `
       <div style="display:flex;flex-direction:column;align-items:center;gap:10px;color:var(--muted);padding:20px;text-align:center;">
         <div style="font-size:28px;">👋</div>
@@ -1125,9 +1132,50 @@ function setupAnalyser(id, stream) {
   }
 }
 
+// Analisa a faixa que é enviada aos outros (já com redução de ruído).
+// Refeito quando a faixa muda (troca de microfone ou de modo de ruído).
+function getLocalAnalyser() {
+  const track = getOutboundAudioTracks()[0];
+  if (!track) return null;
+  if (!localAnalyser || localAnalyser.trackId !== track.id) {
+    try {
+      const ctx = ensureAudioContext();
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 256;
+      ctx.createMediaStreamSource(new MediaStream([track])).connect(analyser);
+      localAnalyser = { trackId: track.id, analyser };
+    } catch (e) {
+      console.warn('Não foi possível analisar o microfone:', e);
+      return null;
+    }
+  }
+  return localAnalyser.analyser;
+}
+
+// Anel de "falando" nos avatares do canal de voz atual
+function updateSpeakingRings() {
+  const { levelFromAnalyser, createSpeakingState, updateSpeaking } = window.ConcordSpeaking;
+  const now = performance.now();
+  const levels = new Map();
+  analysers.forEach((analyser, id) => levels.set(id, levelFromAnalyser(analyser)));
+  const mine = micEnabled ? getLocalAnalyser() : null;
+  levels.set(socket.id, mine ? levelFromAnalyser(mine) : 0);
+
+  levels.forEach((level, id) => {
+    let state = speakingStates.get(id);
+    if (!state) { state = createSpeakingState(); speakingStates.set(id, state); }
+    const was = state.speaking;
+    if (updateSpeaking(state, level, now) === was) return;
+    document.querySelectorAll(`.voice-user[data-id="${CSS.escape(id)}"]`)
+      .forEach((el) => el.classList.toggle('speaking', state.speaking));
+  });
+  speakingStates.forEach((_, id) => { if (!levels.has(id)) speakingStates.delete(id); });
+}
+
 function startAudioLoop() {
   if (rafId) return;
   const loop = () => {
+    if (currentRoom) updateSpeakingRings();
     if (analysers.size === 0) {
       audioLevelEl.style.width = '0%';
       audioLabel.textContent = 'Ninguém falando';
@@ -1148,6 +1196,63 @@ function startAudioLoop() {
     rafId = requestAnimationFrame(loop);
   };
   loop();
+}
+
+/* ================= TEMAS ================= */
+const themeGrid = document.getElementById('theme-grid');
+let themeStorage = null;
+try { themeStorage = window.localStorage; } catch (e) {}
+
+function buildThemeOption(theme, currentId) {
+  const { themeCssVars, applyTheme, saveThemeId } = window.ConcordThemes;
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'theme-option' + (theme.id === currentId ? ' selected' : '');
+  btn.dataset.themeId = theme.id;
+  btn.setAttribute('aria-pressed', String(theme.id === currentId));
+
+  const thumb = document.createElement('div');
+  thumb.className = 'theme-thumb';
+  const vars = themeCssVars(theme);
+  Object.keys(vars).forEach((k) => thumb.style.setProperty(k, vars[k]));
+  thumb.innerHTML = `
+    <div class="tt-rail"></div>
+    <div class="tt-chs"><div class="tt-ch"></div><div class="tt-ch on"></div><div class="tt-ch"></div></div>
+    <div class="tt-main"><div class="tt-line"></div><div class="tt-line link"></div><div class="tt-btn"></div></div>`;
+  btn.appendChild(thumb);
+
+  const name = document.createElement('span');
+  name.className = 'theme-name';
+  name.textContent = theme.name;
+  btn.appendChild(name);
+
+  btn.addEventListener('click', () => {
+    const applied = applyTheme(theme.id);
+    saveThemeId(themeStorage, applied);
+    themeGrid.querySelectorAll('.theme-option').forEach((el) => {
+      const on = el.dataset.themeId === applied;
+      el.classList.toggle('selected', on);
+      el.setAttribute('aria-pressed', String(on));
+    });
+  });
+  return btn;
+}
+
+function renderThemePicker() {
+  if (!themeGrid || !window.ConcordThemes) return;
+  const currentId = document.documentElement.dataset.theme || window.ConcordThemes.DEFAULT_THEME_ID;
+  themeGrid.innerHTML = '';
+  [['dark', 'Escuros'], ['light', 'Claros']].forEach(([kind, label]) => {
+    const title = document.createElement('div');
+    title.className = 'theme-group-title';
+    title.textContent = label;
+    const row = document.createElement('div');
+    row.className = 'theme-row';
+    row.dataset.kind = kind;
+    window.ConcordThemes.THEMES.filter((t) => t.kind === kind)
+      .forEach((t) => row.appendChild(buildThemeOption(t, currentId)));
+    themeGrid.append(title, row);
+  });
 }
 
 /* ================= DISPOSITIVOS DE ÁUDIO ================= */
@@ -1256,6 +1361,7 @@ function updateMonitor() {
 btnSettings.addEventListener('click', async () => {
   statusMenu.classList.add('hidden');
   settingsError.textContent = '';
+  renderThemePicker();
   settingsModal.classList.remove('hidden');
   monitorToggle.checked = monitorEnabled;
   applyNoiseSuppressionUI();
@@ -1472,6 +1578,7 @@ btnScreen.addEventListener('click', async () => {
     });
 
     sharingScreen = true;
+    sendStatus();
     replaceVideoTrackEverywhere(screenStream.getVideoTracks()[0], screenStream);
     renderTiles();
 
@@ -1504,6 +1611,7 @@ function stopScreenShare() {
     screenStream = null;
   }
   sharingScreen = false;
+  sendStatus();
 
   const camTrack = localStream ? localStream.getVideoTracks()[0] : null;
   replaceVideoTrackEverywhere(camTrack || null, localStream);
@@ -1635,6 +1743,8 @@ function leaveCall() {
   if (monitorAudio) monitorAudio.srcObject = null;
   if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
   analysers.clear();
+  speakingStates.clear();
+  localAnalyser = null;
   destroyMicProcessing();
   closeFullscreenView();
 

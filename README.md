@@ -12,7 +12,8 @@ App desktop para Windows 11 inspirado no Discord, feito com Electron, WebRTC e S
 - Visualização do compartilhamento em tela cheia (botão ⛶ ou duplo clique)
 - Redução de ruído do microfone (gate + filtro + compressor), com níveis de intensidade
 - Painel de participantes com indicação de microfone mudo
-- Canal de voz mostrando quem está conectado
+- Canal de voz mostrando quem está conectado, com avatar, anel de quem está falando, 🔇 e selo "AO VIVO" para quem compartilha a tela
+- 13 temas de cor (Configurações → Aparência), salvos no próprio computador: Escuro, Grafite, Cyberpunk, Neon Verde, Drácula, Nord, Aquático, Natureza, Pôr do sol, Claro, Sépia, Lavanda / Sakura e Algodão-doce
 - Indicador visual de áudio (quem está falando)
 - Layout estilo Discord com rail de servidores, canais, chat e participantes
 - Status Online, Ocupado e Invisível, com Ausente automático após 5 minutos sem atividade
@@ -20,6 +21,8 @@ App desktop para Windows 11 inspirado no Discord, feito com Electron, WebRTC e S
 - Opção de ouvir o próprio microfone para testar (use fones)
 - Histórico mantido por 7 dias e apagado automaticamente depois
 - Botão para apagar as próprias mensagens do canal atual
+
+Os temas Drácula e Nord usam as paletas dos projetos [Dracula](https://draculatheme.com) e [Nord](https://www.nordtheme.com), ambos com licença MIT.
 
 ## Pré-requisitos
 
