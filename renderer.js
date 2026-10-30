@@ -695,7 +695,14 @@ function createPeer(id) {
     renderTiles();
   };
 
+  setPeerConn(id, 'connecting');
   pc.onconnectionstatechange = () => {
+    const st = pc.connectionState;
+    if (st === 'connected') setPeerConn(id, 'connected');
+    else if (st === 'failed') setPeerConn(id, 'failed');
+    else if (st === 'disconnected') setPeerConn(id, 'reconnecting');
+    else if (st === 'closed') { peerConn.delete(id); updateConnLabel(id); }
+    else setPeerConn(id, 'connecting');
     if (['failed', 'closed', 'disconnected'].includes(pc.connectionState)) {
       if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
         remoteStreams.delete(id);
@@ -713,6 +720,7 @@ function createPeer(id) {
 function closeAllPeers() {
   peers.forEach((pc) => { try { pc.close(); } catch (e) {} });
   peers.clear();
+  peerConn.clear();
   remoteStreams.clear();
   analysers.clear();
   renderTiles();
@@ -851,6 +859,7 @@ socket.on('room-users', (list) => {
     if (!ids.has(id)) {
       try { peers.get(id).close(); } catch (e) {}
       peers.delete(id);
+      peerConn.delete(id);
       remoteStreams.delete(id);
       analysers.delete(id);
       removed = true;
@@ -870,6 +879,55 @@ socket.on('voice-rooms', (data) => {
   voiceRooms = data || {};
   renderMembers();
 });
+
+// Estado da conexão de áudio/vídeo com cada pessoa da chamada (painel Participantes)
+const peerConn = new Map(); // socketId -> { state, rttMs }
+const CONN_LABELS = {
+  connecting: 'Conectando…', reconnecting: 'Reconectando…', failed: 'Falhou', connected: 'Conectado'
+};
+
+function setPeerConn(id, state) {
+  const prev = peerConn.get(id) || {};
+  peerConn.set(id, { state, rttMs: state === 'connected' ? prev.rttMs : null });
+  updateConnLabel(id);
+}
+
+function connLabelText(id) {
+  const c = peerConn.get(id);
+  if (!c) return CONN_LABELS.connecting; // ainda sem conexão criada
+  if (c.state === 'connected' && c.rttMs != null) return `Conectado · ${c.rttMs} ms`;
+  return CONN_LABELS[c.state] || CONN_LABELS.connecting;
+}
+
+function updateConnLabel(id) {
+  const state = (peerConn.get(id) || {}).state || 'connecting';
+  document.querySelectorAll(`.member-conn[data-id="${CSS.escape(id)}"]`).forEach((el) => {
+    el.textContent = connLabelText(id);
+    el.dataset.state = state;
+  });
+}
+
+// Ping de cada conexão: par de candidatos escolhido pelo WebRTC
+setInterval(async () => {
+  if (!currentVoiceRoom) return;
+  for (const [id, pc] of peers) {
+    if (pc.connectionState !== 'connected') continue;
+    try {
+      const stats = await pc.getStats();
+      let rtt = null;
+      stats.forEach((r) => {
+        if (r.type === 'candidate-pair' && r.nominated && r.state === 'succeeded' && r.currentRoundTripTime != null) {
+          rtt = Math.round(r.currentRoundTripTime * 1000);
+        }
+      });
+      const c = peerConn.get(id);
+      if (c && c.state === 'connected' && rtt != null) {
+        c.rttMs = rtt;
+        updateConnLabel(id);
+      }
+    } catch (e) {}
+  }
+}, 2000);
 
 // Canais de voz com música tocando (vem do servidor em 'music-rooms')
 let musicRooms = new Set();
@@ -919,7 +977,20 @@ function renderMembers() {
       you.textContent = '(você)';
       name.appendChild(you);
     }
-    row.appendChild(name);
+    if (!isMe && currentVoiceRoom && u.id) {
+      // Nome em cima, estado da conexão embaixo
+      const nameBox = document.createElement('div');
+      nameBox.className = 'member-name-box';
+      const conn = document.createElement('span');
+      conn.className = 'member-conn';
+      conn.dataset.id = u.id;
+      conn.dataset.state = (peerConn.get(u.id) || {}).state || 'connecting';
+      conn.textContent = connLabelText(u.id);
+      nameBox.append(name, conn);
+      row.appendChild(nameBox);
+    } else {
+      row.appendChild(name);
+    }
     row.title = STATUS_LABELS[u.status || 'online'] || 'Online';
 
     const status = document.createElement('span');

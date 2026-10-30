@@ -418,6 +418,10 @@
   .members-empty { color: var(--muted); font-size: 12px; padding: 6px 8px; }
   .member .you { color: var(--muted); font-size: 11px; font-weight: 400; }
   .member .muted-icon { color: var(--red); font-size: 12px; }
+  .member-name-box { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .member-conn { font-size: 11px; color: var(--warn-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .member-conn[data-state="connected"] { color: var(--ok-text); }
+  .member-conn[data-state="failed"] { color: var(--danger-text); }
   .member .speaking { color: var(--green); font-size: 12px; }
   .member.bot .member-name { color: var(--link); font-style: italic; }
 
