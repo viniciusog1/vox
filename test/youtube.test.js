@@ -43,6 +43,18 @@ test('lookupVideo 401 e 404 recusam', async () => {
   }
 });
 
+test('lookupVideo 400 e 403 recusam (id bem formado mas inexistente)', async () => {
+  for (const status of [400, 403]) {
+    const fakeFetch = async () => ({ status, ok: false, json: async () => ({}) });
+    assert.deepEqual(await lookupVideo(ID, fakeFetch), { ok: false });
+  }
+});
+
+test('lookupVideo 500 aceita com fallback', async () => {
+  const fakeFetch = async () => ({ status: 500, ok: false, json: async () => ({}) });
+  assert.deepEqual(await lookupVideo(ID, fakeFetch), { ok: true, title: ID, thumbnail: thumbnailUrl(ID) });
+});
+
 test('lookupVideo erro de rede aceita com fallback', async () => {
   const fakeFetch = async () => { throw new Error('rede'); };
   assert.deepEqual(await lookupVideo(ID, fakeFetch), { ok: true, title: ID, thumbnail: thumbnailUrl(ID) });

@@ -28,7 +28,9 @@
     return `https://i.ytimg.com/vi/${id}/mqdefault.jpg`;
   }
 
-  // 401/404 = vídeo privado, removido ou inexistente. Qualquer outra falha
+  // 400/401/403/404 = vídeo privado, removido ou inexistente (o id já passou
+  // na validação por regex, então 400 do oEmbed significa "id sem vídeo").
+  // Qualquer outra falha
   // (rede, timeout, status inesperado) aceita o vídeo com título provisório.
   async function lookupVideo(id, fetchImpl = fetch, timeoutMs = 4000) {
     const fallback = { ok: true, title: id, thumbnail: thumbnailUrl(id) };
@@ -37,7 +39,7 @@
     try {
       const url = `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${id}&format=json`;
       const res = await fetchImpl(url, { signal: controller.signal });
-      if (res.status === 401 || res.status === 404) return { ok: false };
+      if ([400, 401, 403, 404].includes(res.status)) return { ok: false };
       if (res.status !== 200) return fallback;
       const json = await res.json();
       return { ok: true, title: json.title || id, thumbnail: json.thumbnail_url || thumbnailUrl(id) };

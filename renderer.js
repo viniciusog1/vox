@@ -383,6 +383,8 @@ socket.on('connect_error', () => {
 socket.on('disconnect', () => {
   serverStatus.textContent = 'Desconectado do servidor.';
   serverStatus.style.color = 'var(--danger-text)';
+  // Sem servidor não há como controlar a música: para o player e some com o tile.
+  resetMusic();
 });
 
 if (socket.connected) {
