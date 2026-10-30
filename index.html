@@ -706,6 +706,9 @@
   :root[data-theme="manga"] .status-dot.busy { background: var(--bg); box-shadow: inset 0 0 0 2.5px var(--text); }
   :root[data-theme="manga"] .status-dot.invisible { background: var(--bg); box-shadow: inset 0 0 0 1.5px var(--muted); }
   :root[data-theme="manga"] .voice-dot { box-shadow: none; }
+  /* Câmeras e tela compartilhada também em preto e branco (inclusive em tela cheia).
+     O player do YouTube fica de fora: os termos não permitem alterar o player. */
+  :root[data-theme="manga"] video { filter: grayscale(1) contrast(1.08); }
   @keyframes fx-shake { 0% { transform: translate(0, 0); } 50% { transform: translate(1px, -1px); } }
 
   /* Ninja: preto e laranja com tinta vermelha, kanji 忍 em pincel, espiral girando,
