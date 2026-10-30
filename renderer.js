@@ -90,6 +90,9 @@ const NO_VOICE_TEXT = 'Você não está em um canal de voz';
 let currentUser = '';
 let currentTextRoom = '';  // sempre preenchido depois do login
 let currentVoiceRoom = ''; // '' = fora de canal de voz
+let voiceLeaves = 0;       // conta as saídas da voz; pedidos de mídia comparam para saber se a voz caiu
+let pendingCam = false;    // pedido de câmera em andamento
+let pendingShare = false;  // pedido de compartilhamento de tela em andamento
 
 let localStream = null;
 let screenStream = null;
@@ -461,13 +464,16 @@ function updateControlButtons() {
 }
 
 // Câmera, tela e ✕ só funcionam com voz conectada; o microfone continua livre.
+// Cam e Tela também ficam travados enquanto um pedido de câmera/tela está em andamento.
 function updateVoiceDependentControls() {
   const noVoice = !currentVoiceRoom;
   [btnCam, btnScreen, btnHangup].forEach((btn) => {
-    btn.disabled = noVoice;
     if (noVoice) btn.title = 'Entre em um canal de voz';
     else btn.title = btn.dataset.title || btn.title;
   });
+  btnCam.disabled = noVoice || pendingCam;
+  btnScreen.disabled = noVoice || pendingShare;
+  btnHangup.disabled = noVoice;
 }
 [btnCam, btnScreen, btnHangup].forEach((btn) => { btn.dataset.title = btn.title; });
 
@@ -1346,6 +1352,9 @@ async function refreshDevices() {
 
 async function changeInputDevice(id) {
   settingsError.textContent = '';
+  // Fora da voz só a preferência é gravada; ela vale na próxima entrada em voz.
+  if (!currentVoiceRoom) return;
+  const leaves = voiceLeaves;
   try {
     const constraints = { audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: false, channelCount: 1 } };
     if (id) constraints.audio.deviceId = { exact: id };
@@ -1353,6 +1362,10 @@ async function changeInputDevice(id) {
     const newStream = await navigator.mediaDevices.getUserMedia(constraints);
     const newTrack = newStream.getAudioTracks()[0];
     if (!newTrack) return;
+    if (leaves !== voiceLeaves || !currentVoiceRoom) {
+      newStream.getTracks().forEach((t) => t.stop()); // saiu da voz enquanto o microfone abria
+      return;
+    }
 
     if (localStream) {
       localStream.getAudioTracks().forEach((t) => {
@@ -1496,11 +1509,23 @@ btnMic.addEventListener('click', toggleMic);
 btnMicMini.addEventListener('click', toggleMic);
 
 async function enableCamera() {
+  const leaves = voiceLeaves;
+  // Saiu da voz enquanto a câmera abria: desliga o que chegou.
+  const voiceGone = (stream) => {
+    if (leaves === voiceLeaves && currentVoiceRoom && localStream) return false;
+    stream.getTracks().forEach((t) => t.stop());
+    return true;
+  };
+
   if (!localStream) {
     try {
       const camOnly = await navigator.mediaDevices.getUserMedia({
         video: { width: 1280, height: 720, frameRate: 30 }
       });
+      if (leaves !== voiceLeaves || !currentVoiceRoom || localStream) {
+        camOnly.getTracks().forEach((t) => t.stop());
+        return false;
+      }
       localStream = new MediaStream([camOnly.getVideoTracks()[0]]);
     } catch (e) {
       console.warn('Não foi possível acessar a câmera:', e);
@@ -1518,6 +1543,7 @@ async function enableCamera() {
     const camStream = await navigator.mediaDevices.getUserMedia({
       video: { width: 1280, height: 720, frameRate: 30 }
     });
+    if (voiceGone(camStream)) return false;
     const track = camStream.getVideoTracks()[0];
     if (!track) return false;
 
@@ -1559,8 +1585,9 @@ function disableCamera() {
 }
 
 btnCam.addEventListener('click', async () => {
-  if (!currentVoiceRoom) return;
-  btnCam.disabled = true;
+  if (!currentVoiceRoom || pendingCam) return;
+  pendingCam = true;
+  updateVoiceDependentControls();
   try {
     if (camEnabled) {
       camEnabled = false;
@@ -1569,6 +1596,7 @@ btnCam.addEventListener('click', async () => {
       camEnabled = await enableCamera();
     }
   } finally {
+    pendingCam = false;
     updateVoiceDependentControls();
     updateControlButtons();
     renderTiles();
@@ -1576,7 +1604,6 @@ btnCam.addEventListener('click', async () => {
 });
 
 /* ================= COMPARTILHAMENTO DE TELA ================= */
-let pendingShare = false;
 
 const SHARE_RESOLUTIONS = {
   '480': { width: 854, height: 480 },
@@ -1616,17 +1643,23 @@ applyShareQualityUI();
 
 btnScreen.addEventListener('click', async () => {
   if (sharingScreen) { stopScreenShare(); return; }
-  if (!currentVoiceRoom) return;
+  if (!currentVoiceRoom || pendingShare) return;
 
   pendingShare = true;
-  btnScreen.disabled = true;
+  updateVoiceDependentControls();
+  const leaves = voiceLeaves;
 
   try {
     ensureAudioContext();
-    screenStream = await navigator.mediaDevices.getDisplayMedia({
+    const stream = await navigator.mediaDevices.getDisplayMedia({
       video: currentShareVideoConstraints(),
       audio: false
     });
+    if (leaves !== voiceLeaves || !currentVoiceRoom) {
+      stream.getTracks().forEach((t) => t.stop()); // saiu da voz antes de escolher a tela
+      return;
+    }
+    screenStream = stream;
 
     sharingScreen = true;
     sendStatus();
@@ -1675,7 +1708,8 @@ function stopScreenShare() {
 
 /* ================= SELETOR DE TELA ================= */
 window.electronAPI.onDisplaySources((sources) => {
-  if (!pendingShare) return;
+  // Pedido abandonado (saiu da voz antes do seletor abrir): libera o pedido no processo principal.
+  if (!pendingShare) { window.electronAPI.cancelDisplaySource(); return; }
   sourceList.innerHTML = '';
 
   if (!sources.length) {
@@ -1801,6 +1835,14 @@ function stopLocalMedia() {
 // Sai só da voz: o canal de texto continua.
 function leaveVoice() {
   ++joinToken; // cancela uma entrada em voz ainda em andamento
+  ++voiceLeaves; // pedidos de câmera/tela/microfone em andamento descartam o que chegar
+
+  // Seletor de tela aberto ou por abrir: cancela o pedido
+  if (pendingShare) {
+    pendingShare = false;
+    sourcePicker.classList.add('hidden');
+    window.electronAPI.cancelDisplaySource();
+  }
   if (currentVoiceRoom) socket.emit('leave-voice');
   closeAllPeers();
 
