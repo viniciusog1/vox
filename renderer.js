@@ -3,7 +3,6 @@ const socket = io(SERVER_URL);
 
 /* ================= REFERÊNCIAS DOM ================= */
 const authScreen = document.getElementById('auth-screen');
-const roomScreen = document.getElementById('room-screen');
 const sourcePicker = document.getElementById('source-picker');
 
 const loginUser = document.getElementById('login-user');
@@ -21,11 +20,6 @@ const serverUrlInput = document.getElementById('server-url');
 const serverApply = document.getElementById('server-apply');
 const serverStatus = document.getElementById('server-status');
 
-const btnJoin = document.getElementById('btn-join');
-const inputRoom = document.getElementById('input-room');
-const roomStatus = document.getElementById('room-status');
-const roomUserInfo = document.getElementById('room-user-info');
-
 const myAvatar = document.getElementById('my-avatar');
 const myName = document.getElementById('my-name');
 const btnMicMini = document.getElementById('btn-mic-mini');
@@ -35,6 +29,7 @@ const videoGrid = document.getElementById('video-grid');
 const callEmpty = document.getElementById('call-empty');
 const audioLevelEl = document.getElementById('audio-level');
 const audioLabel = document.getElementById('audio-label');
+const audioIndicator = document.getElementById('audio-indicator');
 
 const messagesEl = document.getElementById('messages');
 const msgInput = document.getElementById('msg-input');
@@ -88,9 +83,13 @@ const fullscreenClose = document.getElementById('fullscreen-close');
 const fullscreenNative = document.getElementById('fullscreen-native');
 
 /* ================= ESTADO ================= */
+const { DEFAULT_TEXT_CHANNEL, DEFAULT_VOICE_CHANNEL, isTextChannel, isVoiceChannel } = window.ConcordChannels;
+const { PROTOCOL_VERSION, VERSION_MISMATCH_MESSAGE, isCompatible } = window.ConcordProtocol;
+const NO_VOICE_TEXT = 'Você não está em um canal de voz';
+
 let currentUser = '';
-let currentRoom = '';
-let activeChannelEl = null;
+let currentTextRoom = '';  // sempre preenchido depois do login
+let currentVoiceRoom = ''; // '' = fora de canal de voz
 
 let localStream = null;
 let screenStream = null;
@@ -271,12 +270,24 @@ document.querySelectorAll('#status-menu button').forEach((btn) => {
 /* ================= TELAS ================= */
 function hideOverlays() {
   authScreen.style.display = 'none';
-  roomScreen.style.display = 'none';
 }
 
-function showRoomScreen() {
-  authScreen.style.display = 'none';
-  roomScreen.style.display = 'flex';
+// Login ou cadastro concluído: entra direto em #geral e na Sala Principal, com microfone aberto.
+function enterApp(username) {
+  setMyIdentity(username);
+  micEnabled = true;
+  updateControlButtons();
+  hideOverlays();
+  joinText(DEFAULT_TEXT_CHANNEL);
+  joinVoice(DEFAULT_VOICE_CHANNEL);
+}
+
+// Servidor em outra versão: a resposta de sucesso não traz a mesma versão do protocolo.
+function rejectIfIncompatible(res, errorEl) {
+  if (isCompatible(res.protocol)) return false;
+  errorEl.textContent = VERSION_MISMATCH_MESSAGE;
+  socket.emit('logout', () => {});
+  return true;
 }
 
 /* ================= AUTH ================= */
@@ -348,12 +359,11 @@ btnRegister.addEventListener('click', () => {
   if (!socket.connected) { errorRegister.textContent = 'Sem conexão com o servidor. Confira o endereço abaixo.'; return; }
 
   btnRegister.disabled = true;
-  socket.emit('register', { username, password }, (res) => {
+  socket.emit('register', { username, password, protocol: PROTOCOL_VERSION }, (res) => {
     btnRegister.disabled = false;
     if (!res.success) { errorRegister.textContent = res.message; return; }
-    setMyIdentity(res.username);
-    roomUserInfo.textContent = `Logado como ${res.username}`;
-    showRoomScreen();
+    if (rejectIfIncompatible(res, errorRegister)) return;
+    enterApp(res.username);
   });
 });
 
@@ -365,12 +375,11 @@ function doLogin() {
   if (!socket.connected) { errorLogin.textContent = 'Sem conexão com o servidor. Confira o endereço abaixo.'; return; }
 
   btnLogin.disabled = true;
-  socket.emit('login', { username, password }, (res) => {
+  socket.emit('login', { username, password, protocol: PROTOCOL_VERSION }, (res) => {
     btnLogin.disabled = false;
     if (!res.success) { errorLogin.textContent = res.message; return; }
-    setMyIdentity(res.username);
-    roomUserInfo.textContent = `Logado como ${res.username}`;
-    showRoomScreen();
+    if (rejectIfIncompatible(res, errorLogin)) return;
+    enterApp(res.username);
   });
 }
 
@@ -379,9 +388,18 @@ loginPass.addEventListener('keydown', (e) => { if (e.key === 'Enter') doLogin();
 regPass2.addEventListener('keydown', (e) => { if (e.key === 'Enter') btnRegister.click(); });
 
 /* ================= MÍDIA LOCAL ================= */
-async function ensureLocalMedia() {
-  if (localStream) return localStream;
+let localMediaPromise = null;
 
+// Cliques rápidos em canais de voz reaproveitam o mesmo pedido de microfone.
+function ensureLocalMedia() {
+  if (localStream) return Promise.resolve(localStream);
+  if (!localMediaPromise) {
+    localMediaPromise = acquireLocalMedia().finally(() => { localMediaPromise = null; });
+  }
+  return localMediaPromise;
+}
+
+async function acquireLocalMedia() {
   const audioBase = {
     echoCancellation: true,
     noiseSuppression: true,
@@ -439,6 +457,17 @@ function updateControlButtons() {
   btnMicMini.textContent = micEnabled ? '🎙️' : '🔇';
   btnMicMini.classList.toggle('off', !micEnabled);
 }
+
+// Câmera, tela e ✕ só funcionam com voz conectada; o microfone continua livre.
+function updateVoiceDependentControls() {
+  const noVoice = !currentVoiceRoom;
+  [btnCam, btnScreen, btnHangup].forEach((btn) => {
+    btn.disabled = noVoice;
+    if (noVoice) btn.title = 'Entre em um canal de voz';
+    else btn.title = btn.dataset.title || btn.title;
+  });
+}
+[btnCam, btnScreen, btnHangup].forEach((btn) => { btn.dataset.title = btn.title; });
 
 /* ================= PEERS (WebRTC) ================= */
 function createPeer(id) {
@@ -517,39 +546,52 @@ function closeAllPeers() {
   renderTiles();
 }
 
-/* ================= ENTRAR / TROCAR CANAL ================= */
+/* ================= CANAL DE TEXTO ================= */
+// Troca só o chat: não mexe em microfone nem na chamada.
+function joinText(room) {
+  if (!isTextChannel(room) || room === currentTextRoom) return;
+  currentTextRoom = room;
+  socket.emit('join-text', room);
+  channelName.textContent = room;
+  channelIcon.textContent = '#';
+  msgInput.placeholder = `Enviar mensagem em ${roomDisplayName(room)}`;
+  messagesEl.innerHTML = '';
+  reloadMessages();
+  updateActiveChannel();
+}
+
+/* ================= CANAL DE VOZ ================= */
 let joinToken = 0;
 
-async function joinRoom(room) {
-  if (!room) return;
-  if (room === currentRoom) return;
+async function joinVoice(room) {
+  if (!isVoiceChannel(room) || room === currentVoiceRoom) return;
 
   const token = ++joinToken;
   ensureAudioContext();
 
-  if (currentRoom) socket.emit('leave-room', currentRoom);
-
-  closeAllPeers();
-  userMap.clear();
-  lastUsersSignature = '';
-  messagesEl.innerHTML = '';
-  currentRoom = room;
-  channelName.textContent = VOICE_NAMES[room] || room;
-  channelIcon.textContent = room.startsWith('voz-') ? '🔊' : '#';
-  msgInput.placeholder = `Enviar mensagem em ${roomDisplayName(room)}`;
+  // O servidor tira o socket da voz anterior ao receber join-voice; aqui só fecham os peers.
+  if (currentVoiceRoom) {
+    closeAllPeers();
+    userMap.clear();
+    lastUsersSignature = '';
+  }
+  currentVoiceRoom = room;
   voiceConnName.textContent = 'Conectado a ' + roomDisplayName(room);
   voiceConnection.classList.remove('hidden');
+  updateActiveChannel();
+  updateVoiceDependentControls();
 
   await ensureLocalMedia();
-  if (token !== joinToken) return; // outra troca de canal começou
+  if (token !== joinToken) {
+    // Saiu da voz enquanto o microfone abria: não deixa a mídia ligada sem chamada.
+    if (!currentVoiceRoom) stopLocalMedia();
+    return; // outra troca de canal começou
+  }
 
-  socket.emit('join-room', room);
+  socket.emit('join-voice', room);
   sendStatus();
-  reloadMessages();
   updateMonitor();
 
-  updateActiveChannel();
-  hideOverlays();
   renderTiles();
   renderMembers();
   startAudioLoop();
@@ -557,27 +599,16 @@ async function joinRoom(room) {
 
 function updateActiveChannel() {
   document.querySelectorAll('.channel').forEach((el) => {
-    const isText = !el.classList.contains('voice');
-    el.classList.toggle('active', el.dataset.room === currentRoom && (activeChannelEl ? el === activeChannelEl : isText));
+    const current = el.classList.contains('voice') ? currentVoiceRoom : currentTextRoom;
+    el.classList.toggle('active', el.dataset.room === current);
   });
 }
-
-btnJoin.addEventListener('click', () => {
-  const room = (inputRoom.value.trim() || 'geral').toLowerCase().replace(/\s+/g, '-');
-  roomStatus.textContent = 'Entrando...';
-  activeChannelEl = document.querySelector(`.channel[data-room="${room}"]:not(.voice)`) || null;
-  joinRoom(room).then(() => { roomStatus.textContent = ''; });
-});
 
 /* ================= CANAIS ================= */
 document.querySelectorAll('.channel').forEach((el) => {
   el.addEventListener('click', () => {
-    activeChannelEl = el;
-    if (el.dataset.room === currentRoom) {
-      updateActiveChannel();
-      return;
-    }
-    joinRoom(el.dataset.room);
+    if (el.classList.contains('voice')) joinVoice(el.dataset.room);
+    else joinText(el.dataset.room);
   });
 });
 
@@ -664,10 +695,17 @@ socket.on('voice-rooms', (data) => {
 
 function renderMembers() {
   memberList.innerHTML = '';
-  const users = [...userMap.values()];
+  const users = currentVoiceRoom ? [...userMap.values()] : [];
+
+  if (!currentVoiceRoom) {
+    const empty = document.createElement('div');
+    empty.className = 'members-empty';
+    empty.textContent = NO_VOICE_TEXT;
+    memberList.appendChild(empty);
+  }
 
   // Inclui você mesmo, caso o servidor ainda não tenha enviado a lista
-  if (users.length === 0 && currentUser) {
+  if (currentVoiceRoom && users.length === 0 && currentUser) {
     users.push({ id: 'me', username: currentUser, muted: !micEnabled });
   }
 
@@ -755,7 +793,11 @@ function renderMembers() {
 /* ================= TILES DE VÍDEO ================= */
 function renderTiles() {
   videoGrid.innerHTML = '';
-  callEmpty.style.display = 'none';
+
+  // Sem voz: área de chamada mostra só o estado vazio
+  callEmpty.style.display = currentVoiceRoom ? 'none' : '';
+  audioIndicator.style.display = currentVoiceRoom ? '' : 'none';
+  if (!currentVoiceRoom) return;
 
   // Tile local
   const localStreamToShow = sharingScreen
@@ -788,7 +830,7 @@ function renderTiles() {
       <div style="display:flex;flex-direction:column;align-items:center;gap:10px;color:var(--muted);padding:20px;text-align:center;">
         <div style="font-size:28px;">👋</div>
         <div style="font-weight:600;color:var(--text);">Aguardando alguém entrar...</div>
-        <div style="font-size:12px;">Compartilhe o canal #${currentRoom} com seus amigos.</div>
+        <div style="font-size:12px;">Compartilhe o canal ${roomDisplayName(currentVoiceRoom)} com seus amigos.</div>
       </div>`;
     videoGrid.appendChild(empty);
   }
@@ -1175,7 +1217,7 @@ function updateSpeakingRings() {
 function startAudioLoop() {
   if (rafId) return;
   const loop = () => {
-    if (currentRoom) updateSpeakingRings();
+    if (currentVoiceRoom) updateSpeakingRings();
     if (analysers.size === 0) {
       audioLevelEl.style.width = '0%';
       audioLabel.textContent = 'Ninguém falando';
@@ -1417,13 +1459,13 @@ if (noiseGateLevel) {
 applyNoiseSuppressionUI();
 
 clearMyMessages.addEventListener('click', () => {
-  if (!currentRoom) {
+  if (!currentTextRoom) {
     settingsError.textContent = 'Entre em um canal primeiro.';
     return;
   }
   if (!window.confirm('Apagar todas as suas mensagens deste canal?')) return;
 
-  socket.emit('delete-my-messages', { room: currentRoom }, (res) => {
+  socket.emit('delete-my-messages', { room: currentTextRoom }, (res) => {
     if (res && res.success) {
       settingsError.textContent = `${res.count} mensagem(ns) apagada(s).`;
     }
@@ -1509,6 +1551,7 @@ function disableCamera() {
 }
 
 btnCam.addEventListener('click', async () => {
+  if (!currentVoiceRoom) return;
   btnCam.disabled = true;
   try {
     if (camEnabled) {
@@ -1518,7 +1561,7 @@ btnCam.addEventListener('click', async () => {
       camEnabled = await enableCamera();
     }
   } finally {
-    btnCam.disabled = false;
+    updateVoiceDependentControls();
     updateControlButtons();
     renderTiles();
   }
@@ -1565,7 +1608,7 @@ applyShareQualityUI();
 
 btnScreen.addEventListener('click', async () => {
   if (sharingScreen) { stopScreenShare(); return; }
-  if (!currentRoom) return;
+  if (!currentVoiceRoom) return;
 
   pendingShare = true;
   btnScreen.disabled = true;
@@ -1591,7 +1634,7 @@ btnScreen.addEventListener('click', async () => {
     console.warn('Compartilhamento cancelado ou falhou:', e);
   } finally {
     pendingShare = false;
-    btnScreen.disabled = false;
+    updateVoiceDependentControls();
   }
 });
 
@@ -1673,8 +1716,8 @@ document.addEventListener('keydown', (e) => {
 
 /* ================= CHAT ================= */
 function reloadMessages() {
-  if (!currentRoom) return;
-  socket.emit('get-messages', currentRoom, (rows) => {
+  if (!currentTextRoom) return;
+  socket.emit('get-messages', currentTextRoom, (rows) => {
     messagesEl.innerHTML = '';
     if (!rows || rows.length === 0) {
       const empty = document.createElement('div');
@@ -1714,8 +1757,8 @@ function appendMessage(user, text, own) {
 
 function sendMessage() {
   const text = msgInput.value.trim();
-  if (!text || !currentRoom) return;
-  socket.emit('save-message', { room: currentRoom, user: currentUser, text });
+  if (!text || !currentTextRoom) return;
+  socket.emit('save-message', { room: currentTextRoom, user: currentUser, text });
   appendMessage(currentUser, text, true);
   msgInput.value = '';
 }
@@ -1727,15 +1770,9 @@ socket.on('new-message', (m) => {
   appendMessage(m.user, m.text, m.user === currentUser);
 });
 
-/* ================= SAIR ================= */
-function leaveCall() {
-  if (currentRoom) socket.emit('leave-room', currentRoom);
-  closeAllPeers();
-
-  if (screenStream) {
-    screenStream.getTracks().forEach((t) => t.stop());
-    screenStream = null;
-  }
+/* ================= SAIR DA VOZ ================= */
+// Para microfone, análise de áudio e AudioContext.
+function stopLocalMedia() {
   if (localStream) {
     localStream.getTracks().forEach((t) => t.stop());
     localStream = null;
@@ -1746,43 +1783,57 @@ function leaveCall() {
   speakingStates.clear();
   localAnalyser = null;
   destroyMicProcessing();
-  closeFullscreenView();
 
   if (audioContext) {
     try { audioContext.close(); } catch (e) {}
     audioContext = null;
   }
+}
+
+// Sai só da voz: o canal de texto continua.
+function leaveVoice() {
+  ++joinToken; // cancela uma entrada em voz ainda em andamento
+  if (currentVoiceRoom) socket.emit('leave-voice');
+  closeAllPeers();
+
+  if (screenStream) {
+    screenStream.getTracks().forEach((t) => t.stop());
+    screenStream = null;
+  }
+  stopLocalMedia();
+  closeFullscreenView();
 
   sharingScreen = false;
   camEnabled = false;
-  currentRoom = '';
-  activeChannelEl = null;
+  currentVoiceRoom = '';
   userMap.clear();
   lastUsersSignature = '';
 
-  messagesEl.innerHTML = '';
-  roomStatus.textContent = '';
   audioLevelEl.style.width = '0%';
   audioLabel.textContent = 'Ninguém falando';
 
+  btnScreen.textContent = '🖥️ Tela';
+  btnScreen.classList.remove('danger');
+  btnScreen.classList.add('warn');
   voiceConnection.classList.add('hidden');
-  channelIcon.textContent = '#';
-  channelName.textContent = 'geral';
 
   updateControlButtons();
-  document.querySelectorAll('.channel').forEach((el) => el.classList.remove('active'));
+  updateVoiceDependentControls();
+  updateActiveChannel();
   renderTiles();
   renderMembers();
-  showRoomScreen();
 }
 
-btnHangup.addEventListener('click', leaveCall);
-btnLeaveVoice.addEventListener('click', leaveCall);
+btnHangup.addEventListener('click', leaveVoice);
+btnLeaveVoice.addEventListener('click', leaveVoice);
 
 function logout() {
   if (!window.confirm('Sair da conta?')) return;
   socket.emit('logout');
-  leaveCall();
+  leaveVoice();
+  currentTextRoom = '';
+  messagesEl.innerHTML = '';
+  updateActiveChannel();
   currentUser = '';
   voiceRooms = {};
   myName.textContent = '—';
@@ -1799,7 +1850,6 @@ function logout() {
   regPass2.value = '';
   renderMembers();
   authScreen.style.display = 'flex';
-  roomScreen.style.display = 'none';
 }
 
 if (btnLogout) btnLogout.addEventListener('click', logout);
@@ -1811,6 +1861,7 @@ btnClose.addEventListener('click', () => window.electronAPI.close());
 
 /* ================= INICIALIZAÇÃO ================= */
 updateControlButtons();
+updateVoiceDependentControls();
 updateMyStatusUI();
 resetIdleTimer();
 renderTiles();
