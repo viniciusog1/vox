@@ -5,6 +5,9 @@ const { Server } = require('socket.io');
 const fs = require('fs');
 const os = require('os');
 const crypto = require('crypto');
+const { publicUser, applyStatePatch, joinVoiceRoom, leaveVoiceRoom, canUseTextRoom, socketRoomsToLeave } = require('./room-state');
+const { isTextChannel, isVoiceChannel } = require('./channels');
+const { PROTOCOL_VERSION, VERSION_MISMATCH_MESSAGE, isCompatible } = require('./protocol');
 
 // ---------- Banco simples (arquivos JSON) ----------
 // Em desenvolvimento os dados ficam na pasta do projeto.
@@ -74,12 +77,7 @@ function buildRoomUserList(room, viewerId) {
   if (map) {
     for (const [id, u] of map) {
       if (u.status === 'invisible' && id !== viewerId) continue;
-      list.push({
-        id,
-        username: u.username,
-        muted: !!u.muted,
-        status: u.status || 'online'
-      });
+      list.push(publicUser(id, u));
     }
   }
 
@@ -103,12 +101,7 @@ function buildVoiceRooms(viewerId) {
     const list = [];
     for (const [id, u] of map) {
       if (u.status === 'invisible' && id !== viewerId) continue;
-      list.push({
-        id,
-        username: u.username,
-        muted: !!u.muted,
-        status: u.status || 'online'
-      });
+      list.push(publicUser(id, u));
     }
     if (list.length) result[room] = list;
   }
@@ -152,15 +145,8 @@ purgeOldMessages();
 setInterval(purgeOldMessages, 60 * 60 * 1000);
 
 function removeSocketFromRooms(socketId) {
-  for (const [room, map] of roomUsers) {
-    if (map.has(socketId)) {
-      map.delete(socketId);
-      if (map.size === 0) {
-        roomUsers.delete(room);
-      }
-      broadcastRoomUsers(room);
-    }
-  }
+  const left = leaveVoiceRoom(roomUsers, socketId);
+  if (left) broadcastRoomUsers(left);
   broadcastVoiceRooms();
 }
 
@@ -225,7 +211,8 @@ app.whenReady().then(() => {
   io.on('connection', (socket) => {
     console.log('[SOCKET] Conectado:', socket.id);
 
-    socket.on('register', ({ username, password }, callback) => {
+    socket.on('register', ({ username, password, protocol } = {}, callback) => {
+      if (!isCompatible(protocol)) return callback({ success: false, message: VERSION_MISMATCH_MESSAGE });
       if (!username || !password) return callback({ success: false, message: 'Preencha usuário e senha' });
       if (users[username]) return callback({ success: false, message: 'Usuário já existe' });
 
@@ -234,10 +221,11 @@ app.whenReady().then(() => {
       users[username] = { salt, hash, created_at: new Date().toISOString() };
       saveUsers(users);
       authenticated.set(socket.id, username);
-      callback({ success: true, username });
+      callback({ success: true, username, protocol: PROTOCOL_VERSION });
     });
 
-    socket.on('login', ({ username, password }, callback) => {
+    socket.on('login', ({ username, password, protocol } = {}, callback) => {
+      if (!isCompatible(protocol)) return callback({ success: false, message: VERSION_MISMATCH_MESSAGE });
       const user = users[username];
       if (!user) return callback({ success: false, message: 'Usuário não encontrado' });
 
@@ -245,16 +233,18 @@ app.whenReady().then(() => {
       if (hash !== user.hash) return callback({ success: false, message: 'Senha incorreta' });
 
       authenticated.set(socket.id, username);
-      callback({ success: true, username });
+      callback({ success: true, username, protocol: PROTOCOL_VERSION });
     });
 
     socket.on('logout', (callback) => {
       const username = authenticated.get(socket.id);
       if (username) {
+        // Sai das salas do Socket.io antes dos broadcasts, para não receber mais eventos
+        for (const room of socketRoomsToLeave(socket.data)) socket.leave(room);
         removeSocketFromRooms(socket.id);
         authenticated.delete(socket.id);
-        socket.data.room = null;
-        broadcastVoiceRooms();
+        socket.data.voiceRoom = null;
+        socket.data.textRoom = null;
       }
       if (callback) callback({ success: true });
     });
@@ -267,19 +257,30 @@ app.whenReady().then(() => {
       return true;
     }
 
-    socket.on('join-room', (room) => {
+    socket.on('join-text', (room) => {
       if (!requireAuth()) return;
+      if (!isTextChannel(room)) return;
+      if (socket.data.textRoom) socket.leave(socket.data.textRoom);
+      socket.join(room);
+      socket.data.textRoom = room;
+    });
+
+    socket.on('join-voice', (room) => {
+      if (!requireAuth()) return;
+      if (!isVoiceChannel(room)) return;
       const username = authenticated.get(socket.id);
 
-      socket.join(room);
-      socket.data.room = room;
-
-      if (!roomUsers.has(room)) roomUsers.set(room, new Map());
-      roomUsers.get(room).set(socket.id, {
+      const previous = joinVoiceRoom(roomUsers, socket.id, room, {
         username,
         muted: !!socket.data.muted,
         status: socket.data.status || 'online'
       });
+      if (previous) {
+        socket.leave(previous);
+        if (previous !== room) broadcastRoomUsers(previous);
+      }
+      socket.join(room);
+      socket.data.voiceRoom = room;
 
       if ((socket.data.status || 'online') !== 'invisible') {
         socket.to(room).emit('user-joined', socket.id);
@@ -288,37 +289,34 @@ app.whenReady().then(() => {
       broadcastVoiceRooms();
     });
 
-    socket.on('leave-room', (room) => {
-      socket.leave(room);
-      if (socket.data.room === room) socket.data.room = null;
-      const map = roomUsers.get(room);
-      if (map && map.has(socket.id)) {
-        map.delete(socket.id);
-        if (map.size === 0) roomUsers.delete(room);
-        broadcastRoomUsers(room);
-        broadcastVoiceRooms();
+    socket.on('leave-voice', () => {
+      const left = leaveVoiceRoom(roomUsers, socket.id);
+      socket.data.voiceRoom = null;
+      if (left) {
+        socket.leave(left);
+        broadcastRoomUsers(left);
       }
+      broadcastVoiceRooms();
     });
 
-    socket.on('update-state', ({ muted, status }) => {
+    socket.on('update-state', (patch) => {
       if (!requireAuth()) return;
-      const room = socket.data.room;
-      if (!room) return;
-      const map = roomUsers.get(room);
-      if (!map || !map.has(socket.id)) return;
+      const room = socket.data.voiceRoom;
+      const map = room ? roomUsers.get(room) : null;
+      const entry = map && map.get(socket.id);
 
-      if (typeof muted === 'boolean') {
-        map.get(socket.id).muted = muted;
-        socket.data.muted = muted;
-      }
+      const before = socket.data.status || 'online';
+      // Fora da voz o estado só é espelhado em socket.data
+      const target = entry || {
+        muted: !!socket.data.muted,
+        status: socket.data.status || 'online'
+      };
+      applyStatePatch(target, patch);
+      socket.data.muted = !!target.muted;
+      socket.data.status = target.status || 'online';
+      const after = socket.data.status;
 
-      const allowed = ['online', 'busy', 'away', 'invisible'];
-      const before = map.get(socket.id).status || 'online';
-      if (typeof status === 'string' && allowed.includes(status)) {
-        map.get(socket.id).status = status;
-        socket.data.status = status;
-      }
-      const after = map.get(socket.id).status || 'online';
+      if (!entry) return;
 
       // Ao voltar de invisível, os outros precisam refazer a conexão de mídia
       if (before === 'invisible' && after !== 'invisible') {
@@ -336,6 +334,7 @@ app.whenReady().then(() => {
 
     socket.on('save-message', ({ room, user, text }) => {
       if (!requireAuth()) return;
+      if (!canUseTextRoom(socket.data.textRoom, room)) return;
       purgeOldMessages();
       if (!messages[room]) messages[room] = [];
       const msg = { user, text, created_at: new Date().toISOString() };
@@ -347,14 +346,18 @@ app.whenReady().then(() => {
     });
 
     socket.on('get-messages', (room, callback) => {
-      if (!requireAuth()) { callback([]); return; }
+      if (!requireAuth() || !canUseTextRoom(socket.data.textRoom, room)) { callback([]); return; }
       purgeOldMessages();
       callback(messages[room] || []);
     });
 
     // Apaga apenas as mensagens do próprio usuário em um canal
     socket.on('delete-my-messages', ({ room }, callback) => {
-      if (!requireAuth()) return;
+      if (!requireAuth(callback)) return;
+      if (!canUseTextRoom(socket.data.textRoom, room)) {
+        if (callback) callback({ success: false });
+        return;
+      }
       const username = authenticated.get(socket.id);
       let removed = 0;
 
@@ -372,6 +375,8 @@ app.whenReady().then(() => {
 
     socket.on('disconnect', () => {
       removeSocketFromRooms(socket.id);
+      socket.data.voiceRoom = null;
+      socket.data.textRoom = null;
       authenticated.delete(socket.id);
       console.log('[SOCKET] Desconectado:', socket.id);
     });

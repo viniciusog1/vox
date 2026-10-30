@@ -3,7 +3,6 @@ const socket = io(SERVER_URL);
 
 /* ================= REFERÊNCIAS DOM ================= */
 const authScreen = document.getElementById('auth-screen');
-const roomScreen = document.getElementById('room-screen');
 const sourcePicker = document.getElementById('source-picker');
 
 const loginUser = document.getElementById('login-user');
@@ -21,11 +20,6 @@ const serverUrlInput = document.getElementById('server-url');
 const serverApply = document.getElementById('server-apply');
 const serverStatus = document.getElementById('server-status');
 
-const btnJoin = document.getElementById('btn-join');
-const inputRoom = document.getElementById('input-room');
-const roomStatus = document.getElementById('room-status');
-const roomUserInfo = document.getElementById('room-user-info');
-
 const myAvatar = document.getElementById('my-avatar');
 const myName = document.getElementById('my-name');
 const btnMicMini = document.getElementById('btn-mic-mini');
@@ -35,6 +29,7 @@ const videoGrid = document.getElementById('video-grid');
 const callEmpty = document.getElementById('call-empty');
 const audioLevelEl = document.getElementById('audio-level');
 const audioLabel = document.getElementById('audio-label');
+const audioIndicator = document.getElementById('audio-indicator');
 
 const messagesEl = document.getElementById('messages');
 const msgInput = document.getElementById('msg-input');
@@ -88,9 +83,16 @@ const fullscreenClose = document.getElementById('fullscreen-close');
 const fullscreenNative = document.getElementById('fullscreen-native');
 
 /* ================= ESTADO ================= */
+const { DEFAULT_TEXT_CHANNEL, DEFAULT_VOICE_CHANNEL, isTextChannel, isVoiceChannel } = window.ConcordChannels;
+const { PROTOCOL_VERSION, VERSION_MISMATCH_MESSAGE, isCompatible } = window.ConcordProtocol;
+const NO_VOICE_TEXT = 'Você não está em um canal de voz';
+
 let currentUser = '';
-let currentRoom = '';
-let activeChannelEl = null;
+let currentTextRoom = '';  // sempre preenchido depois do login
+let currentVoiceRoom = ''; // '' = fora de canal de voz
+let voiceLeaves = 0;       // conta as saídas da voz; pedidos de mídia comparam para saber se a voz caiu
+let pendingCam = false;    // pedido de câmera em andamento
+let pendingShare = false;  // pedido de compartilhamento de tela em andamento
 
 let localStream = null;
 let screenStream = null;
@@ -126,6 +128,8 @@ function setPeerVolume(name, vol) {
 const analysers = new Map();      // socketId -> AnalyserNode
 const videoElements = new Map();  // stream.id -> <video> reaproveitado entre renders
 const usedVideoIds = new Set();
+const speakingStates = new Map(); // socketId (inclusive o próprio) -> estado do anel de fala
+let localAnalyser = null;         // { trackId, analyser } do microfone enviado
 
 let audioContext = null;
 let rafId = null;
@@ -146,7 +150,7 @@ let fullscreenMuteTimer = null;
 let shareResolution = localStorage.getItem('concord-share-resolution') || '1080';
 let shareFps = Number(localStorage.getItem('concord-share-fps') || 30) === 60 ? 60 : 30;
 
-let statusMode = 'online'; // online | busy | invisible
+let statusMode = 'online'; // online | away | busy | invisible
 let autoAway = false;
 let idleTimer = null;
 const IDLE_MS = 5 * 60 * 1000;
@@ -213,28 +217,30 @@ function roomDisplayName(room) {
 /* ================= STATUS ================= */
 const STATUS_LABELS = { online: 'Online', busy: 'Ocupado', away: 'Ausente', invisible: 'Invisível' };
 
+const presence = window.ConcordPresence;
+
 function effectiveStatus() {
-  return statusMode === 'online' && autoAway ? 'away' : statusMode;
+  return presence.effectiveStatus(statusMode, autoAway);
 }
 
 function updateMyStatusUI() {
   const s = effectiveStatus();
   myStatusEl.textContent = STATUS_LABELS[s] || 'Online';
   myStatusEl.style.color =
-    s === 'busy' ? 'var(--red)' :
-    s === 'away' ? 'var(--yellow)' :
-    s === 'invisible' ? 'var(--muted)' : 'var(--green)';
+    s === 'busy' ? 'var(--danger-text)' :
+    s === 'away' ? 'var(--warn-text)' :
+    s === 'invisible' ? 'var(--muted)' : 'var(--ok-text)';
   myStatusDot.className = 'status-dot ' + s;
 }
 
 function sendStatus() {
-  socket.emit('update-state', { muted: !micEnabled, status: effectiveStatus() });
+  socket.emit('update-state', { muted: !micEnabled, status: effectiveStatus(), sharing: sharingScreen });
 }
 
 function resetIdleTimer() {
   clearTimeout(idleTimer);
   idleTimer = setTimeout(() => {
-    if (statusMode === 'online') {
+    if (presence.onIdle(statusMode)) {
       autoAway = true;
       updateMyStatusUI();
       sendStatus();
@@ -244,7 +250,7 @@ function resetIdleTimer() {
 
 function markActive() {
   if (autoAway) {
-    autoAway = false;
+    autoAway = presence.onActivity(autoAway);
     updateMyStatusUI();
     sendStatus();
   }
@@ -283,12 +289,24 @@ document.querySelectorAll('#status-menu button').forEach((btn) => {
 /* ================= TELAS ================= */
 function hideOverlays() {
   authScreen.style.display = 'none';
-  roomScreen.style.display = 'none';
 }
 
-function showRoomScreen() {
-  authScreen.style.display = 'none';
-  roomScreen.style.display = 'flex';
+// Login ou cadastro concluído: entra direto em #geral e na Sala Principal, com microfone aberto.
+function enterApp(username) {
+  setMyIdentity(username);
+  micEnabled = true;
+  updateControlButtons();
+  hideOverlays();
+  joinText(DEFAULT_TEXT_CHANNEL);
+  joinVoice(DEFAULT_VOICE_CHANNEL);
+}
+
+// Servidor em outra versão: a resposta de sucesso não traz a mesma versão do protocolo.
+function rejectIfIncompatible(res, errorEl) {
+  if (isCompatible(res.protocol)) return false;
+  errorEl.textContent = VERSION_MISMATCH_MESSAGE;
+  socket.emit('logout', () => {});
+  return true;
 }
 
 /* ================= AUTH ================= */
@@ -316,7 +334,7 @@ function applyServerUrl() {
     new URL(url);
   } catch (e) {
     serverStatus.textContent = 'Endereço inválido.';
-    serverStatus.style.color = 'var(--red)';
+    serverStatus.style.color = 'var(--danger-text)';
     return;
   }
 
@@ -331,20 +349,20 @@ serverUrlInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') apply
 
 socket.on('connect', () => {
   serverStatus.textContent = `Conectado: ${SERVER_URL}`;
-  serverStatus.style.color = 'var(--green)';
+  serverStatus.style.color = 'var(--ok-text)';
 });
 socket.on('connect_error', () => {
   serverStatus.textContent = 'Sem conexão. Confira o endereço do servidor.';
-  serverStatus.style.color = 'var(--red)';
+  serverStatus.style.color = 'var(--danger-text)';
 });
 socket.on('disconnect', () => {
   serverStatus.textContent = 'Desconectado do servidor.';
-  serverStatus.style.color = 'var(--red)';
+  serverStatus.style.color = 'var(--danger-text)';
 });
 
 if (socket.connected) {
   serverStatus.textContent = `Conectado: ${SERVER_URL}`;
-  serverStatus.style.color = 'var(--green)';
+  serverStatus.style.color = 'var(--ok-text)';
 } else {
   serverStatus.textContent = 'Conectando ao servidor...';
   serverStatus.style.color = 'var(--muted)';
@@ -360,12 +378,11 @@ btnRegister.addEventListener('click', () => {
   if (!socket.connected) { errorRegister.textContent = 'Sem conexão com o servidor. Confira o endereço abaixo.'; return; }
 
   btnRegister.disabled = true;
-  socket.emit('register', { username, password }, (res) => {
+  socket.emit('register', { username, password, protocol: PROTOCOL_VERSION }, (res) => {
     btnRegister.disabled = false;
     if (!res.success) { errorRegister.textContent = res.message; return; }
-    setMyIdentity(res.username);
-    roomUserInfo.textContent = `Logado como ${res.username}`;
-    showRoomScreen();
+    if (rejectIfIncompatible(res, errorRegister)) return;
+    enterApp(res.username);
   });
 });
 
@@ -377,12 +394,11 @@ function doLogin() {
   if (!socket.connected) { errorLogin.textContent = 'Sem conexão com o servidor. Confira o endereço abaixo.'; return; }
 
   btnLogin.disabled = true;
-  socket.emit('login', { username, password }, (res) => {
+  socket.emit('login', { username, password, protocol: PROTOCOL_VERSION }, (res) => {
     btnLogin.disabled = false;
     if (!res.success) { errorLogin.textContent = res.message; return; }
-    setMyIdentity(res.username);
-    roomUserInfo.textContent = `Logado como ${res.username}`;
-    showRoomScreen();
+    if (rejectIfIncompatible(res, errorLogin)) return;
+    enterApp(res.username);
   });
 }
 
@@ -391,9 +407,18 @@ loginPass.addEventListener('keydown', (e) => { if (e.key === 'Enter') doLogin();
 regPass2.addEventListener('keydown', (e) => { if (e.key === 'Enter') btnRegister.click(); });
 
 /* ================= MÍDIA LOCAL ================= */
-async function ensureLocalMedia() {
-  if (localStream) return localStream;
+let localMediaPromise = null;
 
+// Cliques rápidos em canais de voz reaproveitam o mesmo pedido de microfone.
+function ensureLocalMedia() {
+  if (localStream) return Promise.resolve(localStream);
+  if (!localMediaPromise) {
+    localMediaPromise = acquireLocalMedia().finally(() => { localMediaPromise = null; });
+  }
+  return localMediaPromise;
+}
+
+async function acquireLocalMedia() {
   const audioBase = {
     echoCancellation: true,
     noiseSuppression: true,
@@ -451,6 +476,20 @@ function updateControlButtons() {
   btnMicMini.textContent = micEnabled ? '🎙️' : '🔇';
   btnMicMini.classList.toggle('off', !micEnabled);
 }
+
+// Câmera, tela e ✕ só funcionam com voz conectada; o microfone continua livre.
+// Cam e Tela também ficam travados enquanto um pedido de câmera/tela está em andamento.
+function updateVoiceDependentControls() {
+  const noVoice = !currentVoiceRoom;
+  [btnCam, btnScreen, btnHangup].forEach((btn) => {
+    if (noVoice) btn.title = 'Entre em um canal de voz';
+    else btn.title = btn.dataset.title || btn.title;
+  });
+  btnCam.disabled = noVoice || pendingCam;
+  btnScreen.disabled = noVoice || pendingShare;
+  btnHangup.disabled = noVoice;
+}
+[btnCam, btnScreen, btnHangup].forEach((btn) => { btn.dataset.title = btn.title; });
 
 /* ================= PEERS (WebRTC) ================= */
 // Transceiver de vídeo já negociado (com mid). No lado que responde à oferta,
@@ -657,39 +696,52 @@ function closeAllPeers() {
   renderTiles();
 }
 
-/* ================= ENTRAR / TROCAR CANAL ================= */
+/* ================= CANAL DE TEXTO ================= */
+// Troca só o chat: não mexe em microfone nem na chamada.
+function joinText(room) {
+  if (!isTextChannel(room) || room === currentTextRoom) return;
+  currentTextRoom = room;
+  socket.emit('join-text', room);
+  channelName.textContent = room;
+  channelIcon.textContent = '#';
+  msgInput.placeholder = `Enviar mensagem em ${roomDisplayName(room)}`;
+  messagesEl.innerHTML = '';
+  reloadMessages();
+  updateActiveChannel();
+}
+
+/* ================= CANAL DE VOZ ================= */
 let joinToken = 0;
 
-async function joinRoom(room) {
-  if (!room) return;
-  if (room === currentRoom) return;
+async function joinVoice(room) {
+  if (!isVoiceChannel(room) || room === currentVoiceRoom) return;
 
   const token = ++joinToken;
   ensureAudioContext();
 
-  if (currentRoom) socket.emit('leave-room', currentRoom);
-
-  closeAllPeers();
-  userMap.clear();
-  lastUsersSignature = '';
-  messagesEl.innerHTML = '';
-  currentRoom = room;
-  channelName.textContent = VOICE_NAMES[room] || room;
-  channelIcon.textContent = room.startsWith('voz-') ? '🔊' : '#';
-  msgInput.placeholder = `Enviar mensagem em ${roomDisplayName(room)}`;
+  // O servidor tira o socket da voz anterior ao receber join-voice; aqui só fecham os peers.
+  if (currentVoiceRoom) {
+    closeAllPeers();
+    userMap.clear();
+    lastUsersSignature = '';
+  }
+  currentVoiceRoom = room;
   voiceConnName.textContent = 'Conectado a ' + roomDisplayName(room);
   voiceConnection.classList.remove('hidden');
+  updateActiveChannel();
+  updateVoiceDependentControls();
 
   await ensureLocalMedia();
-  if (token !== joinToken) return; // outra troca de canal começou
+  if (token !== joinToken) {
+    // Saiu da voz enquanto o microfone abria: não deixa a mídia ligada sem chamada.
+    if (!currentVoiceRoom) stopLocalMedia();
+    return; // outra troca de canal começou
+  }
 
-  socket.emit('join-room', room);
+  socket.emit('join-voice', room);
   sendStatus();
-  reloadMessages();
   updateMonitor();
 
-  updateActiveChannel();
-  hideOverlays();
   renderTiles();
   renderMembers();
   startAudioLoop();
@@ -697,27 +749,16 @@ async function joinRoom(room) {
 
 function updateActiveChannel() {
   document.querySelectorAll('.channel').forEach((el) => {
-    const isText = !el.classList.contains('voice');
-    el.classList.toggle('active', el.dataset.room === currentRoom && (activeChannelEl ? el === activeChannelEl : isText));
+    const current = el.classList.contains('voice') ? currentVoiceRoom : currentTextRoom;
+    el.classList.toggle('active', el.dataset.room === current);
   });
 }
-
-btnJoin.addEventListener('click', () => {
-  const room = (inputRoom.value.trim() || 'geral').toLowerCase().replace(/\s+/g, '-');
-  roomStatus.textContent = 'Entrando...';
-  activeChannelEl = document.querySelector(`.channel[data-room="${room}"]:not(.voice)`) || null;
-  joinRoom(room).then(() => { roomStatus.textContent = ''; });
-});
 
 /* ================= CANAIS ================= */
 document.querySelectorAll('.channel').forEach((el) => {
   el.addEventListener('click', () => {
-    activeChannelEl = el;
-    if (el.dataset.room === currentRoom) {
-      updateActiveChannel();
-      return;
-    }
-    joinRoom(el.dataset.room);
+    if (el.classList.contains('voice')) joinVoice(el.dataset.room);
+    else joinText(el.dataset.room);
   });
 });
 
@@ -809,10 +850,17 @@ socket.on('voice-rooms', (data) => {
 
 function renderMembers() {
   memberList.innerHTML = '';
-  const users = [...userMap.values()];
+  const users = currentVoiceRoom ? [...userMap.values()] : [];
+
+  if (!currentVoiceRoom) {
+    const empty = document.createElement('div');
+    empty.className = 'members-empty';
+    empty.textContent = NO_VOICE_TEXT;
+    memberList.appendChild(empty);
+  }
 
   // Inclui você mesmo, caso o servidor ainda não tenha enviado a lista
-  if (users.length === 0 && currentUser) {
+  if (currentVoiceRoom && users.length === 0 && currentUser) {
     users.push({ id: 'me', username: currentUser, muted: !micEnabled });
   }
 
@@ -872,19 +920,30 @@ function renderMembers() {
     list.forEach((u) => {
       const line = document.createElement('div');
       line.className = 'voice-user';
+      line.dataset.id = u.id;
+      const state = speakingStates.get(u.id);
+      if (state && state.speaking) line.classList.add('speaking');
+      const avatarWrap = document.createElement('div');
+      avatarWrap.className = 'avatar-wrap';
+      avatarWrap.appendChild(makeAvatar(u.username, 'vu-avatar'));
       const dot = document.createElement('span');
-      dot.className = 'status-dot ' + (u.status || 'online');
-      dot.style.width = '8px';
-      dot.style.height = '8px';
-      line.appendChild(dot);
-      line.appendChild(document.createTextNode(u.username));
-      if (u.muted) {
-        const mute = document.createElement('span');
-        mute.textContent = '🔇';
-        mute.style.marginLeft = '4px';
-        mute.style.fontSize = '11px';
-        line.appendChild(mute);
+      dot.className = 'status-dot vu-status-dot ' + (u.status || 'online');
+      avatarWrap.appendChild(dot);
+      line.appendChild(avatarWrap);
+      const name = document.createElement('span');
+      name.className = 'vu-name';
+      name.textContent = u.username;
+      line.appendChild(name);
+      const icons = document.createElement('span');
+      icons.className = 'vu-icons';
+      if (u.muted) icons.appendChild(document.createTextNode('🔇'));
+      if (u.sharing) {
+        const live = document.createElement('span');
+        live.className = 'live-badge';
+        live.textContent = 'AO VIVO';
+        icons.appendChild(live);
       }
+      if (icons.childNodes.length) line.appendChild(icons);
       listEl.appendChild(line);
     });
 
@@ -896,7 +955,16 @@ function renderMembers() {
 function renderTiles() {
   videoGrid.innerHTML = '';
   usedVideoIds.clear();
-  callEmpty.style.display = 'none';
+
+  // Sem voz: área de chamada mostra só o estado vazio
+  callEmpty.style.display = currentVoiceRoom ? 'none' : '';
+  audioIndicator.style.display = currentVoiceRoom ? '' : 'none';
+  if (!currentVoiceRoom) {
+    // Solta os <video> reaproveitados da chamada que acabou
+    videoElements.forEach((video) => { video.srcObject = null; });
+    videoElements.clear();
+    return;
+  }
 
   // Tile local
   const localStreamToShow = sharingScreen
@@ -924,12 +992,12 @@ function renderTiles() {
     const empty = document.createElement('div');
     empty.className = 'tile';
     empty.style.borderStyle = 'dashed';
-    empty.style.background = 'rgba(255,255,255,.02)';
+    empty.style.background = 'color-mix(in srgb, var(--text) 2%, transparent)';
     empty.innerHTML = `
       <div style="display:flex;flex-direction:column;align-items:center;gap:10px;color:var(--muted);padding:20px;text-align:center;">
         <div style="font-size:28px;">👋</div>
         <div style="font-weight:600;color:var(--text);">Aguardando alguém entrar...</div>
-        <div style="font-size:12px;">Compartilhe o canal #${currentRoom} com seus amigos.</div>
+        <div style="font-size:12px;">Compartilhe o canal ${roomDisplayName(currentVoiceRoom)} com seus amigos.</div>
       </div>`;
     videoGrid.appendChild(empty);
   }
@@ -1287,9 +1355,50 @@ function setupAnalyser(id, stream) {
   }
 }
 
+// Analisa a faixa que é enviada aos outros (já com redução de ruído).
+// Refeito quando a faixa muda (troca de microfone ou de modo de ruído).
+function getLocalAnalyser() {
+  const track = getOutboundAudioTracks()[0];
+  if (!track) return null;
+  if (!localAnalyser || localAnalyser.trackId !== track.id) {
+    try {
+      const ctx = ensureAudioContext();
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 256;
+      ctx.createMediaStreamSource(new MediaStream([track])).connect(analyser);
+      localAnalyser = { trackId: track.id, analyser };
+    } catch (e) {
+      console.warn('Não foi possível analisar o microfone:', e);
+      return null;
+    }
+  }
+  return localAnalyser.analyser;
+}
+
+// Anel de "falando" nos avatares do canal de voz atual
+function updateSpeakingRings() {
+  const { levelFromAnalyser, createSpeakingState, updateSpeaking } = window.ConcordSpeaking;
+  const now = performance.now();
+  const levels = new Map();
+  analysers.forEach((analyser, id) => levels.set(id, levelFromAnalyser(analyser)));
+  const mine = micEnabled ? getLocalAnalyser() : null;
+  levels.set(socket.id, mine ? levelFromAnalyser(mine) : 0);
+
+  levels.forEach((level, id) => {
+    let state = speakingStates.get(id);
+    if (!state) { state = createSpeakingState(); speakingStates.set(id, state); }
+    const was = state.speaking;
+    if (updateSpeaking(state, level, now) === was) return;
+    document.querySelectorAll(`.voice-user[data-id="${CSS.escape(id)}"]`)
+      .forEach((el) => el.classList.toggle('speaking', state.speaking));
+  });
+  speakingStates.forEach((_, id) => { if (!levels.has(id)) speakingStates.delete(id); });
+}
+
 function startAudioLoop() {
   if (rafId) return;
   const loop = () => {
+    if (currentVoiceRoom) updateSpeakingRings();
     if (analysers.size === 0) {
       audioLevelEl.style.width = '0%';
       audioLabel.textContent = 'Ninguém falando';
@@ -1310,6 +1419,63 @@ function startAudioLoop() {
     rafId = requestAnimationFrame(loop);
   };
   loop();
+}
+
+/* ================= TEMAS ================= */
+const themeGrid = document.getElementById('theme-grid');
+let themeStorage = null;
+try { themeStorage = window.localStorage; } catch (e) {}
+
+function buildThemeOption(theme, currentId) {
+  const { themeCssVars, applyTheme, saveThemeId } = window.ConcordThemes;
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'theme-option' + (theme.id === currentId ? ' selected' : '');
+  btn.dataset.themeId = theme.id;
+  btn.setAttribute('aria-pressed', String(theme.id === currentId));
+
+  const thumb = document.createElement('div');
+  thumb.className = 'theme-thumb';
+  const vars = themeCssVars(theme);
+  Object.keys(vars).forEach((k) => thumb.style.setProperty(k, vars[k]));
+  thumb.innerHTML = `
+    <div class="tt-rail"></div>
+    <div class="tt-chs"><div class="tt-ch"></div><div class="tt-ch on"></div><div class="tt-ch"></div></div>
+    <div class="tt-main"><div class="tt-line"></div><div class="tt-line link"></div><div class="tt-btn"></div></div>`;
+  btn.appendChild(thumb);
+
+  const name = document.createElement('span');
+  name.className = 'theme-name';
+  name.textContent = theme.name;
+  btn.appendChild(name);
+
+  btn.addEventListener('click', () => {
+    const applied = applyTheme(theme.id);
+    saveThemeId(themeStorage, applied);
+    themeGrid.querySelectorAll('.theme-option').forEach((el) => {
+      const on = el.dataset.themeId === applied;
+      el.classList.toggle('selected', on);
+      el.setAttribute('aria-pressed', String(on));
+    });
+  });
+  return btn;
+}
+
+function renderThemePicker() {
+  if (!themeGrid || !window.ConcordThemes) return;
+  const currentId = document.documentElement.dataset.theme || window.ConcordThemes.DEFAULT_THEME_ID;
+  themeGrid.innerHTML = '';
+  [['dark', 'Escuros'], ['light', 'Claros']].forEach(([kind, label]) => {
+    const title = document.createElement('div');
+    title.className = 'theme-group-title';
+    title.textContent = label;
+    const row = document.createElement('div');
+    row.className = 'theme-row';
+    row.dataset.kind = kind;
+    window.ConcordThemes.THEMES.filter((t) => t.kind === kind)
+      .forEach((t) => row.appendChild(buildThemeOption(t, currentId)));
+    themeGrid.append(title, row);
+  });
 }
 
 /* ================= DISPOSITIVOS DE ÁUDIO ================= */
@@ -1353,6 +1519,9 @@ async function refreshDevices() {
 
 async function changeInputDevice(id) {
   settingsError.textContent = '';
+  // Fora da voz só a preferência é gravada; ela vale na próxima entrada em voz.
+  if (!currentVoiceRoom) return;
+  const leaves = voiceLeaves;
   try {
     const constraints = { audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: false, channelCount: 1 } };
     if (id) constraints.audio.deviceId = { exact: id };
@@ -1360,6 +1529,10 @@ async function changeInputDevice(id) {
     const newStream = await navigator.mediaDevices.getUserMedia(constraints);
     const newTrack = newStream.getAudioTracks()[0];
     if (!newTrack) return;
+    if (leaves !== voiceLeaves || !currentVoiceRoom) {
+      newStream.getTracks().forEach((t) => t.stop()); // saiu da voz enquanto o microfone abria
+      return;
+    }
 
     if (localStream) {
       localStream.getAudioTracks().forEach((t) => {
@@ -1418,6 +1591,7 @@ function updateMonitor() {
 btnSettings.addEventListener('click', async () => {
   statusMenu.classList.add('hidden');
   settingsError.textContent = '';
+  renderThemePicker();
   settingsModal.classList.remove('hidden');
   monitorToggle.checked = monitorEnabled;
   applyNoiseSuppressionUI();
@@ -1473,13 +1647,13 @@ if (noiseGateLevel) {
 applyNoiseSuppressionUI();
 
 clearMyMessages.addEventListener('click', () => {
-  if (!currentRoom) {
+  if (!currentTextRoom) {
     settingsError.textContent = 'Entre em um canal primeiro.';
     return;
   }
   if (!window.confirm('Apagar todas as suas mensagens deste canal?')) return;
 
-  socket.emit('delete-my-messages', { room: currentRoom }, (res) => {
+  socket.emit('delete-my-messages', { room: currentTextRoom }, (res) => {
     if (res && res.success) {
       settingsError.textContent = `${res.count} mensagem(ns) apagada(s).`;
     }
@@ -1502,11 +1676,23 @@ btnMic.addEventListener('click', toggleMic);
 btnMicMini.addEventListener('click', toggleMic);
 
 async function enableCamera() {
+  const leaves = voiceLeaves;
+  // Saiu da voz enquanto a câmera abria: desliga o que chegou.
+  const voiceGone = (stream) => {
+    if (leaves === voiceLeaves && currentVoiceRoom && localStream) return false;
+    stream.getTracks().forEach((t) => t.stop());
+    return true;
+  };
+
   if (!localStream) {
     try {
       const camOnly = await navigator.mediaDevices.getUserMedia({
         video: { width: 1280, height: 720, frameRate: 30 }
       });
+      if (leaves !== voiceLeaves || !currentVoiceRoom || localStream) {
+        camOnly.getTracks().forEach((t) => t.stop());
+        return false;
+      }
       localStream = new MediaStream([camOnly.getVideoTracks()[0]]);
     } catch (e) {
       console.warn('Não foi possível acessar a câmera:', e);
@@ -1524,6 +1710,7 @@ async function enableCamera() {
     const camStream = await navigator.mediaDevices.getUserMedia({
       video: { width: 1280, height: 720, frameRate: 30 }
     });
+    if (voiceGone(camStream)) return false;
     const track = camStream.getVideoTracks()[0];
     if (!track) return false;
 
@@ -1561,7 +1748,9 @@ function disableCamera() {
 }
 
 btnCam.addEventListener('click', async () => {
-  btnCam.disabled = true;
+  if (!currentVoiceRoom || pendingCam) return;
+  pendingCam = true;
+  updateVoiceDependentControls();
   try {
     if (camEnabled) {
       camEnabled = false;
@@ -1570,14 +1759,14 @@ btnCam.addEventListener('click', async () => {
       camEnabled = await enableCamera();
     }
   } finally {
-    btnCam.disabled = false;
+    pendingCam = false;
+    updateVoiceDependentControls();
     updateControlButtons();
     renderTiles();
   }
 });
 
 /* ================= COMPARTILHAMENTO DE TELA ================= */
-let pendingShare = false;
 
 const SHARE_RESOLUTIONS = {
   '480': { width: 854, height: 480 },
@@ -1617,21 +1806,28 @@ applyShareQualityUI();
 
 btnScreen.addEventListener('click', async () => {
   if (sharingScreen) { stopScreenShare(); return; }
-  if (!currentRoom) return;
+  if (!currentVoiceRoom || pendingShare) return;
 
   pendingShare = true;
-  btnScreen.disabled = true;
+  updateVoiceDependentControls();
+  const leaves = voiceLeaves;
 
   try {
     ensureAudioContext();
-    screenStream = await navigator.mediaDevices.getDisplayMedia({
+    const stream = await navigator.mediaDevices.getDisplayMedia({
       video: currentShareVideoConstraints(),
       audio: false
     });
+    if (leaves !== voiceLeaves || !currentVoiceRoom) {
+      stream.getTracks().forEach((t) => t.stop()); // saiu da voz antes de escolher a tela
+      return;
+    }
+    screenStream = stream;
 
     const screenTrack = screenStream.getVideoTracks()[0];
     screenTrack.contentHint = shareFps === 60 ? 'motion' : 'detail';
     sharingScreen = true;
+    sendStatus();
     replaceVideoTrackEverywhere(screenTrack, screenStream);
     renderTiles();
 
@@ -1644,7 +1840,7 @@ btnScreen.addEventListener('click', async () => {
     console.warn('Compartilhamento cancelado ou falhou:', e);
   } finally {
     pendingShare = false;
-    btnScreen.disabled = false;
+    updateVoiceDependentControls();
   }
 });
 
@@ -1665,6 +1861,7 @@ function stopScreenShare() {
     screenStream = null;
   }
   sharingScreen = false;
+  sendStatus();
 
   const camTrack = localStream ? localStream.getVideoTracks()[0] : null;
   replaceVideoTrackEverywhere(camTrack || null, localStream);
@@ -1677,7 +1874,8 @@ function stopScreenShare() {
 
 /* ================= SELETOR DE TELA ================= */
 window.electronAPI.onDisplaySources((sources) => {
-  if (!pendingShare) return;
+  // Pedido abandonado (saiu da voz antes do seletor abrir): libera o pedido no processo principal.
+  if (!pendingShare) { window.electronAPI.cancelDisplaySource(); return; }
   sourceList.innerHTML = '';
 
   if (!sources.length) {
@@ -1726,8 +1924,8 @@ document.addEventListener('keydown', (e) => {
 
 /* ================= CHAT ================= */
 function reloadMessages() {
-  if (!currentRoom) return;
-  socket.emit('get-messages', currentRoom, (rows) => {
+  if (!currentTextRoom) return;
+  socket.emit('get-messages', currentTextRoom, (rows) => {
     messagesEl.innerHTML = '';
     if (!rows || rows.length === 0) {
       const empty = document.createElement('div');
@@ -1767,8 +1965,8 @@ function appendMessage(user, text, own) {
 
 function sendMessage() {
   const text = msgInput.value.trim();
-  if (!text || !currentRoom) return;
-  socket.emit('save-message', { room: currentRoom, user: currentUser, text });
+  if (!text || !currentTextRoom) return;
+  socket.emit('save-message', { room: currentTextRoom, user: currentUser, text });
   appendMessage(currentUser, text, true);
   msgInput.value = '';
 }
@@ -1780,15 +1978,9 @@ socket.on('new-message', (m) => {
   appendMessage(m.user, m.text, m.user === currentUser);
 });
 
-/* ================= SAIR ================= */
-function leaveCall() {
-  if (currentRoom) socket.emit('leave-room', currentRoom);
-  closeAllPeers();
-
-  if (screenStream) {
-    screenStream.getTracks().forEach((t) => t.stop());
-    screenStream = null;
-  }
+/* ================= SAIR DA VOZ ================= */
+// Para microfone, análise de áudio e AudioContext.
+function stopLocalMedia() {
   if (localStream) {
     localStream.getTracks().forEach((t) => t.stop());
     localStream = null;
@@ -1796,44 +1988,68 @@ function leaveCall() {
   if (monitorAudio) monitorAudio.srcObject = null;
   if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
   analysers.clear();
+  speakingStates.clear();
+  localAnalyser = null;
   destroyMicProcessing();
-  closeFullscreenView();
 
   if (audioContext) {
     try { audioContext.close(); } catch (e) {}
     audioContext = null;
   }
+}
+
+// Sai só da voz: o canal de texto continua.
+function leaveVoice() {
+  ++joinToken; // cancela uma entrada em voz ainda em andamento
+  ++voiceLeaves; // pedidos de câmera/tela/microfone em andamento descartam o que chegar
+
+  // Seletor de tela aberto ou por abrir: cancela o pedido
+  if (pendingShare) {
+    pendingShare = false;
+    sourcePicker.classList.add('hidden');
+    window.electronAPI.cancelDisplaySource();
+  }
+  if (currentVoiceRoom) socket.emit('leave-voice');
+  closeAllPeers();
+
+  if (screenStream) {
+    screenStream.getTracks().forEach((t) => t.stop());
+    screenStream = null;
+  }
+  stopLocalMedia();
+  closeFullscreenView();
 
   sharingScreen = false;
   camEnabled = false;
-  currentRoom = '';
-  activeChannelEl = null;
+  currentVoiceRoom = '';
   userMap.clear();
   lastUsersSignature = '';
 
-  messagesEl.innerHTML = '';
-  roomStatus.textContent = '';
   audioLevelEl.style.width = '0%';
   audioLabel.textContent = 'Ninguém falando';
 
+  btnScreen.textContent = '🖥️ Tela';
+  btnScreen.classList.remove('danger');
+  btnScreen.classList.add('warn');
   voiceConnection.classList.add('hidden');
-  channelIcon.textContent = '#';
-  channelName.textContent = 'geral';
 
   updateControlButtons();
-  document.querySelectorAll('.channel').forEach((el) => el.classList.remove('active'));
+  updateVoiceDependentControls();
+  updateActiveChannel();
   renderTiles();
   renderMembers();
-  showRoomScreen();
 }
 
-btnHangup.addEventListener('click', leaveCall);
-btnLeaveVoice.addEventListener('click', leaveCall);
+btnHangup.addEventListener('click', leaveVoice);
+btnLeaveVoice.addEventListener('click', leaveVoice);
 
 function logout() {
   if (!window.confirm('Sair da conta?')) return;
   socket.emit('logout');
-  leaveCall();
+  leaveVoice();
+  currentTextRoom = '';
+  messagesEl.innerHTML = '';
+  updateActiveChannel();
   currentUser = '';
   voiceRooms = {};
   myName.textContent = '—';
@@ -1850,7 +2066,6 @@ function logout() {
   regPass2.value = '';
   renderMembers();
   authScreen.style.display = 'flex';
-  roomScreen.style.display = 'none';
 }
 
 if (btnLogout) btnLogout.addEventListener('click', logout);
@@ -1927,6 +2142,7 @@ document.addEventListener('keydown', (e) => {
 
 /* ================= INICIALIZAÇÃO ================= */
 updateControlButtons();
+updateVoiceDependentControls();
 updateMyStatusUI();
 resetIdleTimer();
 renderTiles();

@@ -4,21 +4,18 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Concord</title>
+<script src="themes.js"></script>
 <style>
   :root {
-    --bg: #0d0f13;
-    --bg-2: #141821;
-    --bg-3: #1b202b;
-    --panel: #1f2530;
-    --border: #2a3140;
-    --text: #e9ecf1;
-    --muted: #8b95a7;
-    --accent: #5865f2;
-    --accent-2: #4752c4;
-    --green: #3ba55d;
-    --red: #ed4245;
-    --yellow: #faa61a;
     --radius: 10px;
+    --bottom-bar-h: 64px; /* painel do usuário e barra de mensagem alinhados */
+    /* Cores vêm de themes.js; aqui só derivados dos tokens do tema */
+    --panel: color-mix(in srgb, var(--bg-3) 85%, var(--border));
+    --control: color-mix(in srgb, var(--border) 90%, var(--text));
+    --control-hover: color-mix(in srgb, var(--border) 80%, var(--text));
+    --accent-2: color-mix(in srgb, var(--accent) 85%, #000);
+    --accent-soft: color-mix(in srgb, var(--accent) 18%, transparent);
+    --danger-hover: color-mix(in srgb, var(--danger-bg) 85%, #000);
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body {
@@ -29,8 +26,8 @@
   button { font-family: inherit; }
   ::-webkit-scrollbar { width: 8px; }
   ::-webkit-scrollbar-track { background: transparent; }
-  ::-webkit-scrollbar-thumb { background: #3a4253; border-radius: 4px; }
-  ::-webkit-scrollbar-thumb:hover { background: #4a5468; }
+  ::-webkit-scrollbar-thumb { background: var(--control); border-radius: 4px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--control-hover); }
 
   /* ================= APP GRID ================= */
   #app {
@@ -43,7 +40,7 @@
 
   /* ================= RAIL DE SERVIDORES ================= */
   #server-rail {
-    background: #0a0c10;
+    background: var(--rail);
     border-right: 1px solid var(--border);
     display: flex; flex-direction: column; align-items: center;
     padding: 12px 0; gap: 10px; overflow: hidden;
@@ -56,7 +53,7 @@
     color: var(--text);
   }
   .rail-btn:hover { border-radius: 12px; background: var(--accent); }
-  .rail-btn.active { border-radius: 12px; background: var(--accent); }
+  .rail-btn.active { border-radius: 12px; background: var(--accent); box-shadow: var(--glow); }
   .rail-sep { width: 32px; height: 2px; background: var(--border); border-radius: 1px; margin: 2px 0; }
 
   /* ================= COLUNA DE CANAIS ================= */
@@ -86,41 +83,51 @@
     transition: background .12s ease, color .12s ease;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
-  .channel:hover { background: rgba(255,255,255,.05); color: var(--text); }
-  .channel.active { background: rgba(88,101,242,.18); color: #fff; }
+  .channel:hover { background: color-mix(in srgb, var(--text) 5%, transparent); color: var(--text); }
+  .channel.active { background: var(--accent-soft); color: var(--text); box-shadow: var(--glow-soft); }
   .channel .hash { color: var(--muted); font-weight: 600; width: 16px; text-align: center; }
   .channel.voice .voice-icon { width: 16px; text-align: center; }
 
-  .voice-users { padding: 2px 0 6px 26px; }
+  .voice-users { padding: 2px 0 6px 22px; }
   .voice-user {
-    display: flex; align-items: center; gap: 6px;
-    font-size: 12.5px; color: var(--muted); padding: 3px 0;
+    display: flex; align-items: center; gap: 8px; min-width: 0;
+    font-size: 13px; color: var(--text-2); padding: 3px 6px; border-radius: 5px;
+  }
+  .voice-user:hover { background: color-mix(in srgb, var(--text) 5%, transparent); }
+  .voice-user .vu-avatar { width: 24px; height: 24px; font-size: 10px; flex-shrink: 0; transition: box-shadow .12s ease; }
+  .voice-user.speaking .vu-avatar { box-shadow: 0 0 0 2px var(--bg-2), 0 0 0 4px var(--speak); }
+  .voice-user .vu-status-dot { position: absolute; right: -3px; bottom: -3px; width: 9px; height: 9px; border: 2px solid var(--bg-2); box-sizing: content-box; }
+  .voice-user .vu-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .voice-user .vu-icons { margin-left: auto; display: flex; align-items: center; gap: 4px; font-size: 11px; flex-shrink: 0; }
+  .live-badge {
+    background: var(--danger-bg); color: #fff; font-size: 9px; font-weight: 800;
+    letter-spacing: .4px; padding: 1px 5px; border-radius: 4px;
   }
   .voice-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); box-shadow: 0 0 6px var(--green); }
-  .voice-user .bot-tag { font-size: 10px; color: #c9b6ff; }
+  .voice-user .bot-tag { font-size: 10px; color: var(--link); }
 
   #voice-connection {
-    margin: 6px 8px 10px; padding: 8px 10px;
-    background: rgba(59,165,93,.1); border: 1px solid rgba(59,165,93,.35);
+    flex-shrink: 0; margin: 0 8px 8px; padding: 8px 10px;
+    background: color-mix(in srgb, var(--green) 10%, transparent); border: 1px solid color-mix(in srgb, var(--green) 35%, transparent);
     border-radius: 8px; display: flex; align-items: center; justify-content: space-between; gap: 8px;
   }
   #voice-connection .vc-info {
-    font-size: 12px; color: var(--green); overflow: hidden;
+    font-size: 12px; color: var(--ok-text); overflow: hidden;
     text-overflow: ellipsis; white-space: nowrap; min-width: 0;
   }
   #voice-connection button {
-    border: none; background: var(--red); color: #fff; font-size: 11px; font-weight: 700;
+    border: none; background: var(--danger-bg); color: #fff; font-size: 11px; font-weight: 700;
     padding: 5px 10px; border-radius: 6px; cursor: pointer; flex-shrink: 0;
   }
-  #voice-connection button:hover { background: #c13335; }
+  #voice-connection button:hover { background: var(--danger-hover); }
 
   #user-panel {
-    flex-shrink: 0; height: 56px; position: relative;
+    flex-shrink: 0; height: var(--bottom-bar-h); position: relative;
     display: flex; align-items: center; gap: 8px;
-    padding: 0 12px; background: #0f131a; border-top: 1px solid var(--border);
+    padding: 0 12px; background: var(--rail); border-top: 1px solid var(--border);
   }
   .avatar-wrap { position: relative; flex-shrink: 0; }
-  #my-status-dot { position: absolute; right: -3px; bottom: -3px; border: 2px solid #0f131a; }
+  #my-status-dot { position: absolute; right: -3px; bottom: -3px; border: 2px solid var(--rail); }
   .status-dot {
     width: 10px; height: 10px; border-radius: 50%;
     display: inline-block; flex-shrink: 0;
@@ -128,7 +135,7 @@
   .status-dot.online { background: var(--green); }
   .status-dot.busy { background: var(--red); }
   .status-dot.away { background: var(--yellow); }
-  .status-dot.invisible { background: #747f8d; }
+  .status-dot.invisible { background: var(--gray); }
   #btn-status {
     background: transparent; border: none; text-align: left;
     cursor: pointer; padding: 0; color: inherit; min-width: 0; flex: 1;
@@ -146,7 +153,7 @@
     color: var(--text); cursor: pointer; border-radius: 6px;
     font-size: 13px; text-align: left;
   }
-  #status-menu button:hover { background: rgba(255,255,255,.06); }
+  #status-menu button:hover { background: color-mix(in srgb, var(--text) 6%, transparent); }
   .popover-hint {
     font-size: 11px; color: var(--muted); padding: 8px 10px 4px; line-height: 1.4;
   }
@@ -163,7 +170,7 @@
     background: transparent; color: var(--muted); cursor: pointer; font-size: 15px;
     display: flex; align-items: center; justify-content: center;
   }
-  .mini-btn:hover { background: rgba(255,255,255,.07); color: var(--text); }
+  .mini-btn:hover { background: color-mix(in srgb, var(--text) 7%, transparent); color: var(--text); }
   .mini-btn.off { color: var(--red); }
 
   /* ================= MAIN ================= */
@@ -187,27 +194,28 @@
     display: flex; align-items: center; gap: 6px;
     transition: background .12s ease, opacity .12s ease;
   }
-  .ctrl.primary { background: var(--accent); }
+  .ctrl.primary { background: var(--accent); color: var(--on-accent); box-shadow: var(--glow); }
   .ctrl.primary:hover { background: var(--accent-2); }
-  .ctrl.danger { background: var(--red); }
-  .ctrl.danger:hover { background: #c13335; }
-  .ctrl.warn { background: var(--yellow); color: #1a1a1a; }
-  .ctrl.warn:hover { background: #d48e0d; }
-  .ctrl.off { background: #3a4253; color: var(--muted); }
+  .ctrl.danger { background: var(--danger-bg); }
+  .ctrl.danger:hover { background: var(--danger-hover); }
+  .ctrl.warn { background: var(--yellow); color: #000; }
+  .ctrl.warn:hover { background: color-mix(in srgb, var(--yellow) 85%, #000); }
+  .ctrl.off { background: var(--control); color: var(--muted); }
+  .ctrl:disabled { opacity: .4; cursor: not-allowed; box-shadow: none; }
   .win-controls { display: flex; gap: 4px; margin-left: 10px; }
   .win-controls button {
     width: 30px; height: 30px; border-radius: 50%; border: none;
     background: transparent; color: var(--muted); cursor: pointer; font-size: 13px;
   }
-  .win-controls button:hover { background: rgba(255,255,255,.08); color: var(--text); }
-  #btn-close:hover { background: var(--red); color: #fff; }
+  .win-controls button:hover { background: color-mix(in srgb, var(--text) 8%, transparent); color: var(--text); }
+  #btn-close:hover { background: var(--danger-bg); color: #fff; }
 
   /* ================= CALL AREA ================= */
   #call-area {
     flex: 0 0 42%; min-height: 0;
     position: relative; overflow: hidden;
     border-bottom: 1px solid var(--border);
-    background: radial-gradient(circle at 50% 40%, #151b27 0%, #0b0e13 75%);
+    background: radial-gradient(circle at 50% 40%, var(--bg-2) 0%, var(--bg) 75%);
   }
   #video-grid {
     display: grid; gap: 12px; padding: 14px;
@@ -215,7 +223,7 @@
     align-content: center; width: 100%; height: 100%;
   }
   .tile {
-    position: relative; background: #05070a; border-radius: 12px;
+    position: relative; background: var(--rail); border-radius: 12px;
     border: 1px solid var(--border); overflow: hidden; min-height: 160px;
     display: flex; align-items: center; justify-content: center;
   }
@@ -229,7 +237,7 @@
   }
   .tile-badge {
     position: absolute; top: 10px; left: 10px;
-    background: var(--yellow); color: #111; padding: 3px 8px;
+    background: var(--yellow); color: #000; padding: 3px 8px;
     border-radius: 6px; font-size: 11px; font-weight: 800;
   }
   .tile-actions {
@@ -262,26 +270,26 @@
   #fullscreen-topbar .fullscreen-actions { pointer-events: auto; display: flex; gap: 8px; }
   .fullscreen-actions button {
     width: 36px; height: 36px; border: none; border-radius: 8px;
-    background: rgba(255,255,255,.14); color: #fff; font-size: 16px; cursor: pointer;
+    background: color-mix(in srgb, #fff 14%, transparent); color: #fff; font-size: 16px; cursor: pointer;
   }
-  .fullscreen-actions button:hover { background: rgba(255,255,255,.26); }
+  .fullscreen-actions button:hover { background: color-mix(in srgb, #fff 26%, transparent); }
   #noise-gate-level { width: 100%; accent-color: var(--accent); }
   #call-empty {
     position: absolute; inset: 0;
     display: flex; flex-direction: column; align-items: center; justify-content: center;
     gap: 12px; pointer-events: none;
   }
-  #call-empty .avatar { width: 72px; height: 72px; font-size: 28px; box-shadow: 0 0 0 4px rgba(88,101,242,.25); }
+  #call-empty .avatar { width: 72px; height: 72px; font-size: 28px; box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 25%, transparent); }
   #call-empty h3 { font-size: 18px; }
   #call-empty p { font-size: 13px; color: var(--muted); }
   #audio-indicator {
     position: absolute; left: 14px; bottom: 14px; z-index: 5;
     display: flex; align-items: center; gap: 8px;
-    background: rgba(10,12,16,.7); border: 1px solid var(--border);
+    background: color-mix(in srgb, var(--bg) 70%, transparent); border: 1px solid var(--border);
     padding: 6px 12px; border-radius: 20px; font-size: 12px;
     backdrop-filter: blur(6px);
   }
-  #audio-bar { width: 44px; height: 6px; background: #333b4a; border-radius: 3px; overflow: hidden; }
+  #audio-bar { width: 44px; height: 6px; background: var(--control); border-radius: 3px; overflow: hidden; }
   #audio-level { width: 0%; height: 100%; background: var(--green); transition: width .08s linear; }
   #audio-label { color: var(--muted); }
 
@@ -295,22 +303,22 @@
   .msg-row.own { margin-left: auto; flex-direction: row-reverse; }
   .msg-row .avatar { width: 34px; height: 34px; font-size: 13px; }
   .msg-body { background: var(--bg-3); border: 1px solid var(--border); border-radius: 12px; padding: 8px 12px; }
-  .msg-row.own .msg-body { background: rgba(88,101,242,.18); border-color: rgba(88,101,242,.35); }
+  .msg-row.own .msg-body { background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 35%, transparent); }
   .msg-user { font-size: 11px; font-weight: 700; color: var(--muted); margin-bottom: 3px; text-transform: uppercase; letter-spacing: .3px; }
   .msg-text { font-size: 14px; line-height: 1.45; word-break: break-word; }
   .chat-input-row {
-    flex-shrink: 0; display: flex; gap: 10px; align-items: center;
-    padding: 12px 20px; border-top: 1px solid var(--border); background: var(--bg-2);
+    flex-shrink: 0; display: flex; gap: 10px; align-items: center; height: var(--bottom-bar-h);
+    padding: 0 20px; border-top: 1px solid var(--border); background: var(--bg-2);
   }
   #msg-input {
     flex: 1; min-width: 0; height: 42px; padding: 0 14px;
     border-radius: 10px; border: 1px solid var(--border);
     background: var(--bg); color: var(--text); font-size: 14px; outline: none;
   }
-  #msg-input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(88,101,242,.15); }
+  #msg-input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 15%, transparent); }
   #send-btn {
     height: 42px; padding: 0 20px; border: none; border-radius: 10px;
-    background: var(--accent); color: #fff; font-weight: 700; cursor: pointer;
+    background: var(--accent); color: var(--on-accent); font-weight: 700; cursor: pointer;
   }
   #send-btn:hover { background: var(--accent-2); }
 
@@ -327,28 +335,28 @@
     display: flex; align-items: center; gap: 10px;
     padding: 6px 8px; border-radius: 8px;
   }
-  .member:hover { background: rgba(255,255,255,.04); }
+  .member:hover { background: color-mix(in srgb, var(--text) 4%, transparent); }
   .member .avatar { width: 30px; height: 30px; font-size: 12px; }
   .member-name {
     flex: 1; min-width: 0; font-size: 13px; overflow: hidden;
     text-overflow: ellipsis; white-space: nowrap;
     display: flex; align-items: center;
   }
+  .members-empty { color: var(--muted); font-size: 12px; padding: 6px 8px; }
   .member .you { color: var(--muted); font-size: 11px; font-weight: 400; }
   .member .muted-icon { color: var(--red); font-size: 12px; }
   .member .speaking { color: var(--green); font-size: 12px; }
-  .member.bot .member-name { color: #c9b6ff; font-style: italic; }
+  .member.bot .member-name { color: var(--link); font-style: italic; }
 
   /* ================= OVERLAYS ================= */
-  #auth-screen, #room-screen {
+  #auth-screen {
     position: fixed; inset: 0; z-index: 100;
     display: flex; align-items: center; justify-content: center;
     background:
-      radial-gradient(circle at 20% 20%, rgba(88,101,242,.22), transparent 45%),
-      radial-gradient(circle at 80% 80%, rgba(59,165,93,.12), transparent 40%),
+      radial-gradient(circle at 20% 20%, color-mix(in srgb, var(--accent) 22%, transparent), transparent 45%),
+      radial-gradient(circle at 80% 80%, color-mix(in srgb, var(--green) 12%, transparent), transparent 40%),
       var(--bg);
   }
-  #room-screen { display: none; }
   .overlay-card {
     width: 400px; background: var(--bg-2); border: 1px solid var(--border);
     border-radius: 16px; padding: 34px 38px;
@@ -378,16 +386,15 @@
     border: 1px solid var(--border); background: var(--bg); color: var(--text);
     font-size: 14px; outline: none;
   }
-  .field input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(88,101,242,.15); }
+  .field input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 15%, transparent); }
   .submit-btn {
     width: 100%; height: 44px; border: none; border-radius: 8px;
-    background: var(--accent); color: #fff; font-size: 15px; font-weight: 700; cursor: pointer;
+    background: var(--accent); color: var(--on-accent); font-size: 15px; font-weight: 700; cursor: pointer;
     transition: background .12s ease;
   }
   .submit-btn:hover { background: var(--accent-2); }
   .submit-btn:disabled { opacity: .6; cursor: not-allowed; }
   .auth-error { color: var(--red); font-size: 12px; min-height: 16px; margin-bottom: 8px; }
-  #room-status { color: var(--muted); font-size: 13px; text-align: center; margin-top: 14px; min-height: 18px; }
 
   /* ================= SERVIDOR ================= */
   .server-box { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); }
@@ -401,25 +408,53 @@
   .server-row input:focus { border-color: var(--accent); }
   .server-row button {
     height: 36px; padding: 0 12px; border: none; border-radius: 8px;
-    background: #3a4253; color: var(--text); font-size: 12px; font-weight: 700; cursor: pointer;
+    background: var(--control); color: var(--text); font-size: 12px; font-weight: 700; cursor: pointer;
   }
-  .server-row button:hover { background: #465063; }
+  .server-row button:hover { background: var(--control-hover); }
   .server-status { font-size: 11px; color: var(--muted); margin-top: 6px; min-height: 14px; }
   .server-hint { font-size: 10px; color: var(--muted); margin-top: 4px; line-height: 1.4; }
 
   /* ================= CONFIGURAÇÕES DE ÁUDIO ================= */
   #settings-modal {
     position: fixed; inset: 0; z-index: 150;
-    background: rgba(5,7,10,.78); backdrop-filter: blur(4px);
+    background: rgba(0,0,0,.6); backdrop-filter: blur(4px);
     display: flex; align-items: center; justify-content: center;
   }
   #settings-modal.hidden { display: none; }
   .settings-card {
-    width: 460px; max-width: 92vw; background: var(--bg-2);
+    width: 560px; max-width: 92vw; max-height: 88vh; overflow-y: auto; background: var(--bg-2);
     border: 1px solid var(--border); border-radius: 16px;
     padding: 26px 28px; box-shadow: 0 24px 60px rgba(0,0,0,.55);
   }
   .settings-card h3 { font-size: 18px; margin-bottom: 18px; }
+  .settings-card .settings-section {
+    font-size: 12px; font-weight: 700; letter-spacing: .6px; text-transform: uppercase;
+    color: var(--muted); margin: 4px 0 10px;
+  }
+  #theme-grid { margin-bottom: 22px; }
+  .theme-group-title { font-size: 12px; color: var(--muted); font-weight: 600; margin: 6px 0 8px; }
+  .theme-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 8px; }
+  .theme-option {
+    background: transparent; border: 2px solid transparent; border-radius: 10px;
+    padding: 4px; cursor: pointer; color: var(--text); text-align: left; font-size: 12px;
+    display: flex; flex-direction: column; justify-content: flex-start;
+  }
+  .theme-option:hover { border-color: var(--border); }
+  .theme-option.selected { border-color: var(--accent); }
+  .theme-name { display: block; margin: 5px 2px 1px; font-weight: 600; }
+  /* Miniatura: as variáveis do próprio tema são definidas no elemento */
+  .theme-thumb {
+    display: grid; grid-template-columns: 12px 34px 1fr; height: 62px; width: 100%;
+    border-radius: 6px; overflow: hidden; background: var(--bg); border: 1px solid var(--border);
+  }
+  .tt-rail { background: var(--rail); }
+  .tt-chs { background: var(--bg-2); padding: 7px 4px; display: flex; flex-direction: column; gap: 5px; }
+  .tt-ch { height: 5px; border-radius: 2px; background: var(--muted); }
+  .tt-ch.on { background: var(--accent); box-shadow: var(--glow); }
+  .tt-main { padding: 7px 6px; display: flex; flex-direction: column; gap: 5px; }
+  .tt-line { height: 4px; border-radius: 2px; background: var(--text-2); }
+  .tt-line.link { background: var(--link); width: 55%; }
+  .tt-btn { margin-top: auto; align-self: flex-end; width: 22px; height: 9px; border-radius: 3px; background: var(--accent); box-shadow: var(--glow); }
   .settings-card .field { margin-bottom: 14px; }
   .settings-card .field label {
     display: block; font-size: 12px; color: var(--muted);
@@ -447,18 +482,18 @@
     cursor: pointer; font-weight: 700; font-size: 12px;
   }
   .btn-danger-outline {
-    background: rgba(237,66,69,.12); color: #ff8a8c;
-    border: 1px solid rgba(237,66,69,.4);
+    background: color-mix(in srgb, var(--red) 12%, transparent); color: var(--danger-text);
+    border: 1px solid color-mix(in srgb, var(--red) 40%, transparent);
   }
-  .btn-danger-outline:hover { background: rgba(237,66,69,.22); }
-  .btn-secondary { background: #3a4253; color: var(--text); }
-  .btn-secondary:hover { background: #4a5468; }
+  .btn-danger-outline:hover { background: color-mix(in srgb, var(--red) 22%, transparent); }
+  .btn-secondary { background: var(--control); color: var(--text); }
+  .btn-secondary:hover { background: var(--control-hover); }
   #monitor-audio { display: none; }
 
   /* ================= SELETOR DE TELA ================= */
   #source-picker {
     position: fixed; inset: 0; z-index: 200;
-    background: rgba(5,7,10,.78); backdrop-filter: blur(6px);
+    background: rgba(0,0,0,.6); backdrop-filter: blur(6px);
     display: flex; align-items: center; justify-content: center;
   }
   #source-picker.hidden { display: none; }
@@ -481,7 +516,7 @@
     border: 1px solid var(--border); background: transparent; color: var(--text);
     cursor: pointer; font-weight: 600;
   }
-  #source-cancel:hover { background: rgba(255,255,255,.05); }
+  #source-cancel:hover { background: color-mix(in srgb, var(--text) 5%, transparent); }
   .share-quality { display: flex; gap: 12px; margin: 16px 0 4px; }
   .share-quality .field { flex: 1; margin: 0; }
   .share-quality label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 6px; font-weight: 600; }
@@ -522,10 +557,10 @@
       <div class="channel voice" data-room="voz-sala"><span class="voice-icon">🔊</span> Sala Principal</div>
       <div class="channel voice" data-room="voz-jogos"><span class="voice-icon">🔊</span> Jogos</div>
       <div class="channel voice" data-room="voz-musica"><span class="voice-icon">🔊</span> Música</div>
-      <div id="voice-connection" class="hidden">
-        <div class="vc-info">🔊 <span id="voice-conn-name">—</span></div>
-        <button id="btn-leave-voice">Desconectar</button>
-      </div>
+    </div>
+    <div id="voice-connection" class="hidden">
+      <div class="vc-info">🔊 <span id="voice-conn-name">—</span></div>
+      <button id="btn-leave-voice">Desconectar</button>
     </div>
     <div id="user-panel">
       <div class="avatar-wrap">
@@ -542,6 +577,7 @@
 
       <div id="status-menu" class="popover hidden">
         <button data-status="online"><span class="status-dot online"></span> Online</button>
+        <button data-status="away"><span class="status-dot away"></span> Ausente</button>
         <button data-status="busy"><span class="status-dot busy"></span> Ocupado</button>
         <button data-status="invisible"><span class="status-dot invisible"></span> Invisível</button>
         <div class="popover-hint">Você ficará ausente automaticamente após 5 minutos sem atividade.</div>
@@ -570,8 +606,8 @@
       <div id="video-grid"></div>
       <div id="call-empty">
         <div class="avatar" id="empty-avatar">?</div>
-        <h3>Aguardando alguém entrar...</h3>
-        <p id="empty-text">Compartilhe o nome do canal com seus amigos.</p>
+        <h3>Você não está em um canal de voz</h3>
+        <p id="empty-text">Escolha um canal de voz à esquerda para entrar.</p>
       </div>
       <div id="audio-indicator">
         <div id="audio-bar"><div id="audio-level"></div></div>
@@ -637,21 +673,6 @@
   </div>
 </div>
 
-<!-- Tela de escolha de sala (depois do login) -->
-<div id="room-screen">
-  <div class="overlay-card">
-    <div class="brand">
-      <div class="brand-logo">💬</div>
-      <h1>Concord</h1>
-    </div>
-    <h2>Entrar em um canal</h2>
-    <p class="sub" id="room-user-info">Logado como —</p>
-    <div class="field"><label>Nome do canal</label><input type="text" id="input-room" value="geral" placeholder="ex: geral"></div>
-    <button class="submit-btn" id="btn-join">Entrar no canal</button>
-    <div id="room-status"></div>
-  </div>
-</div>
-
 <!-- Seletor de tela -->
 <div id="source-picker" class="hidden">
   <div class="source-card">
@@ -681,7 +702,12 @@
 <!-- Configurações de áudio -->
 <div id="settings-modal" class="hidden">
   <div class="settings-card">
-    <h3>Configurações de áudio</h3>
+    <h3>Configurações</h3>
+
+    <h4 class="settings-section">Aparência</h4>
+    <div id="theme-grid"></div>
+
+    <h4 class="settings-section">Áudio</h4>
 
     <div class="field">
       <label>Entrada (microfone)</label>
@@ -744,6 +770,10 @@
     document.write('<script src="https://cdn.socket.io/4.7.2/socket.io.min.js"><\/script>');
   }
 </script>
+<script src="speaking.js"></script>
+<script src="presence.js"></script>
+<script src="channels.js"></script>
+<script src="protocol.js"></script>
 <script src="renderer.js"></script>
 </body>
 </html>

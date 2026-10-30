@@ -5,21 +5,26 @@ App desktop para Windows 11 inspirado no Discord, feito com Electron, WebRTC e S
 ## Recursos
 
 - Login e cadastro com senha (hash PBKDF2)
-- Chat de texto com histórico por canal
-- Chamada de voz e vídeo P2P (WebRTC)
+- Chat de texto com histórico por canal (`#geral`, `#jogos`, `#musica`)
+- Canais de voz (Sala Principal, jogos e música) independentes do chat: você fica sempre em um canal de texto e, ao mesmo tempo, em no máximo um canal de voz. Trocar de canal de texto não derruba a chamada
+- Ao entrar, você cai automaticamente em `#geral` e na Sala Principal, com o microfone aberto
+- Chamada de voz e vídeo P2P (WebRTC); câmera e compartilhamento de tela só com a voz conectada
 - Compartilhamento de tela com seletor de janela/tela
 - Qualidade do compartilhamento: 480p, 720p ou 1080p e 30 ou 60 FPS (padrão 1080p 30 FPS)
 - Visualização do compartilhamento em tela cheia (botão ⛶ ou duplo clique)
 - Redução de ruído do microfone (gate + filtro + compressor), com níveis de intensidade
 - Painel de participantes com indicação de microfone mudo
-- Canal de voz mostrando quem está conectado
+- Canal de voz mostrando quem está conectado, com avatar, anel de quem está falando, 🔇 e selo "AO VIVO" para quem compartilha a tela
+- 13 temas de cor (Configurações → Aparência), salvos no próprio computador: Escuro, Grafite, Cyberpunk, Neon Verde, Drácula, Nord, Aquático, Natureza, Pôr do sol, Claro, Sépia, Lavanda / Sakura e Algodão-doce
 - Indicador visual de áudio (quem está falando)
 - Layout estilo Discord com rail de servidores, canais, chat e participantes
-- Status Online, Ocupado e Invisível, com Ausente automático após 5 minutos sem atividade
+- Status Online, Ausente, Ocupado e Invisível. Ausente pode ser escolhido no menu e também é automático após 5 minutos sem atividade (a partir de Online)
 - Configuração do microfone e do dispositivo de saída de áudio
 - Opção de ouvir o próprio microfone para testar (use fones)
 - Histórico mantido por 7 dias e apagado automaticamente depois
 - Botão para apagar as próprias mensagens do canal atual
+
+Os temas Drácula e Nord usam as paletas dos projetos [Dracula](https://draculatheme.com) e [Nord](https://www.nordtheme.com), ambos com licença MIT.
 
 ## Pré-requisitos
 
@@ -59,7 +64,7 @@ O servidor já escuta na rede local (`0.0.0.0:3000`). Não é mais preciso edita
 1. **Você (host)**: abra o Concord, deixe o servidor em `http://127.0.0.1:3000` e entre/crie sua conta.
 2. Descubra seu IPv4 com `ipconfig` (ex.: `192.168.1.15`).
 3. **Seu amigo**: instale o Concord, abra e, no campo **Servidor** da tela de login, digite `http://192.168.1.15:3000` e clique em **Aplicar**.
-4. Seu amigo cria a conta dele (a conta fica no seu servidor) e vocês entram no mesmo canal.
+4. Seu amigo cria a conta dele (a conta fica no seu servidor) e, ao entrar, cai em `#geral` e na Sala Principal, como você.
 5. Se o Windows perguntar, permita o Concord em **Redes privadas**. Se a rede estiver marcada como **Pública** ou a conexão não funcionar, libere a porta 3000 no PowerShell como administrador:
    ```powershell
    New-NetFirewallRule -DisplayName "Concord 3000" -Direction Inbound -Protocol TCP -LocalPort 3000 -Action Allow -Profile Private,Public
@@ -85,6 +90,7 @@ O Cloudflare Tunnel já está baixado em `tools/cloudflared.exe`. A URL do túne
 - Desenvolvimento: `users.json` e `messages.json` ficam na pasta do projeto.
 - Instalado: ficam em `%APPDATA%\Concord`.
 - O campo **Servidor** fica na tela de login e é salvo no computador.
+- Versão: o app e o servidor precisam ser da mesma versão. Se forem diferentes, o login mostra um aviso para atualizar o Vox, e o amigo precisa instalar a versão nova.
 - Na mesma rede, a conexão usa HTTP (sem TLS). Use em uma rede confiável; para internet, prefira o túnel HTTPS.
 - O compartilhamento de tela usa o seletor nativo do Electron (janela ou tela inteira).
 - A qualidade real do vídeo depende da internet de quem envia e de quem recebe.

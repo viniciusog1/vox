@@ -7,7 +7,8 @@
   "scripts": {
     "start": "electron .",
     "postinstall": "node -e \"const fs=require('fs'),path=require('path'); const src=path.join(process.cwd(),'node_modules','socket.io','client-dist','socket.io.min.js'); if(fs.existsSync(src)) fs.copyFileSync(src, path.join(process.cwd(),'socket.io.min.js'));\"",
-    "dist": "electron-builder"
+    "dist": "electron-builder",
+    "test": "node --test \"test/*.test.js\""
   },
   "build": {
     "appId": "com.seunome.concord",
@@ -22,7 +23,10 @@
       "!AGENTS.md",
       "!tools/**",
       "!IniciarTunelConcord.bat",
-      "!*.log"
+      "!*.log",
+      "!test/**",
+      "!docs/**",
+      "!.superpowers/**"
     ],
     "win": {
       "target": "nsis",
