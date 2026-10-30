@@ -23,5 +23,5 @@
     isVoiceChannel,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
-  else window.ConcordChannels = api;
+  else window.VoxChannels = api;
 })();

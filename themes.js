@@ -1,8 +1,8 @@
-// Temas de cor do Concord. Carregado no <head>, antes do CSS, para aplicar o
+// Temas de cor do Vox. Carregado no <head>, antes do CSS, para aplicar o
 // tema salvo antes da primeira pintura. Também roda no Node (testes).
 (function () {
-  const STORAGE_KEY = 'concord-theme';
-  const MOTION_KEY = 'concord-reduce-motion';
+  const STORAGE_KEY = 'vox-theme';
+  const MOTION_KEY = 'vox-reduce-motion';
   const DEFAULT_THEME_ID = 'escuro';
   const TOKEN_ORDER = ['bg', 'bg2', 'bg3', 'rail', 'border', 'text', 'text2', 'muted',
     'accent', 'onAccent', 'link', 'speak', 'red', 'dangerBg'];
@@ -144,14 +144,27 @@
     else delete target.dataset.reduceMotion;
   }
 
-  const api = { MOTION_KEY, loadReduceMotion, saveReduceMotion, applyReduceMotion, THEMES, THEME_GROUPS, DEFAULT_THEME_ID, STORAGE_KEY, resolveThemeId, getTheme, themeCssVars, loadThemeId, saveThemeId, applyTheme };
+  // O app se chamava Concord: copia preferências antigas (concord-*) para vox-*
+  function migrateLegacyStorage(storage) {
+    try {
+      const keys = [];
+      for (let i = 0; i < storage.length; i++) keys.push(storage.key(i));
+      keys.filter((k) => k && k.startsWith('concord-')).forEach((k) => {
+        const next = 'vox-' + k.slice('concord-'.length);
+        if (storage.getItem(next) === null) storage.setItem(next, storage.getItem(k));
+      });
+    } catch (e) {}
+  }
+
+  const api = { migrateLegacyStorage, MOTION_KEY, loadReduceMotion, saveReduceMotion, applyReduceMotion, THEMES, THEME_GROUPS, DEFAULT_THEME_ID, STORAGE_KEY, resolveThemeId, getTheme, themeCssVars, loadThemeId, saveThemeId, applyTheme };
 
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = api;
   } else {
-    window.ConcordThemes = api;
+    window.VoxThemes = api;
     let storage = null;
     try { storage = window.localStorage; } catch (e) {}
+    migrateLegacyStorage(storage);
     applyTheme(loadThemeId(storage));
     applyReduceMotion(loadReduceMotion(storage));
   }

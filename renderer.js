@@ -1,7 +1,7 @@
 // Ícones estáticos do index.html (<i data-icon>) viram SVG
-ConcordIcons.hydrate();
+VoxIcons.hydrate();
 
-const SERVER_URL = localStorage.getItem('concord-server-url') || 'http://127.0.0.1:3000';
+const SERVER_URL = localStorage.getItem('vox-server-url') || 'http://127.0.0.1:3000';
 const socket = io(SERVER_URL);
 
 /* ================= REFERÊNCIAS DOM ================= */
@@ -93,9 +93,9 @@ const musicQueueEl = document.getElementById('music-queue');
 const musicEmptyEl = document.getElementById('music-empty');
 
 /* ================= ESTADO ================= */
-const { DEFAULT_TEXT_CHANNEL, DEFAULT_VOICE_CHANNEL, isTextChannel, isVoiceChannel } = window.ConcordChannels;
-const { PROTOCOL_VERSION, VERSION_MISMATCH_MESSAGE, isCompatible } = window.ConcordProtocol;
-const { targetPositionMs, shouldCorrectSeek } = window.ConcordMusic;
+const { DEFAULT_TEXT_CHANNEL, DEFAULT_VOICE_CHANNEL, isTextChannel, isVoiceChannel } = window.VoxChannels;
+const { PROTOCOL_VERSION, VERSION_MISMATCH_MESSAGE, isCompatible } = window.VoxProtocol;
+const { targetPositionMs, shouldCorrectSeek } = window.VoxMusic;
 
 let currentUser = '';
 let currentTextRoom = '';  // sempre preenchido depois do login
@@ -115,7 +115,7 @@ const remoteStreams = new Map();  // socketId -> MediaStream
 const userMap = new Map();        // socketId -> { username, muted }
 let voiceRooms = {};              // room -> [{ id, username, muted, status }]
 let peerVolumes = {};             // username -> volume (0..1)
-try { peerVolumes = JSON.parse(localStorage.getItem('concord-peer-volumes') || '{}') || {}; } catch (e) { peerVolumes = {}; }
+try { peerVolumes = JSON.parse(localStorage.getItem('vox-peer-volumes') || '{}') || {}; } catch (e) { peerVolumes = {}; }
 
 function getPeerVolume(name) {
   const v = peerVolumes[name];
@@ -132,7 +132,7 @@ function applyPeerVolume(name) {
 
 function setPeerVolume(name, vol) {
   peerVolumes[name] = vol;
-  localStorage.setItem('concord-peer-volumes', JSON.stringify(peerVolumes));
+  localStorage.setItem('vox-peer-volumes', JSON.stringify(peerVolumes));
   applyPeerVolume(name);
 }
 const analysers = new Map();      // socketId -> AnalyserNode
@@ -148,8 +148,8 @@ let lastUsersSignature = '';
 // Processamento de áudio do microfone
 let micPipeline = null;
 let micProcessedTrack = null;
-let noiseSuppressionMode = localStorage.getItem('concord-noise-suppression') || 'strong';
-let noiseGateLevelValue = Number(localStorage.getItem('concord-noise-gate-level') || 35);
+let noiseSuppressionMode = localStorage.getItem('vox-noise-suppression') || 'strong';
+let noiseGateLevelValue = Number(localStorage.getItem('vox-noise-gate-level') || 35);
 const noiseGateContexts = new WeakSet();
 
 // Música do YouTube na chamada
@@ -168,8 +168,8 @@ let fullscreenStream = null;
 let fullscreenMuteTimer = null;
 
 // Qualidade do compartilhamento de tela
-let shareResolution = localStorage.getItem('concord-share-resolution') || '1080';
-let shareFps = Number(localStorage.getItem('concord-share-fps') || 30) === 60 ? 60 : 30;
+let shareResolution = localStorage.getItem('vox-share-resolution') || '1080';
+let shareFps = Number(localStorage.getItem('vox-share-fps') || 30) === 60 ? 60 : 30;
 
 let statusMode = 'online'; // online | away | busy | invisible
 let autoAway = false;
@@ -238,7 +238,7 @@ function roomDisplayName(room) {
 /* ================= STATUS ================= */
 const STATUS_LABELS = { online: 'Online', busy: 'Ocupado', away: 'Ausente', invisible: 'Invisível' };
 
-const presence = window.ConcordPresence;
+const presence = window.VoxPresence;
 
 function effectiveStatus() {
   return presence.effectiveStatus(statusMode, autoAway);
@@ -359,7 +359,7 @@ function applyServerUrl() {
     return;
   }
 
-  localStorage.setItem('concord-server-url', url);
+  localStorage.setItem('vox-server-url', url);
   serverStatus.textContent = 'Conectando...';
   serverStatus.style.color = 'var(--muted)';
   location.reload();
@@ -488,15 +488,15 @@ async function acquireLocalMedia() {
 }
 
 function updateControlButtons() {
-  ConcordIcons.setIcon(btnMic, micEnabled ? 'mic' : 'mic-off', 'Mic');
+  VoxIcons.setIcon(btnMic, micEnabled ? 'mic' : 'mic-off', 'Mic');
   btnMic.classList.toggle('off', !micEnabled);
   btnMic.classList.toggle('primary', micEnabled);
 
-  ConcordIcons.setIcon(btnCam, camEnabled ? 'video' : 'video-off', camEnabled ? 'Cam' : 'Cam Off');
+  VoxIcons.setIcon(btnCam, camEnabled ? 'video' : 'video-off', camEnabled ? 'Cam' : 'Cam Off');
   btnCam.classList.toggle('off', !camEnabled);
   btnCam.classList.toggle('primary', camEnabled);
 
-  ConcordIcons.setIcon(btnMicMini, micEnabled ? 'mic' : 'mic-off');
+  VoxIcons.setIcon(btnMicMini, micEnabled ? 'mic' : 'mic-off');
   btnMicMini.classList.toggle('off', !micEnabled);
 }
 
@@ -990,7 +990,7 @@ function appendMemberRow(u) {
   if (u.voiceRoom) {
     const status = document.createElement('span');
     status.className = 'muted-icon';
-    ConcordIcons.setIcon(status, u.muted ? 'mic-off' : 'mic', '', 14);
+    VoxIcons.setIcon(status, u.muted ? 'mic-off' : 'mic', '', 14);
     status.style.opacity = u.muted ? '1' : '.35';
     row.appendChild(status);
   }
@@ -1056,7 +1056,7 @@ function renderMembers() {
       line.appendChild(name);
       const icons = document.createElement('span');
       icons.className = 'vu-icons';
-      if (u.muted) icons.appendChild(ConcordIcons.icon('mic-off', 13));
+      if (u.muted) icons.appendChild(VoxIcons.icon('mic-off', 13));
       if (u.sharing) {
         const live = document.createElement('span');
         live.className = 'live-badge';
@@ -1120,7 +1120,7 @@ function renderTiles() {
         <div style="font-weight:600;color:var(--text);">Aguardando alguém entrar...</div>
         <div style="font-size:12px;">Compartilhe o canal ${roomDisplayName(currentVoiceRoom)} com seus amigos.</div>
       </div>`;
-    ConcordIcons.hydrate(empty);
+    VoxIcons.hydrate(empty);
     videoGrid.appendChild(empty);
   }
 
@@ -1181,7 +1181,7 @@ const UNPLAYABLE_CODES = [100, 101, 150]; // indisponível / incorporação não
 
 // Volume só local, 0–100 (padrão 50).
 function getMusicVolume() {
-  const raw = localStorage.getItem('concord-music-volume');
+  const raw = localStorage.getItem('vox-music-volume');
   const v = Number(raw);
   if (raw === null || raw === '' || !Number.isFinite(v)) return 50;
   return Math.min(100, Math.max(0, Math.round(v)));
@@ -1227,7 +1227,7 @@ function ensureMusicTile() {
   fsBtn.className = 'music-fs-btn';
   fsBtn.title = 'Ver em tela cheia';
   fsBtn.setAttribute('aria-label', 'Ver o vídeo da música em tela cheia');
-  ConcordIcons.setIcon(fsBtn, 'maximize', '', 14);
+  VoxIcons.setIcon(fsBtn, 'maximize', '', 14);
   fsBtn.addEventListener('click', openMusicFullscreen);
   label.append(youtubeIcon(), text, fsBtn);
   musicTileEl.append(host, label);
@@ -1492,7 +1492,7 @@ function renderMusicPanel() {
     const remove = document.createElement('button');
     remove.className = 'music-icon-btn';
     remove.title = 'Tirar da fila';
-    ConcordIcons.setIcon(remove, 'x', '', 14);
+    VoxIcons.setIcon(remove, 'x', '', 14);
     remove.addEventListener('click', () => socket.emit('music-remove', item.id));
     row.append(img, info, remove);
     return row;
@@ -1501,7 +1501,7 @@ function renderMusicPanel() {
   musicToggleBtn.disabled = queue.length === 0;
   musicSkipBtn.disabled = queue.length === 0;
   musicToggleBtn.title = musicState && musicState.playing ? 'Pausar para todos' : 'Tocar para todos';
-  ConcordIcons.setIcon(musicToggleBtn, musicState && musicState.playing ? 'pause' : 'play');
+  VoxIcons.setIcon(musicToggleBtn, musicState && musicState.playing ? 'pause' : 'play');
 }
 
 function submitMusicUrl() {
@@ -1533,7 +1533,7 @@ musicSkipBtn.addEventListener('click', () => {
 // Volume só local: salva e aplica no player desta pessoa
 musicVolumeInput.addEventListener('input', () => {
   const vol = Math.min(100, Math.max(0, Math.round(Number(musicVolumeInput.value) || 0)));
-  localStorage.setItem('concord-music-volume', String(vol));
+  localStorage.setItem('vox-music-volume', String(vol));
   musicVolumeValue.textContent = String(vol);
   if (musicPlayer && musicPlayerReady) musicPlayer.setVolume(vol);
 });
@@ -1668,7 +1668,7 @@ function buildTile(name, stream, opts = {}) {
     const fullBtn = document.createElement('button');
     fullBtn.className = 'tile-btn';
     fullBtn.title = 'Ver em tela cheia';
-    ConcordIcons.setIcon(fullBtn, 'maximize', '', 16);
+    VoxIcons.setIcon(fullBtn, 'maximize', '', 16);
     fullBtn.addEventListener('click', (ev) => {
       ev.stopPropagation();
       openFullscreenView(stream, name);
@@ -1721,7 +1721,7 @@ function ensureAudioContext() {
 
 /* ================= REDUÇÃO DE RUÍDO DO MICROFONE ================= */
 const NOISE_GATE_WORKLET = `
-class ConcordNoiseGate extends AudioWorkletProcessor {
+class VoxNoiseGate extends AudioWorkletProcessor {
   static get parameterDescriptors() {
     return [
       { name: 'threshold', defaultValue: 0.015, minValue: 0, maxValue: 1 },
@@ -1759,7 +1759,7 @@ class ConcordNoiseGate extends AudioWorkletProcessor {
     return true;
   }
 }
-registerProcessor('concord-noise-gate', ConcordNoiseGate);
+registerProcessor('vox-noise-gate', VoxNoiseGate);
 `;
 
 async function ensureNoiseGateWorklet(ctx) {
@@ -1822,7 +1822,7 @@ async function rebuildMicProcessing() {
     if (noiseSuppressionMode === 'strong') {
       try {
         await ensureNoiseGateWorklet(ctx);
-        gate = new AudioWorkletNode(ctx, 'concord-noise-gate', {
+        gate = new AudioWorkletNode(ctx, 'vox-noise-gate', {
           numberOfInputs: 1,
           numberOfOutputs: 1,
           outputChannelCount: [1]
@@ -1919,7 +1919,7 @@ function getLocalAnalyser() {
 
 // Anel de "falando" nos avatares do canal de voz atual
 function updateSpeakingRings() {
-  const { levelFromAnalyser, createSpeakingState, updateSpeaking } = window.ConcordSpeaking;
+  const { levelFromAnalyser, createSpeakingState, updateSpeaking } = window.VoxSpeaking;
   const now = performance.now();
   const levels = new Map();
   analysers.forEach((analyser, id) => levels.set(id, levelFromAnalyser(analyser)));
@@ -1952,7 +1952,7 @@ let themeStorage = null;
 try { themeStorage = window.localStorage; } catch (e) {}
 
 function buildThemeOption(theme, currentId) {
-  const { themeCssVars, applyTheme, saveThemeId } = window.ConcordThemes;
+  const { themeCssVars, applyTheme, saveThemeId } = window.VoxThemes;
   const btn = document.createElement('button');
   btn.type = 'button';
   btn.className = 'theme-option' + (theme.id === currentId ? ' selected' : '');
@@ -1988,26 +1988,26 @@ function buildThemeOption(theme, currentId) {
 }
 
 const reduceMotionBox = document.getElementById('reduce-motion');
-if (reduceMotionBox && window.ConcordThemes) {
-  reduceMotionBox.checked = window.ConcordThemes.loadReduceMotion(themeStorage);
+if (reduceMotionBox && window.VoxThemes) {
+  reduceMotionBox.checked = window.VoxThemes.loadReduceMotion(themeStorage);
   reduceMotionBox.addEventListener('change', () => {
-    window.ConcordThemes.saveReduceMotion(themeStorage, reduceMotionBox.checked);
-    window.ConcordThemes.applyReduceMotion(reduceMotionBox.checked);
+    window.VoxThemes.saveReduceMotion(themeStorage, reduceMotionBox.checked);
+    window.VoxThemes.applyReduceMotion(reduceMotionBox.checked);
   });
 }
 
 function renderThemePicker() {
-  if (!themeGrid || !window.ConcordThemes) return;
-  const currentId = document.documentElement.dataset.theme || window.ConcordThemes.DEFAULT_THEME_ID;
+  if (!themeGrid || !window.VoxThemes) return;
+  const currentId = document.documentElement.dataset.theme || window.VoxThemes.DEFAULT_THEME_ID;
   themeGrid.innerHTML = '';
-  window.ConcordThemes.THEME_GROUPS.forEach(([group, label]) => {
+  window.VoxThemes.THEME_GROUPS.forEach(([group, label]) => {
     const title = document.createElement('div');
     title.className = 'theme-group-title';
     title.textContent = label;
     const row = document.createElement('div');
     row.className = 'theme-row';
     row.dataset.group = group;
-    window.ConcordThemes.THEMES.filter((t) => t.group === group)
+    window.VoxThemes.THEMES.filter((t) => t.group === group)
       .forEach((t) => row.appendChild(buildThemeOption(t, currentId)));
     themeGrid.append(title, row);
   });
@@ -2178,7 +2178,7 @@ monitorToggle.addEventListener('change', () => {
 if (noiseSuppressionSelect) {
   noiseSuppressionSelect.addEventListener('change', async () => {
     noiseSuppressionMode = noiseSuppressionSelect.value;
-    localStorage.setItem('concord-noise-suppression', noiseSuppressionMode);
+    localStorage.setItem('vox-noise-suppression', noiseSuppressionMode);
     applyNoiseSuppressionUI();
     await rebuildMicProcessing();
     replaceAudioTrackOnPeers();
@@ -2189,7 +2189,7 @@ if (noiseSuppressionSelect) {
 if (noiseGateLevel) {
   noiseGateLevel.addEventListener('input', () => {
     noiseGateLevelValue = Number(noiseGateLevel.value) || 0;
-    localStorage.setItem('concord-noise-gate-level', String(noiseGateLevelValue));
+    localStorage.setItem('vox-noise-gate-level', String(noiseGateLevelValue));
     if (noiseGateValue) noiseGateValue.textContent = String(noiseGateLevelValue);
     if (micPipeline && micPipeline.gate) {
       try { micPipeline.gate.parameters.get('threshold').value = gateThreshold(); } catch (e) {}
@@ -2344,14 +2344,14 @@ function applyShareQualityUI() {
 if (shareResolutionSelect) {
   shareResolutionSelect.addEventListener('change', () => {
     shareResolution = shareResolutionSelect.value;
-    localStorage.setItem('concord-share-resolution', shareResolution);
+    localStorage.setItem('vox-share-resolution', shareResolution);
   });
 }
 
 if (shareFpsSelect) {
   shareFpsSelect.addEventListener('change', () => {
     shareFps = Number(shareFpsSelect.value) === 60 ? 60 : 30;
-    localStorage.setItem('concord-share-fps', String(shareFps));
+    localStorage.setItem('vox-share-fps', String(shareFps));
   });
 }
 
@@ -2384,7 +2384,7 @@ btnScreen.addEventListener('click', async () => {
     replaceVideoTrackEverywhere(screenTrack, screenStream);
     renderTiles();
 
-    ConcordIcons.setIcon(btnScreen, 'monitor-stop', 'Parar');
+    VoxIcons.setIcon(btnScreen, 'monitor-stop', 'Parar');
     btnScreen.classList.remove('off');
     btnScreen.classList.add('primary');
 
@@ -2419,7 +2419,7 @@ function stopScreenShare() {
   const camTrack = localStream ? localStream.getVideoTracks()[0] : null;
   replaceVideoTrackEverywhere(camTrack || null, localStream);
 
-  ConcordIcons.setIcon(btnScreen, 'monitor-up', 'Tela');
+  VoxIcons.setIcon(btnScreen, 'monitor-up', 'Tela');
   btnScreen.classList.remove('primary');
   btnScreen.classList.add('off');
   renderTiles();
@@ -2580,7 +2580,7 @@ function leaveVoice() {
   userMap.clear();
   lastUsersSignature = '';
 
-  ConcordIcons.setIcon(btnScreen, 'monitor-up', 'Tela');
+  VoxIcons.setIcon(btnScreen, 'monitor-up', 'Tela');
   btnScreen.classList.remove('primary');
   btnScreen.classList.add('off');
   voiceConnection.classList.add('hidden');

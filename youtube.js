@@ -52,5 +52,5 @@
 
   const api = { parseYouTubeId, thumbnailUrl, lookupVideo };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
-  else window.ConcordYouTube = api;
+  else window.VoxYouTube = api;
 })();

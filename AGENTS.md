@@ -1,11 +1,11 @@
-# AGENTS.md — Concord
+# AGENTS.md — Vox
 
 Guia para agentes de IA que forem alterar este projeto. Leia antes de editar.
 
 ## 1. Contexto
 
-- Aplicativo desktop para Windows 11 inspirado no Discord.
-- Nome do produto: **Concord**. Não usar “MeuDiscord”.
+- Aplicativo desktop para Windows 11 de chat, voz, vídeo e compartilhamento de tela.
+- Nome do produto: **Vox**. Antes se chamava Concord.
 - Stack: **Electron 28 + Node.js + Socket.io 4 + WebRTC**.
 - Interface em português.
 - Não há banco de dados: usuários e mensagens ficam em arquivos JSON.
@@ -17,11 +17,11 @@ Caminhos principais:
 
 ```text
 Projeto:              C:\Users\Usuario\discord-clone-windows
-App instalado:        C:\Users\Usuario\AppData\Local\Programs\Concord\Concord.exe
-Dados do instalado:   C:\Users\Usuario\AppData\Roaming\Concord
-Instalador gerado:    C:\Users\Usuario\discord-clone-windows\dist\Concord Setup 1.0.0.exe
+App instalado:        C:\Users\Usuario\AppData\Local\Programs\Vox\Vox.exe
+Dados do instalado:   C:\Users\Usuario\AppData\Roaming\Vox
+Instalador gerado:    C:\Users\Usuario\discord-clone-windows\dist\Vox Setup 1.0.0.exe
 Ferramenta de túnel:  C:\Users\Usuario\discord-clone-windows\tools\cloudflared.exe
-Atalho do túnel:      C:\Users\Usuario\discord-clone-windows\IniciarTunelConcord.bat
+Atalho do túnel:      C:\Users\Usuario\discord-clone-windows\IniciarTunelVox.bat
 ```
 
 ## 2. Comandos rápidos
@@ -68,12 +68,12 @@ $env:Path = 'C:\Program Files\nodejs;' + $env:Path
 npm run dist
 ```
 
-Saída: `dist\Concord Setup 1.0.0.exe`.
+Saída: `dist\Vox Setup 1.0.0.exe`.
 
 ### Instalar/testar o pacote
 
 - Feche o app de desenvolvimento antes de abrir o instalado: ambos usam a porta 3000.
-- Para testar sem instalar: `dist\win-unpacked\Concord.exe`.
+- Para testar sem instalar: `dist\win-unpacked\Vox.exe`.
 - O app instalado é um snapshot; alterações no código só aparecem depois de rodar `npm run dist` e reinstalar.
 
 ## 3. Mapa de arquivos
@@ -82,7 +82,7 @@ Saída: `dist\Concord Setup 1.0.0.exe`.
 | --- | --- |
 | `main.js` | Processo principal: janela, permissões, servidor Socket.io, autenticação, presença, salas, mensagens, retenção, `desktopCapturer` e seletor de tela, fila de música por sala de voz (`musicByRoom`) e o `Referer` injetado nas requisições do YouTube. |
 | `renderer.js` | Interface e lógica do cliente: login, canais, chat, WebRTC, câmera/microfone, compartilhamento de tela, status, configurações de áudio. |
-| `themes.js` | Os 15 temas (paletas, id padrão `escuro`) e os grupos do seletor (`THEME_GROUPS`: Escuros, Neon, Claros; cada tema tem `group`), leitura/gravação em `localStorage['concord-theme']` e `applyTheme`. Carregado no `<head>` antes do CSS para aplicar o tema antes da primeira pintura. Também é módulo Node (testes). |
+| `themes.js` | Os 15 temas (paletas, id padrão `escuro`) e os grupos do seletor (`THEME_GROUPS`: Escuros, Neon, Claros; cada tema tem `group`), leitura/gravação em `localStorage['vox-theme']` e `applyTheme`. Carregado no `<head>` antes do CSS para aplicar o tema antes da primeira pintura. Também é módulo Node (testes). |
 | `speaking.js` | Detecção de "falando" com histerese (liga ≥ 0.12, desliga após 250 ms abaixo) para o anel do avatar. |
 | `channels.js` | Lista fixa de canais: `TEXT_CHANNELS` (`geral`, `jogos`, `musica`) e `VOICE_CHANNELS` (`voz-sala`, `voz-jogos`, `voz-musica`); padrões `geral` e `voz-sala`. Usado por `main.js` e `renderer.js`. Também é módulo Node (testes). |
 | `protocol.js` | `PROTOCOL_VERSION` (hoje `4`), mensagem de versão incompatível e `isCompatible`. Usado por `main.js` e `renderer.js`. Também é módulo Node (testes). |
@@ -100,7 +100,7 @@ Saída: `dist\Concord Setup 1.0.0.exe`.
 | `README.md` | Documentação para o usuário final. |
 | `AGENTS.md` | Este guia. |
 | `tools/cloudflared.exe` | Cloudflare Tunnel para o host. Não faz parte do instalador. |
-| `IniciarTunelConcord.bat` | Inicia o túnel no host. Não faz parte do instalador. |
+| `IniciarTunelVox.bat` | Inicia o túnel no host. Não faz parte do instalador. |
 
 ## 4. Arquitetura
 
@@ -122,7 +122,7 @@ Saída: `dist\Concord Setup 1.0.0.exe`.
 
 - Conexão Socket.io no topo:
   ```js
-  const SERVER_URL = localStorage.getItem('concord-server-url') || 'http://127.0.0.1:3000';
+  const SERVER_URL = localStorage.getItem('vox-server-url') || 'http://127.0.0.1:3000';
   const socket = io(SERVER_URL);
   ```
 - Campos da tela de login: `#server-url`, `#server-apply`, `#server-status`.
@@ -135,7 +135,7 @@ Saída: `dist\Concord Setup 1.0.0.exe`.
 - Compartilhamento de tela:
   - `getDisplayMedia({ video: currentShareVideoConstraints(), audio: false })`.
   - Qualidade escolhida no seletor: `#share-resolution` (480/720/1080) e `#share-fps` (30/60), padrão 1080p30.
-  - Persistência em `concord-share-resolution` e `concord-share-fps`.
+  - Persistência em `vox-share-resolution` e `vox-share-fps`.
   - O track da tela substitui o da câmera em todos os peers via `replaceVideoTrackEverywhere`.
   - Encoder: H.264 preferido (`preferVideoCodecs`, cai para VP8 se não houver). VP8 em modo tela a 1080p cai para 1–4 fps (medido).
   - `contentHint`: `motion` em 60 fps (prioriza fluidez), `detail` em 30 fps (prioriza nitidez). `applyVideoSenderParams` aplica `maxBitrate` (`SHARE_BITRATES`), `maxFramerate` e `degradationPreference` em cada peer.
@@ -149,12 +149,12 @@ Saída: `dist\Concord Setup 1.0.0.exe`.
   - A fila aparece como primeiro tile da grade de chamada enquanto houver música; o botão 🎵 da barra superior (desabilitado sem voz) e o tile abrem o painel `#btn-music` / modal de música.
   - Quem está na voz controla a fila. Sair da voz interrompe a música só para quem saiu.
   - Nada é baixado: o player oficial do YouTube (IFrame API) toca em cada computador. Em tela cheia, o player vai para um canto dentro de `#fullscreen-view`.
-  - Volume local em `localStorage['concord-music-volume']` (não é sincronizado).
+  - Volume local em `localStorage['vox-music-volume']` (não é sincronizado).
   - Sincronização: o cliente estima a posição a partir de `positionMs`/`serverNow` e faz `seekTo` só se a diferença passar de `SYNC_TOLERANCE_MS`, respeitando `SEEK_COOLDOWN_MS`.
 - Áudio do microfone:
-  - Pipeline de redução de ruído: high-pass (85 Hz) → gate (AudioWorklet `concord-noise-gate` via Blob) → compressor → gain → `MediaStreamAudioDestination`.
+  - Pipeline de redução de ruído: high-pass (85 Hz) → gate (AudioWorklet `vox-noise-gate` via Blob) → compressor → gain → `MediaStreamAudioDestination`.
   - `micProcessedTrack` é a faixa enviada aos peers; `getOutboundAudioTracks()` decide entre processada e bruta.
-  - Modos em `concord-noise-suppression`: `off`, `browser`, `strong`. Intensidade em `concord-noise-gate-level`.
+  - Modos em `vox-noise-suppression`: `off`, `browser`, `strong`. Intensidade em `vox-noise-gate-level`.
   - O monitor do próprio microfone toca a faixa processada.
 - O indicador de áudio analisa **somente streams remotos**. O microfone local não entra na barra; para testar o próprio microfone existe o toggle de monitoramento nas configurações.
 
@@ -226,8 +226,8 @@ C:\Users\Usuario\discord-clone-windows\messages.json
 No app instalado:
 
 ```text
-C:\Users\Usuario\AppData\Roaming\Concord\users.json
-C:\Users\Usuario\AppData\Roaming\Concord\messages.json
+C:\Users\Usuario\AppData\Roaming\Vox\users.json
+C:\Users\Usuario\AppData\Roaming\Vox\messages.json
 ```
 
 Código relevante:
@@ -265,14 +265,14 @@ const DATA_DIR = app.isPackaged ? app.getPath('userData') : __dirname;
 
 ### Preferências no localStorage
 
-- `concord-server-url`
+- `vox-server-url`
 - `audioInputId`
 - `audioOutputId`
 - `monitorEnabled`
-- `concord-theme` (id do tema; inválido ou ausente → `escuro`)
-- `concord-music-volume` (volume local do player de música, 0–100, padrão 50; só neste computador)
+- `vox-theme` (id do tema; inválido ou ausente → `escuro`)
+- `vox-music-volume` (volume local do player de música, 0–100, padrão 50; só neste computador)
 
-Ficam no perfil do Electron em `%APPDATA%\Concord`.
+Ficam no perfil do Electron em `%APPDATA%\Vox`.
 
 ### Regras
 
@@ -335,8 +335,8 @@ Não remova isso sem testar. Consequências atuais:
 O app instalado e o de desenvolvimento usam pastas diferentes. Copiar código não copia dados. Se precisar migrar:
 
 ```powershell
-Copy-Item users.json "$env:APPDATA\Concord\users.json" -Force
-Copy-Item messages.json "$env:APPDATA\Concord\messages.json" -Force
+Copy-Item users.json "$env:APPDATA\Vox\users.json" -Force
+Copy-Item messages.json "$env:APPDATA\Vox\messages.json" -Force
 ```
 
 Pare o app antes de copiar.
@@ -384,7 +384,7 @@ Antes de considerar uma alteração concluída:
 
 1. `node --check main.js` e `node --check renderer.js`.
 2. Abrir em desenvolvimento e conferir:
-   - título da janela **Concord**;
+   - título da janela **Vox**;
    - tela de login;
    - porta 3000 ativa;
    - console sem exceções.
@@ -398,16 +398,16 @@ Antes de considerar uma alteração concluída:
    - Música: colar um link do YouTube, pausar, pular, remover e conferir que o player toca (sem erro 153) e que sair da voz para a música de quem saiu.
 6. Testar compartilhamento de tela: abrir seletor, escolher, parar.
 7. Testar layout com muitas mensagens: a janela não deve crescer.
-8. Gerar instalador e, se possível, testar `dist\win-unpacked\Concord.exe`.
+8. Gerar instalador e, se possível, testar `dist\win-unpacked\Vox.exe`.
 9. Se testar conta temporária, removê-la e restaurar `users.json`/`messages.json`.
 10. Deixar o app em estado limpo: sem instâncias duplicadas, sem contas de teste.
 
 ## 9. Estado atual conhecido
 
 - Versão `1.0.2` (qualidade do compartilhamento: 480p/720p/1080p e 30/60 fps, padrão 1080p30).
-- Instaladores preservados: `dist\Concord Setup 1.0.0.exe`, `1.0.1.exe` e `1.0.2.exe`.
+- Instaladores preservados: `dist\Vox Setup 1.0.0.exe`, `1.0.1.exe` e `1.0.2.exe`.
 - Instalador NSIS gerado, sem assinatura e com ícone padrão do Electron.
-- App instalado nesta máquina em `%LOCALAPPDATA%\Programs\Concord`.
-- Dados do instalado em `%APPDATA%\Concord`; a conta `vinicius` e o histórico do canal `geral` foram copiados para lá.
+- App instalado nesta máquina em `%LOCALAPPDATA%\Programs\Vox`.
+- Dados do instalado em `%APPDATA%\Vox`; a conta `vinicius` e o histórico do canal `geral` foram copiados para lá.
 - O app instalado e o de desenvolvimento podem estar em estados diferentes; sempre confirme qual está rodando.
 - O Cloudflare Tunnel pode estar ativo. A URL é temporária e não deve ser documentada como fixa.

@@ -28,7 +28,7 @@ desktop.ini
 
 # Ferramentas externas (não são código do projeto)
 tools/*.exe
-IniciarTunelConcord.bat
+IniciarTunelVox.bat
 
 # Mockups do brainstorming
 .superpowers/

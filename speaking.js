@@ -30,5 +30,5 @@
 
   const api = { SPEAK_ON_LEVEL, SPEAK_HOLD_MS, levelFromAnalyser, createSpeakingState, updateSpeaking };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
-  else window.ConcordSpeaking = api;
+  else window.VoxSpeaking = api;
 })();

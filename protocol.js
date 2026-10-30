@@ -11,5 +11,5 @@
 
   const api = { PROTOCOL_VERSION, VERSION_MISMATCH_MESSAGE, isCompatible };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
-  else window.ConcordProtocol = api;
+  else window.VoxProtocol = api;
 })();

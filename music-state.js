@@ -97,5 +97,5 @@
     togglePause, positionAt, toPublic, targetPositionMs, needsSeek, shouldCorrectSeek
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
-  else window.ConcordMusic = api;
+  else window.VoxMusic = api;
 })();

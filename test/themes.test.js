@@ -86,12 +86,12 @@ test('resolveThemeId cai no escuro', () => {
   for (const bad of [undefined, '', 'tema-que-nao-existe', 42, null]) assert.equal(themes.resolveThemeId(bad), 'escuro');
   assert.equal(themes.resolveThemeId('nord'), 'nord');
   assert.equal(themes.DEFAULT_THEME_ID, 'escuro');
-  assert.equal(themes.STORAGE_KEY, 'concord-theme');
+  assert.equal(themes.STORAGE_KEY, 'vox-theme');
 });
 
 test('loadThemeId tolera storage quebrado', () => {
   const throwing = { getItem() { throw new Error('bloqueado'); } };
-  const holding = (v) => ({ getItem: (k) => (k === 'concord-theme' ? v : null) });
+  const holding = (v) => ({ getItem: (k) => (k === 'vox-theme' ? v : null) });
   assert.equal(themes.loadThemeId(throwing), 'escuro');
   assert.equal(themes.loadThemeId(holding('xyz')), 'escuro');
   assert.equal(themes.loadThemeId(holding('sepia')), 'sepia');
@@ -102,7 +102,7 @@ test('saveThemeId não lança se o storage lança', () => {
   assert.doesNotThrow(() => themes.saveThemeId({ setItem() { throw new Error('cheio'); } }, 'nord'));
   const saved = {};
   themes.saveThemeId({ setItem: (k, v) => { saved[k] = v; } }, 'nord');
-  assert.deepEqual(saved, { 'concord-theme': 'nord' });
+  assert.deepEqual(saved, { 'vox-theme': 'nord' });
 });
 
 test('themeCssVars mapeia nomes', () => {
@@ -163,7 +163,7 @@ test('reduzir animações: salva, carrega e marca o root', () => {
   const storage = { getItem: (k) => store[k] ?? null, setItem: (k, v) => { store[k] = v; } };
   assert.equal(themes.loadReduceMotion(storage), false);
   themes.saveReduceMotion(storage, true);
-  assert.equal(store['concord-reduce-motion'], '1');
+  assert.equal(store['vox-reduce-motion'], '1');
   assert.equal(themes.loadReduceMotion(storage), true);
   assert.equal(themes.loadReduceMotion({ getItem() { throw new Error('x'); } }), false);
   assert.doesNotThrow(() => themes.saveReduceMotion({ setItem() { throw new Error('x'); } }, true));
@@ -172,4 +172,18 @@ test('reduzir animações: salva, carrega e marca o root', () => {
   assert.equal(root.dataset.reduceMotion, '1');
   themes.applyReduceMotion(false, root);
   assert.equal(root.dataset.reduceMotion, undefined);
+});
+
+test('migrateLegacyStorage copia concord-* para vox-* sem sobrescrever', () => {
+  const data = { 'concord-theme': 'nord', 'concord-server-url': 'http://x', 'vox-server-url': 'http://novo', outro: '1' };
+  const storage = {
+    get length() { return Object.keys(data).length; },
+    key: (i) => Object.keys(data)[i] ?? null,
+    getItem: (k) => (k in data ? data[k] : null),
+    setItem: (k, v) => { data[k] = String(v); }
+  };
+  themes.migrateLegacyStorage(storage);
+  assert.equal(data['vox-theme'], 'nord');
+  assert.equal(data['vox-server-url'], 'http://novo');
+  assert.doesNotThrow(() => themes.migrateLegacyStorage(null));
 });
