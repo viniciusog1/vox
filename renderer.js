@@ -1150,6 +1150,63 @@ function startAudioLoop() {
   loop();
 }
 
+/* ================= TEMAS ================= */
+const themeGrid = document.getElementById('theme-grid');
+let themeStorage = null;
+try { themeStorage = window.localStorage; } catch (e) {}
+
+function buildThemeOption(theme, currentId) {
+  const { themeCssVars, applyTheme, saveThemeId } = window.ConcordThemes;
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'theme-option' + (theme.id === currentId ? ' selected' : '');
+  btn.dataset.themeId = theme.id;
+  btn.setAttribute('aria-pressed', String(theme.id === currentId));
+
+  const thumb = document.createElement('div');
+  thumb.className = 'theme-thumb';
+  const vars = themeCssVars(theme);
+  Object.keys(vars).forEach((k) => thumb.style.setProperty(k, vars[k]));
+  thumb.innerHTML = `
+    <div class="tt-rail"></div>
+    <div class="tt-chs"><div class="tt-ch"></div><div class="tt-ch on"></div><div class="tt-ch"></div></div>
+    <div class="tt-main"><div class="tt-line"></div><div class="tt-line link"></div><div class="tt-btn"></div></div>`;
+  btn.appendChild(thumb);
+
+  const name = document.createElement('span');
+  name.className = 'theme-name';
+  name.textContent = theme.name;
+  btn.appendChild(name);
+
+  btn.addEventListener('click', () => {
+    const applied = applyTheme(theme.id);
+    saveThemeId(themeStorage, applied);
+    themeGrid.querySelectorAll('.theme-option').forEach((el) => {
+      const on = el.dataset.themeId === applied;
+      el.classList.toggle('selected', on);
+      el.setAttribute('aria-pressed', String(on));
+    });
+  });
+  return btn;
+}
+
+function renderThemePicker() {
+  if (!themeGrid || !window.ConcordThemes) return;
+  const currentId = document.documentElement.dataset.theme || window.ConcordThemes.DEFAULT_THEME_ID;
+  themeGrid.innerHTML = '';
+  [['dark', 'Escuros'], ['light', 'Claros']].forEach(([kind, label]) => {
+    const title = document.createElement('div');
+    title.className = 'theme-group-title';
+    title.textContent = label;
+    const row = document.createElement('div');
+    row.className = 'theme-row';
+    row.dataset.kind = kind;
+    window.ConcordThemes.THEMES.filter((t) => t.kind === kind)
+      .forEach((t) => row.appendChild(buildThemeOption(t, currentId)));
+    themeGrid.append(title, row);
+  });
+}
+
 /* ================= DISPOSITIVOS DE ÁUDIO ================= */
 function fillDeviceSelect(select, devices, savedId, defaultLabel) {
   select.innerHTML = '';
@@ -1256,6 +1313,7 @@ function updateMonitor() {
 btnSettings.addEventListener('click', async () => {
   statusMenu.classList.add('hidden');
   settingsError.textContent = '';
+  renderThemePicker();
   settingsModal.classList.remove('hidden');
   monitorToggle.checked = monitorEnabled;
   applyNoiseSuppressionUI();

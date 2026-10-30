@@ -411,11 +411,39 @@
   }
   #settings-modal.hidden { display: none; }
   .settings-card {
-    width: 460px; max-width: 92vw; background: var(--bg-2);
+    width: 560px; max-width: 92vw; max-height: 88vh; overflow-y: auto; background: var(--bg-2);
     border: 1px solid var(--border); border-radius: 16px;
     padding: 26px 28px; box-shadow: 0 24px 60px rgba(0,0,0,.55);
   }
   .settings-card h3 { font-size: 18px; margin-bottom: 18px; }
+  .settings-card .settings-section {
+    font-size: 12px; font-weight: 700; letter-spacing: .6px; text-transform: uppercase;
+    color: var(--muted); margin: 4px 0 10px;
+  }
+  #theme-grid { margin-bottom: 22px; }
+  .theme-group-title { font-size: 12px; color: var(--muted); font-weight: 600; margin: 6px 0 8px; }
+  .theme-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 8px; }
+  .theme-option {
+    background: transparent; border: 2px solid transparent; border-radius: 10px;
+    padding: 4px; cursor: pointer; color: var(--text); text-align: left; font-size: 12px;
+    display: flex; flex-direction: column; justify-content: flex-start;
+  }
+  .theme-option:hover { border-color: var(--border); }
+  .theme-option.selected { border-color: var(--accent); }
+  .theme-name { display: block; margin: 5px 2px 1px; font-weight: 600; }
+  /* Miniatura: as variáveis do próprio tema são definidas no elemento */
+  .theme-thumb {
+    display: grid; grid-template-columns: 12px 34px 1fr; height: 62px; width: 100%;
+    border-radius: 6px; overflow: hidden; background: var(--bg); border: 1px solid var(--border);
+  }
+  .tt-rail { background: var(--rail); }
+  .tt-chs { background: var(--bg-2); padding: 7px 4px; display: flex; flex-direction: column; gap: 5px; }
+  .tt-ch { height: 5px; border-radius: 2px; background: var(--muted); }
+  .tt-ch.on { background: var(--accent); box-shadow: var(--glow); }
+  .tt-main { padding: 7px 6px; display: flex; flex-direction: column; gap: 5px; }
+  .tt-line { height: 4px; border-radius: 2px; background: var(--text-2); }
+  .tt-line.link { background: var(--link); width: 55%; }
+  .tt-btn { margin-top: auto; align-self: flex-end; width: 22px; height: 9px; border-radius: 3px; background: var(--accent); box-shadow: var(--glow); }
   .settings-card .field { margin-bottom: 14px; }
   .settings-card .field label {
     display: block; font-size: 12px; color: var(--muted);
@@ -677,7 +705,12 @@
 <!-- Configurações de áudio -->
 <div id="settings-modal" class="hidden">
   <div class="settings-card">
-    <h3>Configurações de áudio</h3>
+    <h3>Configurações</h3>
+
+    <h4 class="settings-section">Aparência</h4>
+    <div id="theme-grid"></div>
+
+    <h4 class="settings-section">Áudio</h4>
 
     <div class="field">
       <label>Entrada (microfone)</label>
