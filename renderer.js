@@ -776,7 +776,7 @@ function renderTiles() {
     const empty = document.createElement('div');
     empty.className = 'tile';
     empty.style.borderStyle = 'dashed';
-    empty.style.background = 'rgba(255,255,255,.02)';
+    empty.style.background = 'color-mix(in srgb, var(--text) 2%, transparent)';
     empty.innerHTML = `
       <div style="display:flex;flex-direction:column;align-items:center;gap:10px;color:var(--muted);padding:20px;text-align:center;">
         <div style="font-size:28px;">👋</div>
