@@ -46,6 +46,7 @@ const btnMic = document.getElementById('btn-mic');
 const btnCam = document.getElementById('btn-cam');
 const btnScreen = document.getElementById('btn-screen');
 const btnHangup = document.getElementById('btn-hangup');
+const btnMusic = document.getElementById('btn-music');
 
 const btnMin = document.getElementById('btn-min');
 const btnMax = document.getElementById('btn-max');
@@ -81,6 +82,18 @@ const fullscreenVideo = document.getElementById('fullscreen-video');
 const fullscreenName = document.getElementById('fullscreen-name');
 const fullscreenClose = document.getElementById('fullscreen-close');
 const fullscreenNative = document.getElementById('fullscreen-native');
+const fullscreenMusicHost = document.getElementById('fullscreen-music');
+
+const musicPanel = document.getElementById('music-panel');
+const musicPanelClose = document.getElementById('music-panel-close');
+const musicUrlInput = document.getElementById('music-url');
+const musicErrorEl = document.getElementById('music-error');
+const musicToggleBtn = document.getElementById('music-toggle');
+const musicSkipBtn = document.getElementById('music-skip');
+const musicVolumeInput = document.getElementById('music-volume');
+const musicVolumeValue = document.getElementById('music-volume-value');
+const musicQueueEl = document.getElementById('music-queue');
+const musicEmptyEl = document.getElementById('music-empty');
 
 /* ================= ESTADO ================= */
 const { DEFAULT_TEXT_CHANNEL, DEFAULT_VOICE_CHANNEL, isTextChannel, isVoiceChannel } = window.ConcordChannels;
@@ -151,6 +164,7 @@ let musicPlayerReady = false;
 let musicLoadedItemId = null; // item da fila carregado no player
 let musicLastSeekAt = null;    // último seek corretivo no item carregado (limita a um por SEEK_COOLDOWN_MS)
 let musicPlayerGen = 0;       // invalida criações de player pendentes (API ainda carregando)
+let musicPlayerHost = null;   // onde o player atual está: host do tile ou o canto da tela cheia
 let youTubeApiPromise = null;
 
 // Tela cheia
@@ -488,19 +502,20 @@ function updateControlButtons() {
   btnMicMini.classList.toggle('off', !micEnabled);
 }
 
-// Câmera, tela e ✕ só funcionam com voz conectada; o microfone continua livre.
+// Câmera, tela, música e ✕ só funcionam com voz conectada; o microfone continua livre.
 // Cam e Tela também ficam travados enquanto um pedido de câmera/tela está em andamento.
 function updateVoiceDependentControls() {
   const noVoice = !currentVoiceRoom;
-  [btnCam, btnScreen, btnHangup].forEach((btn) => {
+  [btnCam, btnScreen, btnMusic, btnHangup].forEach((btn) => {
     if (noVoice) btn.title = 'Entre em um canal de voz';
     else btn.title = btn.dataset.title || btn.title;
   });
   btnCam.disabled = noVoice || pendingCam;
   btnScreen.disabled = noVoice || pendingShare;
+  btnMusic.disabled = noVoice;
   btnHangup.disabled = noVoice;
 }
-[btnCam, btnScreen, btnHangup].forEach((btn) => { btn.dataset.title = btn.title; });
+[btnCam, btnScreen, btnMusic, btnHangup].forEach((btn) => { btn.dataset.title = btn.title; });
 
 /* ================= PEERS (WebRTC) ================= */
 // Transceiver de vídeo já negociado (com mid). No lado que responde à oferta,
@@ -1072,13 +1087,17 @@ function ensureMusicTile() {
   host.className = 'music-player-host';
   const label = document.createElement('div');
   label.className = 'music-tile-label';
+  label.title = 'Abrir o painel de música';
   musicTileEl.append(host, label);
+  // Cliques no próprio vídeo ficam dentro do iframe; o resto do tile abre o painel
+  musicTileEl.addEventListener('click', openMusicPanel);
   return musicTileEl;
 }
 
 // Mostra/esconde o tile e atualiza a faixa; o tile fica sempre como primeiro filho da grade.
 function syncMusicTile() {
   const active = !!(currentVoiceRoom && musicState && musicState.queue.length);
+  if (fullscreenMusicHost) fullscreenMusicHost.classList.toggle('hidden', !active);
   if (!active) {
     if (musicTileEl) musicTileEl.classList.add('hidden');
     return;
@@ -1092,7 +1111,15 @@ function syncMusicTile() {
     `🎵 ${current.title || current.videoId} · ${musicState.queue.length - 1} na fila`; // queue[0] é a atual
 }
 
-function destroyMusicPlayer() {
+// Host onde o player deve estar: o canto da tela cheia enquanto ela está aberta
+// (só o que está dentro do elemento em tela cheia aparece), senão o tile.
+function musicHostTarget() {
+  if (fullscreenMusicHost && fullscreenView && !fullscreenView.classList.contains('hidden')) return fullscreenMusicHost;
+  return ensureMusicTile().querySelector('.music-player-host');
+}
+
+// Remove o player sem mexer no tile nem no estado (usado também para trocá-lo de lugar).
+function teardownMusicPlayer() {
   musicPlayerGen++;
   if (musicPlayer) {
     try { musicPlayer.destroy(); } catch (e) {}
@@ -1101,11 +1128,23 @@ function destroyMusicPlayer() {
   musicPlayerReady = false;
   musicLoadedItemId = null;
   musicLastSeekAt = null;
-  if (musicTileEl) {
-    const host = musicTileEl.querySelector('.music-player-host');
-    host.innerHTML = '';
-    musicTileEl.classList.add('hidden');
-  }
+  musicPlayerHost = null;
+  if (musicTileEl) musicTileEl.querySelector('.music-player-host').innerHTML = '';
+  if (fullscreenMusicHost) fullscreenMusicHost.innerHTML = '';
+}
+
+function destroyMusicPlayer() {
+  teardownMusicPlayer();
+  if (musicTileEl) musicTileEl.classList.add('hidden');
+  if (fullscreenMusicHost) fullscreenMusicHost.classList.add('hidden');
+}
+
+// Abrir/fechar a tela cheia: mover um iframe o recarrega, então o player é recriado
+// no lugar novo e retoma no minuto compartilhado (recarga curta).
+function relocateMusicPlayer() {
+  if (!musicPlayer || musicPlayerHost === musicHostTarget()) return;
+  teardownMusicPlayer();
+  if (musicState && currentVoiceRoom) createMusicPlayer();
 }
 
 async function createMusicPlayer() {
@@ -1119,9 +1158,10 @@ async function createMusicPlayer() {
   // Saiu da voz, a fila acabou ou outro player foi criado enquanto a API carregava
   if (gen !== musicPlayerGen || musicPlayer || !musicState || !currentVoiceRoom) return;
 
-  const host = musicTileEl.querySelector('.music-player-host');
+  const host = musicHostTarget();
   const target = document.createElement('div');
   host.appendChild(target);
+  musicPlayerHost = host;
   musicPlayer = new window.YT.Player(target, {
     width: '100%',
     height: '100%',
@@ -1198,19 +1238,121 @@ function applyMusicState(pub) {
   if (!pub || !Array.isArray(pub.queue) || pub.queue.length === 0) {
     musicState = null;
     destroyMusicPlayer();
+    renderMusicPanel();
     return;
   }
   musicState = { ...pub, receivedAt: Date.now() };
   syncMusicTile();
   if (!musicPlayer) createMusicPlayer(); // onReady aplica o estado
   else syncMusicPlayer();
+  renderMusicPanel();
 }
 
 // Sair da voz (ou trocar de canal): a música para para esta pessoa.
 function resetMusic() {
   musicState = null;
   destroyMusicPlayer();
+  renderMusicPanel();
 }
+
+/* ---------- Painel da música ---------- */
+function isMusicPanelOpen() {
+  return !musicPanel.classList.contains('hidden');
+}
+
+function openMusicPanel() {
+  if (!currentVoiceRoom) return;
+  musicPanel.classList.remove('hidden');
+  btnMusic.setAttribute('aria-expanded', 'true');
+  btnMusic.classList.add('primary');
+  btnMusic.classList.remove('off');
+  const vol = getMusicVolume();
+  musicVolumeInput.value = String(vol);
+  musicVolumeValue.textContent = String(vol);
+  renderMusicPanel();
+  musicUrlInput.focus();
+}
+
+function closeMusicPanel() {
+  musicPanel.classList.add('hidden');
+  btnMusic.setAttribute('aria-expanded', 'false');
+  btnMusic.classList.remove('primary');
+  btnMusic.classList.add('off');
+  musicErrorEl.textContent = '';
+}
+
+// Fila, ⏯ e ⏭ conforme o último music-state (chamado a cada music-state).
+function renderMusicPanel() {
+  const queue = (musicState && musicState.queue) || [];
+  musicQueueEl.replaceChildren(...queue.map((item, i) => {
+    const row = document.createElement('div');
+    row.className = 'music-item' + (i === 0 ? ' current' : '');
+    row.dataset.itemId = item.id;
+    const img = document.createElement('img');
+    img.alt = '';
+    img.loading = 'lazy';
+    if (item.thumbnail) img.src = item.thumbnail;
+    const info = document.createElement('div');
+    info.className = 'music-item-info';
+    const title = document.createElement('div');
+    title.className = 'music-item-title';
+    title.textContent = item.title || item.videoId;
+    title.title = title.textContent;
+    const meta = document.createElement('div');
+    meta.className = 'music-item-meta';
+    const by = `adicionada por ${item.addedBy || 'alguém'}`;
+    meta.textContent = i === 0 ? `Tocando agora · ${by}` : by;
+    info.append(title, meta);
+    const remove = document.createElement('button');
+    remove.className = 'music-icon-btn';
+    remove.title = 'Tirar da fila';
+    remove.textContent = '✕';
+    remove.addEventListener('click', () => socket.emit('music-remove', item.id));
+    row.append(img, info, remove);
+    return row;
+  }));
+  musicEmptyEl.classList.toggle('hidden', queue.length > 0);
+  musicToggleBtn.disabled = queue.length === 0;
+  musicSkipBtn.disabled = queue.length === 0;
+  musicToggleBtn.title = musicState && musicState.playing ? 'Pausar para todos' : 'Tocar para todos';
+}
+
+function submitMusicUrl() {
+  const url = musicUrlInput.value.trim();
+  if (!url || !currentVoiceRoom) return;
+  musicErrorEl.textContent = '';
+  socket.emit('music-add', url, (res) => {
+    if (res && res.ok) {
+      if (musicUrlInput.value.trim() === url) musicUrlInput.value = '';
+    } else {
+      musicErrorEl.textContent = (res && res.message) || 'Não foi possível adicionar a música';
+    }
+  });
+}
+
+btnMusic.addEventListener('click', () => {
+  if (isMusicPanelOpen()) closeMusicPanel();
+  else openMusicPanel();
+});
+musicPanelClose.addEventListener('click', closeMusicPanel);
+musicUrlInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') submitMusicUrl();
+});
+musicUrlInput.addEventListener('input', () => { musicErrorEl.textContent = ''; });
+musicToggleBtn.addEventListener('click', () => socket.emit('music-toggle'));
+musicSkipBtn.addEventListener('click', () => {
+  if (musicState && musicState.queue.length) socket.emit('music-skip', musicState.queue[0].id);
+});
+// Volume só local: salva e aplica no player desta pessoa
+musicVolumeInput.addEventListener('input', () => {
+  const vol = Math.min(100, Math.max(0, Math.round(Number(musicVolumeInput.value) || 0)));
+  localStorage.setItem('concord-music-volume', String(vol));
+  musicVolumeValue.textContent = String(vol);
+  if (musicPlayer && musicPlayerReady) musicPlayer.setVolume(vol);
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && isMusicPanelOpen() && fullscreenView.classList.contains('hidden')) closeMusicPanel();
+});
 
 let toastTimer = null;
 function showToast(text) {
@@ -1239,6 +1381,7 @@ function openFullscreenView(stream, name) {
   fullscreenVideo.srcObject = stream;
   fullscreenView.classList.remove('hidden');
   fullscreenVideo.play().catch(() => {});
+  relocateMusicPlayer(); // player da música vai para o canto da tela cheia
 
   const track = stream.getVideoTracks()[0];
   if (track) {
@@ -1263,6 +1406,7 @@ function closeFullscreenView() {
   fullscreenStream = null;
   if (fullscreenVideo) fullscreenVideo.srcObject = null;
   if (fullscreenView) fullscreenView.classList.add('hidden');
+  relocateMusicPlayer(); // de volta ao tile
   if (document.fullscreenElement) {
     document.exitFullscreen().catch(() => {});
   }
@@ -1284,6 +1428,7 @@ document.addEventListener('fullscreenchange', () => {
     fullscreenStream = null;
     if (fullscreenVideo) fullscreenVideo.srcObject = null;
     if (fullscreenView) fullscreenView.classList.add('hidden');
+    relocateMusicPlayer();
   }
 });
 
@@ -2234,6 +2379,7 @@ function leaveVoice() {
   stopLocalMedia();
   closeFullscreenView();
   resetMusic();
+  closeMusicPanel();
 
   sharingScreen = false;
   camEnabled = false;
