@@ -15,6 +15,8 @@ App desktop para Windows 11 inspirado no Discord, feito com Electron, WebRTC e S
 - Redução de ruído do microfone (gate + filtro + compressor), com níveis de intensidade
 - Painel de participantes com indicação de microfone mudo
 - Canal de voz mostrando quem está conectado, com avatar, anel de quem está falando, 🔇 e selo "AO VIVO" para quem compartilha a tela
+- Música do YouTube na chamada: cole um link do YouTube no painel 🎵 e ele entra na fila do canal de voz. Todos na chamada ouvem a mesma música, sincronizada, e qualquer pessoa da chamada pode pausar, pular ou remover músicas da fila. A fila aparece como o primeiro bloco da grade de participantes; clique nele ou no botão 🎵 da barra superior para abrir o painel, onde também ficam o volume (só no seu computador) e a capa e o título de cada música
+- O vídeo do YouTube aparece no próprio Concord; nada é baixado. Cada pessoa usa o player oficial do YouTube. Ao sair da voz, a música para para você. Em tela cheia, o player vai para um canto da própria visualização
 - 13 temas de cor (Configurações → Aparência), salvos no próprio computador: Escuro, Grafite, Cyberpunk, Neon Verde, Drácula, Nord, Aquático, Natureza, Pôr do sol, Claro, Sépia, Lavanda / Sakura e Algodão-doce
 - Indicador visual de áudio (quem está falando)
 - Layout estilo Discord com rail de servidores, canais, chat e participantes

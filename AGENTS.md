@@ -80,15 +80,17 @@ Saída: `dist\Concord Setup 1.0.0.exe`.
 
 | Arquivo | Responsabilidade |
 | --- | --- |
-| `main.js` | Processo principal: janela, permissões, servidor Socket.io, autenticação, presença, salas, mensagens, retenção, `desktopCapturer` e seletor de tela. |
+| `main.js` | Processo principal: janela, permissões, servidor Socket.io, autenticação, presença, salas, mensagens, retenção, `desktopCapturer` e seletor de tela, fila de música por sala de voz (`musicByRoom`) e o `Referer` injetado nas requisições do YouTube. |
 | `renderer.js` | Interface e lógica do cliente: login, canais, chat, WebRTC, câmera/microfone, compartilhamento de tela, status, configurações de áudio. |
 | `themes.js` | Os 13 temas (paletas, id padrão `escuro`), leitura/gravação em `localStorage['concord-theme']` e `applyTheme`. Carregado no `<head>` antes do CSS para aplicar o tema antes da primeira pintura. Também é módulo Node (testes). |
 | `speaking.js` | Detecção de "falando" com histerese (liga ≥ 0.12, desliga após 250 ms abaixo) para o anel do avatar. |
 | `channels.js` | Lista fixa de canais: `TEXT_CHANNELS` (`geral`, `jogos`, `musica`) e `VOICE_CHANNELS` (`voz-sala`, `voz-jogos`, `voz-musica`); padrões `geral` e `voz-sala`. Usado por `main.js` e `renderer.js`. Também é módulo Node (testes). |
-| `protocol.js` | `PROTOCOL_VERSION` (hoje `2`), mensagem de versão incompatível e `isCompatible`. Usado por `main.js` e `renderer.js`. Também é módulo Node (testes). |
+| `protocol.js` | `PROTOCOL_VERSION` (hoje `3`), mensagem de versão incompatível e `isCompatible`. Usado por `main.js` e `renderer.js`. Também é módulo Node (testes). |
+| `youtube.js` | `parseYouTubeId` (aceita links `youtu.be`, `watch?v=`, `shorts`, `embed`), `thumbnailUrl` e `lookupVideo` (oEmbed público, sem chave, timeout de 4 s). Usado por `main.js`. Também é módulo Node (testes). |
+| `music-state.js` | Regras puras da fila de música: `MAX_QUEUE` (50), `SYNC_TOLERANCE_MS` (2000), `RESYNC_INTERVAL_MS` (15000), `SEEK_COOLDOWN_MS` (5000), `shouldCorrectSeek`, adicionar/remover, pular ou terminar só se o item ainda é o atual, alternar pausa e posição atual. Usado por `main.js` e `renderer.js`. Também é módulo Node (testes). |
 | `presence.js` | Regras de status: modo escolhido (`online`, `away`, `busy`, `invisible`), ausente automático só a partir de Online e atividade que desfaz só o automático. Também é módulo Node (testes). |
 | `room-state.js` | Estado público do usuário na sala de voz (`publicUser`, `applyStatePatch`: `muted`, `status`, `sharing`) e troca de canais (`joinVoiceRoom`, `leaveVoiceRoom`, `canUseTextRoom`, `socketRoomsToLeave`). Usado por `main.js`. |
-| `test/` | Testes `node:test` (`npm test`): paletas e contraste, CSS sem cores fixas, estado da sala, detecção de fala. Fora do instalador. |
+| `test/` | Testes `node:test` (`npm test`): paletas e contraste, CSS sem cores fixas, estado da sala, detecção de fala, YouTube e fila de música. Fora do instalador. |
 | `preload.js` | Ponte segura `contextBridge` para controles da janela e IPC do seletor de tela. |
 | `index.html` | Layout e CSS de toda a interface; também contém os modais e a tela de login. |
 | `package.json` | Scripts, dependências e configuração do electron-builder. |
@@ -143,6 +145,12 @@ Saída: `dist\Concord Setup 1.0.0.exe`.
   - Diagnóstico: **Ctrl+Shift+D** mostra fps/resolução/banda/codec/limitação por participante.
   - Ao parar, volta para a câmera (se ligada) ou remove o vídeo.
   - Visualização em tela cheia: cada tile com vídeo tem botão ⛶ e duplo clique; usa `#fullscreen-view` + `requestFullscreen`.
+- Música (YouTube):
+  - A fila aparece como primeiro tile da grade de chamada enquanto houver música; o botão 🎵 da barra superior (desabilitado sem voz) e o tile abrem o painel `#btn-music` / modal de música.
+  - Quem está na voz controla a fila. Sair da voz interrompe a música só para quem saiu.
+  - Nada é baixado: o player oficial do YouTube (IFrame API) toca em cada computador. Em tela cheia, o player vai para um canto dentro de `#fullscreen-view`.
+  - Volume local em `localStorage['concord-music-volume']` (não é sincronizado).
+  - Sincronização: o cliente estima a posição a partir de `positionMs`/`serverNow` e faz `seekTo` só se a diferença passar de `SYNC_TOLERANCE_MS`, respeitando `SEEK_COOLDOWN_MS`.
 - Áudio do microfone:
   - Pipeline de redução de ruído: high-pass (85 Hz) → gate (AudioWorklet `concord-noise-gate` via Blob) → compressor → gain → `MediaStreamAudioDestination`.
   - `micProcessedTrack` é a faixa enviada aos peers; `getOutboundAudioTracks()` decide entre processada e bruta.
@@ -161,6 +169,8 @@ Saída: `dist\Concord Setup 1.0.0.exe`.
 - `save-message`, `get-messages`, `new-message`, `messages-cleared`
 - `delete-my-messages`
 - `disconnect`
+- Música (`main.js`): cliente → servidor `music-add` (url, callback), `music-remove` (itemId), `music-skip` (itemId atual), `music-toggle`, `music-ended` (itemId), `music-error` ({ itemId, code }). Servidor → sala de voz: `music-state` (`queue`, `playing`, `positionMs`, `serverNow`) e `music-notice` (texto curto, ex.: "Não foi possível tocar"). `music-state` também vai para quem entra na voz.
+- Estado da música fica em `musicByRoom` (por sala de voz): é apagado quando a fila esvazia ou a sala fica vazia. Com música tocando, o servidor reenvia `music-state` a cada `RESYNC_INTERVAL_MS` (15 s).
 
 - `join-text` troca o canal de texto (sem mídia). `join-voice` entra numa voz (sai antes da anterior). `leave-voice` sai da voz. Só aceitam ids da lista em `channels.js`.
 - `save-message`, `get-messages` e `delete-my-messages` só funcionam para o canal de texto atual do socket (`canUseTextRoom`).
@@ -178,7 +188,7 @@ O servidor atualmente confia no campo `user` enviado em `save-message`. Para end
 
 ### Versão do protocolo
 
-- `PROTOCOL_VERSION` em `protocol.js` é compartilhado por cliente e servidor. Hoje é `2` (a versão 1 usava `join-room`/`leave-room`).
+- `PROTOCOL_VERSION` em `protocol.js` é compartilhado por cliente e servidor. Hoje é `3` (a versão 1 usava `join-room`/`leave-room`; a 3 adicionou os eventos `music-*`).
 - O cliente envia `protocol` em `register` e `login`; o servidor recusa versão diferente (inclusive cliente antigo, sem o campo) com a mensagem “Seu Vox está em uma versão diferente da do servidor. Atualize para entrar.”
 - **Suba `PROTOCOL_VERSION` sempre que um evento ou payload mudar de forma incompatível** (nome, campos obrigatórios, significado). Mudança compatível não exige.
 
@@ -260,6 +270,7 @@ const DATA_DIR = app.isPackaged ? app.getPath('userData') : __dirname;
 - `audioOutputId`
 - `monitorEnabled`
 - `concord-theme` (id do tema; inválido ou ausente → `escuro`)
+- `concord-music-volume` (volume local do player de música, 0–100, padrão 50; só neste computador)
 
 Ficam no perfil do Electron em `%APPDATA%\Concord`.
 
@@ -286,6 +297,7 @@ Manter estas decisões, salvo pedido explícito do usuário:
 - Compartilhamento de tela com seletor de janela/tela.
 - Sem participantes fantasma.
 - Mensagens apagadas após 7 dias e limite de 200 por canal.
+- Música: sem download; o player oficial do YouTube toca em cada pessoa; fila de até 50 músicas por sala de voz; sair da voz para a música de quem saiu.
 - Não usar serviços pagos.
 
 ## 7. Armadilhas conhecidas
@@ -354,6 +366,14 @@ Pare o app antes de copiar.
 - Cliente e servidor com `PROTOCOL_VERSION` diferentes não entram: o login é recusado com a mensagem para atualizar. Quem usa o instalador antigo precisa instalar o novo.
 - Ao mudar eventos (ver “Versão do protocolo” na seção 4), suba a versão nos dois lados e lembre de gerar o instalador novo.
 
+### Música do YouTube e `Referer`
+
+- O app carrega a página por `file://` (`loadFile`). Nesse caso o player do YouTube fica pronto e falha com **erro 153** (configuração do player); não toca. Medido no macOS.
+- Solução atual: `main.js` injeta `Referer: https://github.com/viniciusog1/vox` via `session.defaultSession.webRequest.onBeforeSendHeaders`, só em `https://www.youtube.com/*`, `https://*.youtube.com/*` e `https://*.googlevideo.com/*`. Não remova nem restrinja esse filtro sem testar a música de novo.
+- **Pendência:** não verificado no Windows (inferência: mesmo Chromium). Primeiro item a testar lá. Plano B, se falhar: servir a página por `http://127.0.0.1` local em vez de `file://`.
+- Vídeo sem incorporação (erros 101/150) ou indisponível (100) não toca: o cliente envia `music-error` e o servidor pula com um aviso.
+- Não baixamos nem reenviamos áudio/vídeo do YouTube; o player oficial roda em cada máquina.
+
 ### Bundle do Socket.io
 
 `socket.io.min.js` é copiado de `node_modules/socket.io/client-dist/socket.io.min.js` pelo `postinstall`. Não editar manualmente; rode `npm install` se precisar regenerar.
@@ -375,6 +395,7 @@ Antes de considerar uma alteração concluída:
    - desligar remove o vídeo.
 4. Testar login/cadastro e chat em um canal.
 5. Testar entrada/saída de canal de voz e botão de sair; trocar de canal de texto não deve derrubar a voz.
+   - Música: colar um link do YouTube, pausar, pular, remover e conferir que o player toca (sem erro 153) e que sair da voz para a música de quem saiu.
 6. Testar compartilhamento de tela: abrir seletor, escolher, parar.
 7. Testar layout com muitas mensagens: a janela não deve crescer.
 8. Gerar instalador e, se possível, testar `dist\win-unpacked\Concord.exe`.
