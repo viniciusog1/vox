@@ -126,6 +126,8 @@ function setPeerVolume(name, vol) {
   applyPeerVolume(name);
 }
 const analysers = new Map();      // socketId -> AnalyserNode
+const videoElements = new Map();  // stream.id -> <video> reaproveitado entre renders
+const usedVideoIds = new Set();
 const speakingStates = new Map(); // socketId (inclusive o próprio) -> estado do anel de fala
 let localAnalyser = null;         // { trackId, analyser } do microfone enviado
 
@@ -159,6 +161,18 @@ let audioOutputId = localStorage.getItem('audioOutputId') || '';
 
 const ICE_CONFIG = {
   iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+};
+
+// Encoder de vídeo. Medido no Electron 28 (1080p, conteúdo em movimento):
+// VP8 em modo "tela" cai para 1–4 fps; H.264 + contentHint "motion" mantém ~60 fps.
+// Sem start-bitrate, a estimativa de banda começa em ~300 kbps e leva ~20 s
+// subindo a resolução (480p → 1080p).
+const VIDEO_START_KBPS = 6000;
+const VIDEO_MIN_KBPS = 1500;
+const SHARE_BITRATES = {
+  '480': { 30: 1500000, 60: 2500000 },
+  '720': { 30: 3000000, 60: 5000000 },
+  '1080': { 30: 5000000, 60: 8000000 }
 };
 
 /* ================= UTIL ================= */
@@ -478,6 +492,125 @@ function updateVoiceDependentControls() {
 [btnCam, btnScreen, btnHangup].forEach((btn) => { btn.dataset.title = btn.title; });
 
 /* ================= PEERS (WebRTC) ================= */
+// Transceiver de vídeo já negociado (com mid). No lado que responde à oferta,
+// o addTransceiver('video') local não é reaproveitado pela oferta remota e fica
+// sem mid: enviar por ele não chega ao outro lado.
+function getVideoTransceiver(pc) {
+  const list = pc.getTransceivers().filter(
+    (t) => !t.stopped && t.receiver && t.receiver.track && t.receiver.track.kind === 'video'
+  );
+  return list.find((t) => t.mid !== null) || list[0] || null;
+}
+
+// Ao responder, cada m-line da oferta cria um transceiver novo (recvonly) e os
+// criados aqui com addTransceiver ficam órfãos, sem mid. Sem isto, quem entrou
+// depois na sala não consegue enviar vídeo (câmera/tela) para quem já estava.
+async function adoptOfferTransceivers(pc) {
+  const all = pc.getTransceivers();
+  for (const kind of ['audio', 'video']) {
+    const ofKind = all.filter((t) => !t.stopped && t.receiver && t.receiver.track && t.receiver.track.kind === kind);
+    const negotiated = ofKind.find((t) => t.mid !== null);
+    if (!negotiated) continue;
+    for (const orphan of ofKind.filter((t) => t.mid === null)) {
+      if (orphan.sender.track && !negotiated.sender.track) await negotiated.sender.replaceTrack(orphan.sender.track);
+      orphan.stop();
+    }
+    if (negotiated.direction === 'recvonly') negotiated.direction = 'sendrecv';
+  }
+}
+
+function preferVideoCodecs(pc) {
+  if (!window.RTCRtpReceiver || !RTCRtpReceiver.getCapabilities) return;
+  const recvCaps = RTCRtpReceiver.getCapabilities('video');
+  const sendCaps = RTCRtpSender.getCapabilities ? RTCRtpSender.getCapabilities('video') : null;
+  if (!recvCaps) return;
+  const canSendH264 = !!(sendCaps && sendCaps.codecs.some((c) => c.mimeType === 'video/H264'));
+  const rank = (c) => {
+    if (c.mimeType === 'video/H264' && canSendH264) return /packetization-mode=1/.test(c.sdpFmtpLine || '') ? 0 : 1;
+    if (c.mimeType === 'video/VP8') return 2;
+    return 3;
+  };
+  const sorted = recvCaps.codecs.slice().sort((a, b) => rank(a) - rank(b));
+  pc.getTransceivers().forEach((t) => {
+    if (t.stopped || !t.setCodecPreferences || !t.receiver || t.receiver.track.kind !== 'video') return;
+    try { t.setCodecPreferences(sorted); } catch (e) { console.warn('setCodecPreferences falhou:', e); }
+  });
+}
+
+// Parâmetros x-google-* do Chromium na descrição remota: a estimativa de banda
+// já começa alta em vez de ~300 kbps.
+function withVideoBitrateHints(desc) {
+  const lines = desc.sdp.split('\r\n');
+  const hint = `x-google-start-bitrate=${VIDEO_START_KBPS};x-google-min-bitrate=${VIDEO_MIN_KBPS}`;
+  const out = [];
+  let inVideo = false;
+  const mediaPts = new Set();
+  const withFmtp = new Set();
+
+  const isMediaCodec = (line) => !/ (rtx|red|ulpfec|flexfec-03)\//i.test(line);
+
+  // 1ª passada: codecs de mídia do vídeo e quais já têm a=fmtp
+  lines.forEach((line) => {
+    if (line.startsWith('m=')) inVideo = line.startsWith('m=video');
+    if (!inVideo) return;
+    let m = line.match(/^a=rtpmap:(\d+) /);
+    if (m && isMediaCodec(line)) mediaPts.add(m[1]);
+    m = line.match(/^a=fmtp:(\d+) /);
+    if (m) withFmtp.add(m[1]);
+  });
+
+  inVideo = false;
+  lines.forEach((line) => {
+    if (line.startsWith('m=')) inVideo = line.startsWith('m=video');
+    if (inVideo) {
+      const fmtp = line.match(/^a=fmtp:(\d+) /);
+      if (fmtp && mediaPts.has(fmtp[1]) && !line.includes('x-google-start-bitrate')) {
+        out.push(`${line};${hint}`);
+        return;
+      }
+      out.push(line);
+      const rtpmap = line.match(/^a=rtpmap:(\d+) /);
+      if (rtpmap && mediaPts.has(rtpmap[1]) && !withFmtp.has(rtpmap[1])) {
+        out.push(`a=fmtp:${rtpmap[1]} ${hint}`);
+      }
+      return;
+    }
+    out.push(line);
+  });
+
+  return { type: desc.type, sdp: out.join('\r\n') };
+}
+
+function shareBitrate() {
+  const byFps = SHARE_BITRATES[shareResolution] || SHARE_BITRATES['1080'];
+  return byFps[shareFps] || byFps[30];
+}
+
+// 60 fps: prioriza fluidez (jogos/vídeo). 30 fps: prioriza nitidez (texto/código).
+async function applyVideoSenderParams(pc) {
+  const transceiver = getVideoTransceiver(pc);
+  const sender = transceiver && transceiver.sender;
+  if (!sender || !sender.getParameters) return;
+  try {
+    const params = sender.getParameters();
+    if (!params.encodings || !params.encodings.length) return; // ainda não negociado
+    const enc = params.encodings[0];
+    if (sharingScreen) {
+      enc.maxBitrate = shareBitrate();
+      enc.maxFramerate = shareFps;
+      enc.scaleResolutionDownBy = 1;
+      params.degradationPreference = shareFps === 60 ? 'maintain-framerate' : 'maintain-resolution';
+    } else {
+      delete enc.maxBitrate;
+      delete enc.maxFramerate;
+      params.degradationPreference = 'balanced';
+    }
+    await sender.setParameters(params);
+  } catch (e) {
+    console.warn('Falha ao ajustar parâmetros de vídeo:', e);
+  }
+}
+
 function createPeer(id) {
   if (peers.has(id)) return peers.get(id);
 
@@ -525,8 +658,17 @@ function createPeer(id) {
     }
     if (e.track.kind === 'audio') setupAnalyser(id, stream);
     if (e.track.kind === 'video') {
-      e.track.addEventListener('mute', renderTiles);
-      e.track.addEventListener('unmute', renderTiles);
+      // "mute" dispara em qualquer pausa curta de frames; só troca para o
+      // avatar se a pausa durar, senão um engasgo vira tela piscando.
+      let muteTimer = null;
+      e.track.addEventListener('mute', () => {
+        clearTimeout(muteTimer);
+        muteTimer = setTimeout(() => { if (e.track.muted) renderTiles(); }, 1500);
+      });
+      e.track.addEventListener('unmute', () => {
+        clearTimeout(muteTimer);
+        if (!videoElements.has(stream.id)) renderTiles();
+      });
     }
     renderTiles();
   };
@@ -625,6 +767,7 @@ socket.on('user-joined', async (id) => {
   if (effectiveStatus() === 'invisible') return;
   try {
     const pc = createPeer(id);
+    preferVideoCodecs(pc);
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
     socket.emit('signal', { to: id, data: { offer } });
@@ -649,14 +792,18 @@ socket.on('signal', async ({ from, data }) => {
     if (!pc) pc = createPeer(from);
 
     if (data.offer) {
-      await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
+      await pc.setRemoteDescription(withVideoBitrateHints(data.offer));
       await flushCandidates(pc);
+      await adoptOfferTransceivers(pc);
+      preferVideoCodecs(pc);
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
       socket.emit('signal', { to: from, data: { answer } });
+      applyVideoSenderParams(pc);
     } else if (data.answer) {
-      await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
+      await pc.setRemoteDescription(withVideoBitrateHints(data.answer));
       await flushCandidates(pc);
+      applyVideoSenderParams(pc);
     } else if (data.candidate) {
       if (pc.remoteDescription && pc.remoteDescription.type) {
         await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
@@ -807,11 +954,17 @@ function renderMembers() {
 /* ================= TILES DE VÍDEO ================= */
 function renderTiles() {
   videoGrid.innerHTML = '';
+  usedVideoIds.clear();
 
   // Sem voz: área de chamada mostra só o estado vazio
   callEmpty.style.display = currentVoiceRoom ? 'none' : '';
   audioIndicator.style.display = currentVoiceRoom ? '' : 'none';
-  if (!currentVoiceRoom) return;
+  if (!currentVoiceRoom) {
+    // Solta os <video> reaproveitados da chamada que acabou
+    videoElements.forEach((video) => { video.srcObject = null; });
+    videoElements.clear();
+    return;
+  }
 
   // Tile local
   const localStreamToShow = sharingScreen
@@ -848,6 +1001,13 @@ function renderTiles() {
       </div>`;
     videoGrid.appendChild(empty);
   }
+
+  videoElements.forEach((video, streamId) => {
+    if (!usedVideoIds.has(streamId)) {
+      video.srcObject = null;
+      videoElements.delete(streamId);
+    }
+  });
 
   applyOutputDevice();
 }
@@ -930,13 +1090,20 @@ function buildTile(name, stream, opts = {}) {
   );
 
   if (stream && hasVideo) {
-    const video = document.createElement('video');
-    video.autoplay = true;
-    video.playsInline = true;
+    // Reaproveita o <video> do render anterior: recriar reinicia a reprodução
+    // e deixa o quadro preto até chegar o próximo keyframe.
+    let video = videoElements.get(stream.id);
+    if (!video) {
+      video = document.createElement('video');
+      video.autoplay = true;
+      video.playsInline = true;
+      video.srcObject = stream;
+      videoElements.set(stream.id, video);
+    }
+    usedVideoIds.add(stream.id);
     video.muted = !!opts.muted;
     video.volume = getPeerVolume(peerKey);
-    video.srcObject = stream;
-    if (opts.remote) video.classList.add('remote-video');
+    video.classList.toggle('remote-video', !!opts.remote);
     tile.appendChild(video);
   } else {
     if (stream && opts.remote) {
@@ -1552,9 +1719,7 @@ async function enableCamera() {
     // Se estiver compartilhando tela, a câmera fica pronta para quando parar.
     if (!sharingScreen) {
       peers.forEach((pc) => {
-        const transceiver = pc.getTransceivers().find(
-          (t) => t.receiver && t.receiver.track && t.receiver.track.kind === 'video'
-        );
+        const transceiver = getVideoTransceiver(pc);
         if (transceiver && transceiver.sender) transceiver.sender.replaceTrack(track);
         else pc.addTrack(track, localStream);
       });
@@ -1576,9 +1741,7 @@ function disableCamera() {
 
   if (!sharingScreen) {
     peers.forEach((pc) => {
-      const transceiver = pc.getTransceivers().find(
-        (t) => t.receiver && t.receiver.track && t.receiver.track.kind === 'video'
-      );
+      const transceiver = getVideoTransceiver(pc);
       if (transceiver && transceiver.sender) transceiver.sender.replaceTrack(null);
     });
   }
@@ -1661,9 +1824,11 @@ btnScreen.addEventListener('click', async () => {
     }
     screenStream = stream;
 
+    const screenTrack = screenStream.getVideoTracks()[0];
+    screenTrack.contentHint = shareFps === 60 ? 'motion' : 'detail';
     sharingScreen = true;
     sendStatus();
-    replaceVideoTrackEverywhere(screenStream.getVideoTracks()[0], screenStream);
+    replaceVideoTrackEverywhere(screenTrack, screenStream);
     renderTiles();
 
     btnScreen.textContent = '⏹️ Parar';
@@ -1681,11 +1846,12 @@ btnScreen.addEventListener('click', async () => {
 
 function replaceVideoTrackEverywhere(track, stream) {
   peers.forEach((pc) => {
-    const transceiver = pc.getTransceivers().find(
-      (t) => t.receiver && t.receiver.track && t.receiver.track.kind === 'video'
-    );
-    if (transceiver && transceiver.sender) transceiver.sender.replaceTrack(track);
-    else if (track) pc.addTrack(track, stream);
+    const transceiver = getVideoTransceiver(pc);
+    if (transceiver && transceiver.sender) {
+      transceiver.sender.replaceTrack(track)
+        .then(() => applyVideoSenderParams(pc))
+        .catch((e) => console.warn('Falha ao trocar faixa de vídeo:', e));
+    } else if (track) pc.addTrack(track, stream);
   });
 }
 
@@ -1908,6 +2074,71 @@ if (btnLogout) btnLogout.addEventListener('click', logout);
 btnMin.addEventListener('click', () => window.electronAPI.minimize());
 btnMax.addEventListener('click', () => window.electronAPI.maximize());
 btnClose.addEventListener('click', () => window.electronAPI.close());
+
+/* ================= DIAGNÓSTICO DE VÍDEO (Ctrl+Shift+D) ================= */
+// Mostra, por participante, o que sai e o que chega: fps, resolução, banda,
+// codec e o motivo de limitação reportado pelo WebRTC.
+let statsHud = null;
+let statsTimer = null;
+const statsPrev = new Map(); // `${peerId}:${statId}` -> { bytes, ts }
+
+function kbpsFor(key, bytes, ts) {
+  const prev = statsPrev.get(key);
+  statsPrev.set(key, { bytes, ts });
+  if (!prev || ts <= prev.ts) return 0;
+  return Math.round(((bytes - prev.bytes) * 8) / (ts - prev.ts));
+}
+
+async function updateStatsHud() {
+  const lines = [];
+  for (const [id, pc] of peers) {
+    const user = userMap.get(id);
+    lines.push(`▸ ${user ? user.username : id.slice(0, 6)}  (${pc.connectionState})`);
+    let report;
+    try { report = await pc.getStats(); } catch (e) { continue; }
+    const codecs = new Map();
+    report.forEach((r) => { if (r.type === 'codec') codecs.set(r.id, r.mimeType.replace('video/', '')); });
+    report.forEach((r) => {
+      if (r.kind !== 'video') return;
+      if (r.type === 'outbound-rtp' && r.framesEncoded) {
+        const kbps = kbpsFor(`${id}:${r.id}`, r.bytesSent, r.timestamp);
+        const encMs = r.framesEncoded ? ((r.totalEncodeTime * 1000) / r.framesEncoded).toFixed(1) : '-';
+        lines.push(`  envio   ${r.frameWidth || '?'}x${r.frameHeight || '?'} ${r.framesPerSecond || 0}fps ${kbps}kbps ` +
+          `${codecs.get(r.codecId) || '?'} enc ${encMs}ms lim:${r.qualityLimitationReason}`);
+      }
+      if (r.type === 'inbound-rtp' && r.framesDecoded) {
+        const kbps = kbpsFor(`${id}:${r.id}`, r.bytesReceived, r.timestamp);
+        const jb = r.jitterBufferEmittedCount ? Math.round((r.jitterBufferDelay * 1000) / r.jitterBufferEmittedCount) : 0;
+        lines.push(`  recebe  ${r.frameWidth || '?'}x${r.frameHeight || '?'} ${r.framesPerSecond || 0}fps ${kbps}kbps ` +
+          `${codecs.get(r.codecId) || '?'} jb ${jb}ms perdidos ${r.packetsLost || 0} travadas ${r.freezeCount || 0}`);
+      }
+    });
+  }
+  if (statsHud) statsHud.textContent = lines.length ? lines.join('\n') : 'Sem conexões de mídia.';
+}
+
+function toggleStatsHud() {
+  if (statsHud) {
+    clearInterval(statsTimer);
+    statsHud.remove();
+    statsHud = null;
+    statsPrev.clear();
+    return;
+  }
+  statsHud = document.createElement('pre');
+  statsHud.style.cssText = 'position:fixed;top:40px;right:12px;z-index:9999;margin:0;padding:8px 10px;' +
+    'background:rgba(0,0,0,.8);color:#9f9;font:11px/1.4 monospace;border-radius:6px;pointer-events:none;white-space:pre;';
+  document.body.appendChild(statsHud);
+  updateStatsHud();
+  statsTimer = setInterval(updateStatsHud, 1000);
+}
+
+document.addEventListener('keydown', (e) => {
+  if (e.ctrlKey && e.shiftKey && e.code === 'KeyD') {
+    e.preventDefault();
+    toggleStatsHud();
+  }
+});
 
 /* ================= INICIALIZAÇÃO ================= */
 updateControlButtons();

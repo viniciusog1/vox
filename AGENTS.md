@@ -135,6 +135,12 @@ Saída: `dist\Concord Setup 1.0.0.exe`.
   - Qualidade escolhida no seletor: `#share-resolution` (480/720/1080) e `#share-fps` (30/60), padrão 1080p30.
   - Persistência em `concord-share-resolution` e `concord-share-fps`.
   - O track da tela substitui o da câmera em todos os peers via `replaceVideoTrackEverywhere`.
+  - Encoder: H.264 preferido (`preferVideoCodecs`, cai para VP8 se não houver). VP8 em modo tela a 1080p cai para 1–4 fps (medido).
+  - `contentHint`: `motion` em 60 fps (prioriza fluidez), `detail` em 30 fps (prioriza nitidez). `applyVideoSenderParams` aplica `maxBitrate` (`SHARE_BITRATES`), `maxFramerate` e `degradationPreference` em cada peer.
+  - `withVideoBitrateHints` adiciona `x-google-start-bitrate`/`x-google-min-bitrate` na descrição remota; sem isso a banda começa em ~300 kbps.
+  - `adoptOfferTransceivers`: no lado que responde à oferta, move as faixas locais para os transceivers negociados. Sem isso, quem entra depois na sala não envia vídeo.
+  - O `<video>` de cada stream é reaproveitado entre `renderTiles` (`videoElements`); `mute` remoto só troca para o avatar após 1,5 s.
+  - Diagnóstico: **Ctrl+Shift+D** mostra fps/resolução/banda/codec/limitação por participante.
   - Ao parar, volta para a câmera (se ligada) ou remove o vídeo.
   - Visualização em tela cheia: cada tile com vídeo tem botão ⛶ e duplo clique; usa `#fullscreen-view` + `requestFullscreen`.
 - Áudio do microfone:
