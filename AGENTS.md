@@ -85,7 +85,7 @@ Saída: `dist\Concord Setup 1.0.0.exe`.
 | `themes.js` | Os 15 temas (paletas, id padrão `escuro`) e os grupos do seletor (`THEME_GROUPS`: Escuros, Neon, Claros; cada tema tem `group`), leitura/gravação em `localStorage['concord-theme']` e `applyTheme`. Carregado no `<head>` antes do CSS para aplicar o tema antes da primeira pintura. Também é módulo Node (testes). |
 | `speaking.js` | Detecção de "falando" com histerese (liga ≥ 0.12, desliga após 250 ms abaixo) para o anel do avatar. |
 | `channels.js` | Lista fixa de canais: `TEXT_CHANNELS` (`geral`, `jogos`, `musica`) e `VOICE_CHANNELS` (`voz-sala`, `voz-jogos`, `voz-musica`); padrões `geral` e `voz-sala`. Usado por `main.js` e `renderer.js`. Também é módulo Node (testes). |
-| `protocol.js` | `PROTOCOL_VERSION` (hoje `3`), mensagem de versão incompatível e `isCompatible`. Usado por `main.js` e `renderer.js`. Também é módulo Node (testes). |
+| `protocol.js` | `PROTOCOL_VERSION` (hoje `4`), mensagem de versão incompatível e `isCompatible`. Usado por `main.js` e `renderer.js`. Também é módulo Node (testes). |
 | `youtube.js` | `parseYouTubeId` (aceita links `youtu.be`, `watch?v=`, `shorts`, `embed`), `thumbnailUrl` e `lookupVideo` (oEmbed público, sem chave, timeout de 4 s). Usado por `main.js`. Também é módulo Node (testes). |
 | `music-state.js` | Regras puras da fila de música: `MAX_QUEUE` (50), `SYNC_TOLERANCE_MS` (2000), `RESYNC_INTERVAL_MS` (15000), `SEEK_COOLDOWN_MS` (5000), `shouldCorrectSeek`, adicionar/remover, pular ou terminar só se o item ainda é o atual, alternar pausa e posição atual. Usado por `main.js` e `renderer.js`. Também é módulo Node (testes). |
 | `presence.js` | Regras de status: modo escolhido (`online`, `away`, `busy`, `invisible`), ausente automático só a partir de Online e atividade que desfaz só o automático. Também é módulo Node (testes). |
@@ -188,7 +188,7 @@ O servidor atualmente confia no campo `user` enviado em `save-message`. Para end
 
 ### Versão do protocolo
 
-- `PROTOCOL_VERSION` em `protocol.js` é compartilhado por cliente e servidor. Hoje é `3` (a versão 1 usava `join-room`/`leave-room`; a 3 adicionou os eventos `music-*`).
+- `PROTOCOL_VERSION` em `protocol.js` é compartilhado por cliente e servidor. Hoje é `4` (a versão 1 usava `join-room`/`leave-room`; a 3 adicionou os eventos `music-*`; a 4 adicionou `server-members` e `music-rooms`).
 - O cliente envia `protocol` em `register` e `login`; o servidor recusa versão diferente (inclusive cliente antigo, sem o campo) com a mensagem “Seu Vox está em uma versão diferente da do servidor. Atualize para entrar.”
 - **Suba `PROTOCOL_VERSION` sempre que um evento ou payload mudar de forma incompatível** (nome, campos obrigatórios, significado). Mudança compatível não exige.
 

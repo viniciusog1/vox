@@ -1,3 +1,6 @@
+// Ícones estáticos do index.html (<i data-icon>) viram SVG
+ConcordIcons.hydrate();
+
 const SERVER_URL = localStorage.getItem('concord-server-url') || 'http://127.0.0.1:3000';
 const socket = io(SERVER_URL);
 
@@ -27,9 +30,6 @@ const btnMicMini = document.getElementById('btn-mic-mini');
 const channelName = document.getElementById('channel-name');
 const videoGrid = document.getElementById('video-grid');
 const callEmpty = document.getElementById('call-empty');
-const audioLevelEl = document.getElementById('audio-level');
-const audioLabel = document.getElementById('audio-label');
-const audioIndicator = document.getElementById('audio-indicator');
 
 const messagesEl = document.getElementById('messages');
 const msgInput = document.getElementById('msg-input');
@@ -96,7 +96,6 @@ const musicEmptyEl = document.getElementById('music-empty');
 const { DEFAULT_TEXT_CHANNEL, DEFAULT_VOICE_CHANNEL, isTextChannel, isVoiceChannel } = window.ConcordChannels;
 const { PROTOCOL_VERSION, VERSION_MISMATCH_MESSAGE, isCompatible } = window.ConcordProtocol;
 const { targetPositionMs, shouldCorrectSeek } = window.ConcordMusic;
-const NO_VOICE_TEXT = 'Você não está em um canal de voz';
 
 let currentUser = '';
 let currentTextRoom = '';  // sempre preenchido depois do login
@@ -489,15 +488,15 @@ async function acquireLocalMedia() {
 }
 
 function updateControlButtons() {
-  btnMic.textContent = micEnabled ? '🎙️ Mic' : '🔇 Mic';
+  ConcordIcons.setIcon(btnMic, micEnabled ? 'mic' : 'mic-off', 'Mic');
   btnMic.classList.toggle('off', !micEnabled);
   btnMic.classList.toggle('primary', micEnabled);
 
-  btnCam.textContent = camEnabled ? '📷 Cam' : '📷 Cam Off';
+  ConcordIcons.setIcon(btnCam, camEnabled ? 'video' : 'video-off', camEnabled ? 'Cam' : 'Cam Off');
   btnCam.classList.toggle('off', !camEnabled);
   btnCam.classList.toggle('primary', camEnabled);
 
-  btnMicMini.textContent = micEnabled ? '🎙️' : '🔇';
+  ConcordIcons.setIcon(btnMicMini, micEnabled ? 'mic' : 'mic-off');
   btnMicMini.classList.toggle('off', !micEnabled);
 }
 
@@ -698,7 +697,14 @@ function createPeer(id) {
     renderTiles();
   };
 
+  setPeerConn(id, 'connecting');
   pc.onconnectionstatechange = () => {
+    const st = pc.connectionState;
+    if (st === 'connected') setPeerConn(id, 'connected');
+    else if (st === 'failed') setPeerConn(id, 'failed');
+    else if (st === 'disconnected') setPeerConn(id, 'reconnecting');
+    else if (st === 'closed') { peerConn.delete(id); updateConnLabel(id); }
+    else setPeerConn(id, 'connecting');
     if (['failed', 'closed', 'disconnected'].includes(pc.connectionState)) {
       if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
         remoteStreams.delete(id);
@@ -716,6 +722,7 @@ function createPeer(id) {
 function closeAllPeers() {
   peers.forEach((pc) => { try { pc.close(); } catch (e) {} });
   peers.clear();
+  peerConn.clear();
   remoteStreams.clear();
   analysers.clear();
   renderTiles();
@@ -752,7 +759,7 @@ async function joinVoice(room) {
     resetMusic(); // o servidor manda o music-state do canal novo no join-voice
   }
   currentVoiceRoom = room;
-  voiceConnName.textContent = 'Conectado a ' + roomDisplayName(room);
+  voiceConnName.textContent = roomDisplayName(room);
   voiceConnection.classList.remove('hidden');
   updateActiveChannel();
   updateVoiceDependentControls();
@@ -854,6 +861,7 @@ socket.on('room-users', (list) => {
     if (!ids.has(id)) {
       try { peers.get(id).close(); } catch (e) {}
       peers.delete(id);
+      peerConn.delete(id);
       remoteStreams.delete(id);
       analysers.delete(id);
       removed = true;
@@ -874,62 +882,146 @@ socket.on('voice-rooms', (data) => {
   renderMembers();
 });
 
-function renderMembers() {
-  memberList.innerHTML = '';
-  const users = currentVoiceRoom ? [...userMap.values()] : [];
+// Estado da conexão de áudio/vídeo com cada pessoa da chamada (painel Participantes)
+const peerConn = new Map(); // socketId -> { state, rttMs }
+const CONN_LABELS = {
+  connecting: 'Conectando…', reconnecting: 'Reconectando…', failed: 'Falhou', connected: 'Conectado'
+};
 
-  if (!currentVoiceRoom) {
-    const empty = document.createElement('div');
-    empty.className = 'members-empty';
-    empty.textContent = NO_VOICE_TEXT;
-    memberList.appendChild(empty);
+function setPeerConn(id, state) {
+  const prev = peerConn.get(id) || {};
+  peerConn.set(id, { state, rttMs: state === 'connected' ? prev.rttMs : null });
+  updateConnLabel(id);
+}
+
+function connLabelText(id) {
+  const c = peerConn.get(id);
+  if (!c) return CONN_LABELS.connecting; // ainda sem conexão criada
+  if (c.state === 'connected' && c.rttMs != null) return `Conectado · ${c.rttMs} ms`;
+  return CONN_LABELS[c.state] || CONN_LABELS.connecting;
+}
+
+function updateConnLabel(id) {
+  const state = (peerConn.get(id) || {}).state || 'connecting';
+  document.querySelectorAll(`.member-conn[data-id="${CSS.escape(id)}"]`).forEach((el) => {
+    el.textContent = connLabelText(id);
+    el.dataset.state = state;
+  });
+}
+
+// Ping de cada conexão: par de candidatos escolhido pelo WebRTC
+setInterval(async () => {
+  if (!currentVoiceRoom) return;
+  for (const [id, pc] of peers) {
+    if (pc.connectionState !== 'connected') continue;
+    try {
+      const stats = await pc.getStats();
+      let rtt = null;
+      stats.forEach((r) => {
+        if (r.type === 'candidate-pair' && r.nominated && r.state === 'succeeded' && r.currentRoundTripTime != null) {
+          rtt = Math.round(r.currentRoundTripTime * 1000);
+        }
+      });
+      const c = peerConn.get(id);
+      if (c && c.state === 'connected' && rtt != null) {
+        c.rttMs = rtt;
+        updateConnLabel(id);
+      }
+    } catch (e) {}
   }
+}, 2000);
 
-  // Inclui você mesmo, caso o servidor ainda não tenha enviado a lista
-  if (currentVoiceRoom && users.length === 0 && currentUser) {
-    users.push({ id: 'me', username: currentUser, muted: !micEnabled });
-  }
+// Canais de voz com música tocando (vem do servidor em 'music-rooms')
+let musicRooms = new Set();
+socket.on('music-rooms', (list) => {
+  musicRooms = new Set(Array.isArray(list) ? list : []);
+  renderMembers();
+});
 
-  memberCount.textContent = users.length;
+// Membros do servidor (todas as contas), vindos do servidor em 'server-members'
+let serverMembers = [];
+socket.on('server-members', (list) => {
+  serverMembers = Array.isArray(list) ? list : [];
+  renderMembers();
+});
 
-  users.forEach((u) => {
-    const isMe = u.username === currentUser;
-    const row = document.createElement('div');
-    row.className = 'member';
-    // Bolinha de status sobre o avatar, como na lista do canal de voz
-    const avatarWrap = document.createElement('span');
-    avatarWrap.className = 'avatar-wrap';
-    avatarWrap.appendChild(makeAvatar(u.username));
+function appendMemberRow(u) {
+  const isMe = u.username === currentUser;
+  const inMyCall = !!(currentVoiceRoom && u.voiceRoom === currentVoiceRoom);
+  const row = document.createElement('div');
+  row.className = 'member' + (u.online ? '' : ' offline');
+  // Bolinha de status sobre o avatar, como na lista do canal de voz (offline: sem bolinha)
+  const avatarWrap = document.createElement('span');
+  avatarWrap.className = 'avatar-wrap';
+  avatarWrap.appendChild(makeAvatar(u.username));
+  if (u.online) {
     const dot = document.createElement('span');
     dot.className = 'status-dot member-status-dot ' + (u.status || 'online');
     avatarWrap.appendChild(dot);
-    row.appendChild(avatarWrap);
+  }
+  row.appendChild(avatarWrap);
 
-    const name = document.createElement('div');
-    name.className = 'member-name';
-    name.appendChild(document.createTextNode(u.username));
-
-    if (isMe) {
-      const you = document.createElement('span');
-      you.className = 'you';
-      you.textContent = '(você)';
-      name.appendChild(you);
-    }
+  const name = document.createElement('div');
+  name.className = 'member-name';
+  name.appendChild(document.createTextNode(u.username));
+  if (isMe) {
+    const you = document.createElement('span');
+    you.className = 'you';
+    you.textContent = '(você)';
+    name.appendChild(you);
+  }
+  if (!isMe && inMyCall && u.id) {
+    // Nome em cima, estado da conexão embaixo
+    const nameBox = document.createElement('div');
+    nameBox.className = 'member-name-box';
+    const conn = document.createElement('span');
+    conn.className = 'member-conn';
+    conn.dataset.id = u.id;
+    conn.dataset.state = (peerConn.get(u.id) || {}).state || 'connecting';
+    conn.textContent = connLabelText(u.id);
+    nameBox.append(name, conn);
+    row.appendChild(nameBox);
+  } else {
     row.appendChild(name);
-    row.title = STATUS_LABELS[u.status || 'online'] || 'Online';
+  }
+  row.title = u.online ? (STATUS_LABELS[u.status || 'online'] || 'Online') : 'Offline';
 
+  // Microfone só para quem está em algum canal de voz
+  if (u.voiceRoom) {
     const status = document.createElement('span');
     status.className = 'muted-icon';
-    status.textContent = u.muted ? '🔇' : '🎙️';
+    ConcordIcons.setIcon(status, u.muted ? 'mic-off' : 'mic', '', 14);
     status.style.opacity = u.muted ? '1' : '.35';
     row.appendChild(status);
+  }
+  memberList.appendChild(row);
+}
 
-    memberList.appendChild(row);
+function renderMembers() {
+  memberList.innerHTML = '';
+  memberCount.textContent = serverMembers.length;
+  const groups = [['Online', serverMembers.filter((m) => m.online)], ['Offline', serverMembers.filter((m) => !m.online)]];
+  groups.forEach(([label, list]) => {
+    if (!list.length) return;
+    const title = document.createElement('div');
+    title.className = 'members-section';
+    title.textContent = `${label} — ${list.length}`;
+    memberList.appendChild(title);
+    list.forEach(appendMemberRow);
   });
 
   // Mostra os usuários embaixo do canal de voz correspondente
   document.querySelectorAll('.channel.voice').forEach((channelEl) => {
     const room = channelEl.dataset.room;
+    // Ícone do YouTube no canal que está com música
+    const ytIcon = channelEl.querySelector('.channel-yt');
+    if (musicRooms.has(room) && !ytIcon) {
+      const icon = youtubeIcon();
+      icon.classList.add('channel-yt');
+      channelEl.appendChild(icon);
+    } else if (!musicRooms.has(room) && ytIcon) {
+      ytIcon.remove();
+    }
     let listEl = channelEl.nextElementSibling;
     if (!listEl || !listEl.classList.contains('voice-users')) {
       listEl = document.createElement('div');
@@ -964,7 +1056,7 @@ function renderMembers() {
       line.appendChild(name);
       const icons = document.createElement('span');
       icons.className = 'vu-icons';
-      if (u.muted) icons.appendChild(document.createTextNode('🔇'));
+      if (u.muted) icons.appendChild(ConcordIcons.icon('mic-off', 13));
       if (u.sharing) {
         const live = document.createElement('span');
         live.className = 'live-badge';
@@ -988,7 +1080,6 @@ function renderTiles() {
 
   // Sem voz: área de chamada mostra só o estado vazio
   callEmpty.style.display = currentVoiceRoom ? 'none' : '';
-  audioIndicator.style.display = currentVoiceRoom ? '' : 'none';
   if (!currentVoiceRoom) {
     // Solta os <video> reaproveitados da chamada que acabou
     videoElements.forEach((video) => { video.srcObject = null; });
@@ -1025,10 +1116,11 @@ function renderTiles() {
     empty.style.background = 'color-mix(in srgb, var(--text) 2%, transparent)';
     empty.innerHTML = `
       <div style="display:flex;flex-direction:column;align-items:center;gap:10px;color:var(--muted);padding:20px;text-align:center;">
-        <div style="font-size:28px;">👋</div>
+        <i data-icon="hand" data-size="28"></i>
         <div style="font-weight:600;color:var(--text);">Aguardando alguém entrar...</div>
         <div style="font-size:12px;">Compartilhe o canal ${roomDisplayName(currentVoiceRoom)} com seus amigos.</div>
       </div>`;
+    ConcordIcons.hydrate(empty);
     videoGrid.appendChild(empty);
   }
 
@@ -1040,7 +1132,46 @@ function renderTiles() {
   });
 
   applyOutputDevice();
+  layoutTiles();
 }
+
+// Grade da chamada: escolhe o nº de colunas que deixa os tiles (16:9) maiores
+// no espaço disponível; abaixo do mínimo, mantém o mínimo e a grade rola.
+const TILE_RATIO = 16 / 9;
+const TILE_GAP = 12;
+const TILE_MIN_W = 260;
+const MUSIC_TILE_MIN_H = 240; // player do YouTube (mín. 200) + faixa
+
+function layoutTiles() {
+  const tiles = [...videoGrid.children].filter((el) => !el.classList.contains('hidden') && el.style.display !== 'none');
+  const n = tiles.length;
+  if (!n) return;
+  const cs = getComputedStyle(videoGrid);
+  const W = videoGrid.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+  const H = videoGrid.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
+  if (W <= 0 || H <= 0) return;
+
+  let best = { cols: 1, w: 0 };
+  for (let cols = 1; cols <= n; cols++) {
+    const rows = Math.ceil(n / cols);
+    const w = Math.min((W - TILE_GAP * (cols - 1)) / cols, ((H - TILE_GAP * (rows - 1)) / rows) * TILE_RATIO);
+    if (w > best.w) best = { cols, w };
+  }
+  let cols = best.cols;
+  let w = Math.floor(best.w);
+  if (w < TILE_MIN_W) {
+    w = Math.min(TILE_MIN_W, Math.floor(W));
+    cols = Math.max(1, Math.floor((W + TILE_GAP) / (w + TILE_GAP)));
+  }
+  let h = Math.floor(w / TILE_RATIO);
+  if (musicTileEl && tiles.includes(musicTileEl) && h < MUSIC_TILE_MIN_H) h = MUSIC_TILE_MIN_H;
+
+  videoGrid.style.setProperty('--grid-cols', String(Math.min(cols, n)));
+  videoGrid.style.setProperty('--tile-w', w + 'px');
+  videoGrid.style.setProperty('--tile-h', h + 'px');
+}
+
+if (window.ResizeObserver) new ResizeObserver(() => layoutTiles()).observe(videoGrid);
 
 /* ================= MÚSICA DO YOUTUBE ================= */
 // Cada pessoa toca o player oficial; o servidor só diz o que toca, se está pausado e o minuto.
@@ -1096,7 +1227,7 @@ function ensureMusicTile() {
   fsBtn.className = 'music-fs-btn';
   fsBtn.title = 'Ver em tela cheia';
   fsBtn.setAttribute('aria-label', 'Ver o vídeo da música em tela cheia');
-  fsBtn.textContent = '⛶';
+  ConcordIcons.setIcon(fsBtn, 'maximize', '', 14);
   fsBtn.addEventListener('click', openMusicFullscreen);
   label.append(youtubeIcon(), text, fsBtn);
   musicTileEl.append(host, label);
@@ -1112,6 +1243,7 @@ function syncMusicTile() {
   if (!active) {
     if (musicTileEl) musicTileEl.classList.add('hidden');
     if (fullscreenMusicOnly) closeFullscreenView();
+    layoutTiles();
     return;
   }
   ensureMusicTile();
@@ -1122,6 +1254,7 @@ function syncMusicTile() {
   musicTileEl.querySelector('.music-tile-text').textContent =
     `${current.title || current.videoId} · ${musicState.queue.length - 1} na fila`; // queue[0] é a atual
   if (fullscreenMusicOnly) setFullscreenMusicName(current);
+  layoutTiles();
 }
 
 // Ícone no estilo do YouTube (desenhado aqui, nada é baixado)
@@ -1359,7 +1492,7 @@ function renderMusicPanel() {
     const remove = document.createElement('button');
     remove.className = 'music-icon-btn';
     remove.title = 'Tirar da fila';
-    remove.textContent = '✕';
+    ConcordIcons.setIcon(remove, 'x', '', 14);
     remove.addEventListener('click', () => socket.emit('music-remove', item.id));
     row.append(img, info, remove);
     return row;
@@ -1368,6 +1501,7 @@ function renderMusicPanel() {
   musicToggleBtn.disabled = queue.length === 0;
   musicSkipBtn.disabled = queue.length === 0;
   musicToggleBtn.title = musicState && musicState.playing ? 'Pausar para todos' : 'Tocar para todos';
+  ConcordIcons.setIcon(musicToggleBtn, musicState && musicState.playing ? 'pause' : 'play');
 }
 
 function submitMusicUrl() {
@@ -1534,7 +1668,7 @@ function buildTile(name, stream, opts = {}) {
     const fullBtn = document.createElement('button');
     fullBtn.className = 'tile-btn';
     fullBtn.title = 'Ver em tela cheia';
-    fullBtn.textContent = '⛶';
+    ConcordIcons.setIcon(fullBtn, 'maximize', '', 16);
     fullBtn.addEventListener('click', (ev) => {
       ev.stopPropagation();
       openFullscreenView(stream, name);
@@ -1807,23 +1941,6 @@ function startAudioLoop() {
   if (rafId) return;
   const loop = () => {
     if (currentVoiceRoom) updateSpeakingRings();
-    if (analysers.size === 0) {
-      audioLevelEl.style.width = '0%';
-      audioLabel.textContent = 'Ninguém falando';
-    } else {
-      let max = 0;
-      analysers.forEach((analyser) => {
-        const data = new Uint8Array(analyser.frequencyBinCount);
-        analyser.getByteFrequencyData(data);
-        let sum = 0;
-        for (let i = 0; i < 24; i++) sum += data[i];
-        const avg = sum / 24 / 255;
-        if (avg > max) max = avg;
-      });
-      const pct = Math.min(100, Math.round(max * 160));
-      audioLevelEl.style.width = pct + '%';
-      audioLabel.textContent = pct > 12 ? 'Falando...' : 'Ninguém falando';
-    }
     rafId = requestAnimationFrame(loop);
   };
   loop();
@@ -2017,7 +2134,7 @@ btnSettings.addEventListener('click', async () => {
   settingsError.textContent = '';
   renderThemePicker();
   document.getElementById('account-name').textContent = currentUser || '—';
-  showSettingsTab('aparencia');
+  showSettingsTab('audio');
   settingsModal.classList.remove('hidden');
   monitorToggle.checked = monitorEnabled;
   applyNoiseSuppressionUI();
@@ -2257,9 +2374,9 @@ btnScreen.addEventListener('click', async () => {
     replaceVideoTrackEverywhere(screenTrack, screenStream);
     renderTiles();
 
-    btnScreen.textContent = '⏹️ Parar';
-    btnScreen.classList.remove('warn');
-    btnScreen.classList.add('danger');
+    ConcordIcons.setIcon(btnScreen, 'monitor-stop', 'Parar');
+    btnScreen.classList.remove('off');
+    btnScreen.classList.add('primary');
 
     screenStream.getVideoTracks()[0].addEventListener('ended', stopScreenShare);
   } catch (e) {
@@ -2292,9 +2409,9 @@ function stopScreenShare() {
   const camTrack = localStream ? localStream.getVideoTracks()[0] : null;
   replaceVideoTrackEverywhere(camTrack || null, localStream);
 
-  btnScreen.textContent = '🖥️ Tela';
-  btnScreen.classList.remove('danger');
-  btnScreen.classList.add('warn');
+  ConcordIcons.setIcon(btnScreen, 'monitor-up', 'Tela');
+  btnScreen.classList.remove('primary');
+  btnScreen.classList.add('off');
   renderTiles();
 }
 
@@ -2453,12 +2570,9 @@ function leaveVoice() {
   userMap.clear();
   lastUsersSignature = '';
 
-  audioLevelEl.style.width = '0%';
-  audioLabel.textContent = 'Ninguém falando';
-
-  btnScreen.textContent = '🖥️ Tela';
-  btnScreen.classList.remove('danger');
-  btnScreen.classList.add('warn');
+  ConcordIcons.setIcon(btnScreen, 'monitor-up', 'Tela');
+  btnScreen.classList.remove('primary');
+  btnScreen.classList.add('off');
   voiceConnection.classList.add('hidden');
 
   updateControlButtons();
@@ -2473,6 +2587,7 @@ btnLeaveVoice.addEventListener('click', leaveVoice);
 
 function logout() {
   if (!window.confirm('Sair da conta?')) return;
+  serverMembers = [];
   settingsModal.classList.add('hidden');
   socket.emit('logout');
   leaveVoice();

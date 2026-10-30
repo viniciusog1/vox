@@ -1,7 +1,7 @@
 // Versão do protocolo cliente/servidor. Cliente e servidor precisam ter a mesma
 // versão para entrar. Também roda no Node (testes).
 (function () {
-  const PROTOCOL_VERSION = 3;
+  const PROTOCOL_VERSION = 4;
   const VERSION_MISMATCH_MESSAGE =
     'Seu Vox está em uma versão diferente da do servidor. Atualize para entrar.';
 

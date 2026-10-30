@@ -117,6 +117,35 @@ function broadcastVoiceRooms() {
   for (const socketId of authenticated.keys()) {
     io.to(socketId).emit('voice-rooms', buildVoiceRooms(socketId));
   }
+  broadcastServerMembers();
+}
+
+// Membros do servidor (todas as contas, que hoje têm acesso ao servidor global)
+// com presença, do ponto de vista de quem vê: invisível aparece offline para os outros.
+function buildServerMembers(viewerId) {
+  const online = new Map(); // username -> { id, status, voiceRoom, muted }
+  for (const [socketId, username] of authenticated) {
+    const s = io.sockets.sockets.get(socketId);
+    if (!s) continue;
+    const status = s.data.status || 'online';
+    if (status === 'invisible' && socketId !== viewerId) continue;
+    if (!online.has(username) || socketId === viewerId) {
+      online.set(username, { id: socketId, status, voiceRoom: s.data.voiceRoom || null, muted: !!s.data.muted });
+    }
+  }
+  return Object.keys(users).sort((a, b) => a.localeCompare(b)).map((username) => {
+    const o = online.get(username);
+    return o
+      ? { username, online: true, ...o }
+      : { username, online: false, id: null, status: 'offline', voiceRoom: null, muted: false };
+  });
+}
+
+function broadcastServerMembers() {
+  if (!io) return;
+  for (const socketId of authenticated.keys()) {
+    io.to(socketId).emit('server-members', buildServerMembers(socketId));
+  }
 }
 
 // ---------- Retenção de mensagens (7 dias) ----------
@@ -158,12 +187,28 @@ function musicStateFor(room) {
   return state ? toPublic(state, Date.now()) : emptyMusicState();
 }
 
+// Canais de voz com música (para o ícone do YouTube na lista de canais).
+// Só difunde quando a lista muda.
+let lastMusicRoomsKey = '';
+function musicRoomsList() {
+  return [...musicByRoom.keys()].sort();
+}
+function broadcastMusicRooms() {
+  if (!io) return;
+  const list = musicRoomsList();
+  const key = list.join('|');
+  if (key === lastMusicRoomsKey) return;
+  lastMusicRoomsKey = key;
+  for (const socketId of authenticated.keys()) io.to(socketId).emit('music-rooms', list);
+}
+
 // Difunde o estado da sala; fila vazia apaga o estado.
 function broadcastMusic(room) {
   if (!io) return;
   const state = musicByRoom.get(room);
   if (state && state.queue.length === 0) musicByRoom.delete(room);
   io.to(room).emit('music-state', musicStateFor(room));
+  broadcastMusicRooms();
 }
 
 // Sala de voz sem ninguém: a fila some junto.
@@ -171,6 +216,7 @@ function dropMusicIfRoomEmpty(room) {
   if (!room) return;
   const map = roomUsers.get(room);
   if (!map || map.size === 0) musicByRoom.delete(room);
+  broadcastMusicRooms();
 }
 
 // Reenvia periodicamente a posição para corrigir deriva nos clientes.
@@ -270,6 +316,8 @@ app.whenReady().then(() => {
       saveUsers(users);
       authenticated.set(socket.id, username);
       callback({ success: true, username, protocol: PROTOCOL_VERSION });
+      socket.emit('music-rooms', musicRoomsList());
+      broadcastServerMembers();
     });
 
     socket.on('login', ({ username, password, protocol } = {}, callback) => {
@@ -282,6 +330,8 @@ app.whenReady().then(() => {
 
       authenticated.set(socket.id, username);
       callback({ success: true, username, protocol: PROTOCOL_VERSION });
+      socket.emit('music-rooms', musicRoomsList());
+      broadcastServerMembers();
     });
 
     socket.on('logout', (callback) => {
@@ -293,6 +343,7 @@ app.whenReady().then(() => {
         authenticated.delete(socket.id);
         socket.data.voiceRoom = null;
         socket.data.textRoom = null;
+        broadcastServerMembers();
       }
       if (callback) callback({ success: true });
     });
@@ -441,7 +492,7 @@ app.whenReady().then(() => {
       socket.data.status = target.status || 'online';
       const after = socket.data.status;
 
-      if (!entry) return;
+      if (!entry) { broadcastServerMembers(); return; }
 
       // Ao voltar de invisível, os outros precisam refazer a conexão de mídia
       if (before === 'invisible' && after !== 'invisible') {
@@ -502,7 +553,8 @@ app.whenReady().then(() => {
       removeSocketFromRooms(socket.id);
       socket.data.voiceRoom = null;
       socket.data.textRoom = null;
-      authenticated.delete(socket.id);
+      const wasAuthenticated = authenticated.delete(socket.id);
+      if (wasAuthenticated) broadcastServerMembers();
       console.log('[SOCKET] Desconectado:', socket.id);
     });
   });
