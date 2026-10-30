@@ -47,7 +47,13 @@ function canUseTextRoom(textRoom, room) {
   return isTextChannel(room) && room === textRoom;
 }
 
+// Salas do Socket.io (voz e texto) das quais o socket deve sair ao deslogar.
+function socketRoomsToLeave(data) {
+  return [data.voiceRoom, data.textRoom].filter(Boolean);
+}
+
 module.exports = {
+  socketRoomsToLeave,
   publicUser, applyStatePatch, ALLOWED_STATUS,
   leaveVoiceRoom, joinVoiceRoom, canUseTextRoom
 };

@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { publicUser, applyStatePatch, joinVoiceRoom, leaveVoiceRoom, canUseTextRoom } = require('../room-state.js');
+const { publicUser, applyStatePatch, joinVoiceRoom, leaveVoiceRoom, canUseTextRoom, socketRoomsToLeave } = require('../room-state.js');
 
 test('publicUser preenche padrões', () => {
   assert.deepEqual(publicUser('a', { username: 'ana' }),
@@ -84,4 +84,10 @@ test('canUseTextRoom', () => {
   assert.equal(canUseTextRoom('geral', 'jogos'), false);
   assert.equal(canUseTextRoom('geral', 'voz-sala'), false);
   assert.equal(canUseTextRoom(undefined, 'geral'), false);
+});
+
+test('socketRoomsToLeave lista só salas definidas', () => {
+  assert.deepEqual(socketRoomsToLeave({ textRoom: 'geral', voiceRoom: 'voz-sala' }), ['voz-sala', 'geral']);
+  assert.deepEqual(socketRoomsToLeave({ textRoom: 'geral', voiceRoom: null }), ['geral']);
+  assert.deepEqual(socketRoomsToLeave({}), []);
 });

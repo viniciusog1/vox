@@ -5,7 +5,7 @@ const { Server } = require('socket.io');
 const fs = require('fs');
 const os = require('os');
 const crypto = require('crypto');
-const { publicUser, applyStatePatch, joinVoiceRoom, leaveVoiceRoom, canUseTextRoom } = require('./room-state');
+const { publicUser, applyStatePatch, joinVoiceRoom, leaveVoiceRoom, canUseTextRoom, socketRoomsToLeave } = require('./room-state');
 const { isTextChannel, isVoiceChannel } = require('./channels');
 const { PROTOCOL_VERSION, VERSION_MISMATCH_MESSAGE, isCompatible } = require('./protocol');
 
@@ -239,6 +239,8 @@ app.whenReady().then(() => {
     socket.on('logout', (callback) => {
       const username = authenticated.get(socket.id);
       if (username) {
+        // Sai das salas do Socket.io antes dos broadcasts, para não receber mais eventos
+        for (const room of socketRoomsToLeave(socket.data)) socket.leave(room);
         removeSocketFromRooms(socket.id);
         authenticated.delete(socket.id);
         socket.data.voiceRoom = null;
