@@ -218,9 +218,11 @@
     background: radial-gradient(circle at 50% 40%, var(--bg-2) 0%, var(--bg) 75%);
   }
   #video-grid {
-    display: grid; gap: 12px; padding: 14px;
+    /* padding inferior: o indicador de áudio não cobre os tiles (nem o player da música) */
+    display: grid; gap: 12px; padding: 14px 14px 56px;
     grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-    align-content: center; width: 100%; height: 100%;
+    align-content: center; align-content: safe center; width: 100%; height: 100%;
+    overflow-y: auto; /* com o tile da música, a grade rola por dentro em vez de crescer */
   }
   .tile {
     position: relative; background: var(--rail); border-radius: 12px;
@@ -252,6 +254,29 @@
   }
   .tile-btn:hover { background: rgba(0,0,0,.85); }
   .tile-volume { width: 88px; accent-color: var(--accent); cursor: pointer; }
+
+  /* ================= TILE DA MÚSICA ================= */
+  /* Player do YouTube sempre visível (mín. 200×200) e sem nada por cima dele */
+  .tile.music-tile {
+    flex-direction: column; align-items: stretch; justify-content: flex-start;
+    min-width: 200px; min-height: 240px;
+  }
+  .music-player-host { flex: 1 1 auto; min-height: 200px; min-width: 200px; position: relative; background: #000; }
+  .music-player-host iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; display: block; }
+  .music-tile-label {
+    flex: 0 0 auto; padding: 8px 12px; font-size: 12px; font-weight: 600;
+    color: var(--text); background: var(--bg-2); border-top: 1px solid var(--border);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+
+  /* ================= AVISO CURTO (TOAST) ================= */
+  #toast {
+    position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%); z-index: 400;
+    max-width: min(520px, calc(100vw - 32px));
+    background: var(--bg-2); color: var(--text); border: 1px solid var(--border);
+    padding: 10px 16px; border-radius: 10px; font-size: 13px;
+    box-shadow: 0 8px 24px rgba(0,0,0,.35); pointer-events: none;
+  }
 
   /* ================= VISUALIZAÇÃO EM TELA CHEIA ================= */
   #fullscreen-view {
@@ -763,6 +788,7 @@
 </div>
 
 <audio id="monitor-audio" autoplay></audio>
+<div id="toast" class="hidden" role="status" aria-live="polite"></div>
 
 <script src="./socket.io.min.js"></script>
 <script>
@@ -774,6 +800,8 @@
 <script src="presence.js"></script>
 <script src="channels.js"></script>
 <script src="protocol.js"></script>
+<script src="youtube.js"></script>
+<script src="music-state.js"></script>
 <script src="renderer.js"></script>
 </body>
 </html>

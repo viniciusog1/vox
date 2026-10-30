@@ -85,6 +85,7 @@ const fullscreenNative = document.getElementById('fullscreen-native');
 /* ================= ESTADO ================= */
 const { DEFAULT_TEXT_CHANNEL, DEFAULT_VOICE_CHANNEL, isTextChannel, isVoiceChannel } = window.ConcordChannels;
 const { PROTOCOL_VERSION, VERSION_MISMATCH_MESSAGE, isCompatible } = window.ConcordProtocol;
+const { targetPositionMs, needsSeek } = window.ConcordMusic;
 const NO_VOICE_TEXT = 'Você não está em um canal de voz';
 
 let currentUser = '';
@@ -141,6 +142,15 @@ let micProcessedTrack = null;
 let noiseSuppressionMode = localStorage.getItem('concord-noise-suppression') || 'strong';
 let noiseGateLevelValue = Number(localStorage.getItem('concord-noise-gate-level') || 35);
 const noiseGateContexts = new WeakSet();
+
+// Música do YouTube na chamada
+let musicState = null;     // último music-state recebido (+ receivedAt = Date.now() local); null = sem música
+let musicPlayer = null;    // instância YT.Player ou null
+let musicTileEl = null;    // tile persistente com o player: renderTiles nunca o remove nem o move
+let musicPlayerReady = false;
+let musicLoadedItemId = null; // item da fila carregado no player
+let musicPlayerGen = 0;       // invalida criações de player pendentes (API ainda carregando)
+let youTubeApiPromise = null;
 
 // Tela cheia
 let fullscreenStream = null;
@@ -724,6 +734,7 @@ async function joinVoice(room) {
     closeAllPeers();
     userMap.clear();
     lastUsersSignature = '';
+    resetMusic(); // o servidor manda o music-state do canal novo no join-voice
   }
   currentVoiceRoom = room;
   voiceConnName.textContent = 'Conectado a ' + roomDisplayName(room);
@@ -953,8 +964,10 @@ function renderMembers() {
 
 /* ================= TILES DE VÍDEO ================= */
 function renderTiles() {
-  videoGrid.innerHTML = '';
+  // Limpa só os outros tiles: tirar o iframe do DOM recarregaria a música
+  Array.from(videoGrid.children).forEach((el) => { if (el !== musicTileEl) el.remove(); });
   usedVideoIds.clear();
+  syncMusicTile();
 
   // Sem voz: área de chamada mostra só o estado vazio
   callEmpty.style.display = currentVoiceRoom ? 'none' : '';
@@ -1011,6 +1024,202 @@ function renderTiles() {
 
   applyOutputDevice();
 }
+
+/* ================= MÚSICA DO YOUTUBE ================= */
+// Cada pessoa toca o player oficial; o servidor só diz o que toca, se está pausado e o minuto.
+const YT_PLAYER_VARS = { controls: 0, disablekb: 1, playsinline: 1, rel: 0 };
+const YT_STATE = { ENDED: 0, PLAYING: 1, PAUSED: 2, BUFFERING: 3, CUED: 5 };
+const UNPLAYABLE_CODES = [100, 101, 150]; // indisponível / incorporação não permitida
+
+// Volume só local, 0–100 (padrão 50).
+function getMusicVolume() {
+  const raw = localStorage.getItem('concord-music-volume');
+  const v = Number(raw);
+  if (raw === null || raw === '' || !Number.isFinite(v)) return 50;
+  return Math.min(100, Math.max(0, Math.round(v)));
+}
+
+// Injeta a IFrame API do YouTube uma vez só.
+function ensureYouTubeApi() {
+  if (window.YT && window.YT.Player) return Promise.resolve();
+  if (!youTubeApiPromise) {
+    youTubeApiPromise = new Promise((resolve, reject) => {
+      const previous = window.onYouTubeIframeAPIReady;
+      window.onYouTubeIframeAPIReady = () => {
+        if (typeof previous === 'function') previous();
+        resolve();
+      };
+      const script = document.createElement('script');
+      script.src = 'https://www.youtube.com/iframe_api';
+      script.onerror = () => {
+        script.remove();
+        youTubeApiPromise = null; // permite tentar de novo no próximo music-state
+        reject(new Error('Falha ao carregar a API do YouTube'));
+      };
+      document.head.appendChild(script);
+    });
+  }
+  return youTubeApiPromise;
+}
+
+// Cria o tile uma vez; o host do player é recriado só quando o player é destruído.
+function ensureMusicTile() {
+  if (musicTileEl) return musicTileEl;
+  musicTileEl = document.createElement('div');
+  musicTileEl.className = 'tile music-tile hidden';
+  const host = document.createElement('div');
+  host.className = 'music-player-host';
+  const label = document.createElement('div');
+  label.className = 'music-tile-label';
+  musicTileEl.append(host, label);
+  return musicTileEl;
+}
+
+// Mostra/esconde o tile e atualiza a faixa; o tile fica sempre como primeiro filho da grade.
+function syncMusicTile() {
+  const active = !!(currentVoiceRoom && musicState && musicState.queue.length);
+  if (!active) {
+    if (musicTileEl) musicTileEl.classList.add('hidden');
+    return;
+  }
+  ensureMusicTile();
+  // Só entra na grade enquanto ainda não está nela (antes de haver iframe dentro)
+  if (musicTileEl.parentNode !== videoGrid) videoGrid.prepend(musicTileEl);
+  musicTileEl.classList.remove('hidden');
+  const current = musicState.queue[0];
+  musicTileEl.querySelector('.music-tile-label').textContent =
+    `🎵 ${current.title || current.videoId} · ${musicState.queue.length} na fila`;
+}
+
+function destroyMusicPlayer() {
+  musicPlayerGen++;
+  if (musicPlayer) {
+    try { musicPlayer.destroy(); } catch (e) {}
+  }
+  musicPlayer = null;
+  musicPlayerReady = false;
+  musicLoadedItemId = null;
+  if (musicTileEl) {
+    const host = musicTileEl.querySelector('.music-player-host');
+    host.innerHTML = '';
+    musicTileEl.classList.add('hidden');
+  }
+}
+
+async function createMusicPlayer() {
+  const gen = ++musicPlayerGen;
+  try {
+    await ensureYouTubeApi();
+  } catch (e) {
+    console.warn(e.message);
+    return;
+  }
+  // Saiu da voz, a fila acabou ou outro player foi criado enquanto a API carregava
+  if (gen !== musicPlayerGen || musicPlayer || !musicState || !currentVoiceRoom) return;
+
+  const host = musicTileEl.querySelector('.music-player-host');
+  const target = document.createElement('div');
+  host.appendChild(target);
+  musicPlayer = new window.YT.Player(target, {
+    width: '100%',
+    height: '100%',
+    playerVars: YT_PLAYER_VARS,
+    events: {
+      onReady: () => {
+        if (gen !== musicPlayerGen) return;
+        musicPlayerReady = true;
+        musicPlayer.setVolume(getMusicVolume());
+        syncMusicPlayer();
+      },
+      onStateChange: (ev) => {
+        if (gen !== musicPlayerGen) return;
+        onMusicPlayerStateChange(ev.data);
+      },
+      onError: (ev) => {
+        if (gen !== musicPlayerGen) return;
+        if (UNPLAYABLE_CODES.includes(ev.data) && musicLoadedItemId) {
+          socket.emit('music-error', { itemId: musicLoadedItemId, code: ev.data });
+        } else {
+          console.warn('Player do YouTube: erro', ev.data);
+        }
+      }
+    }
+  });
+}
+
+// Faz o player seguir o estado compartilhado.
+function syncMusicPlayer() {
+  if (!musicPlayer || !musicPlayerReady || !musicState || !musicState.queue.length) return;
+  const item = musicState.queue[0];
+  const targetMs = targetPositionMs(musicState, Date.now(), musicState.receivedAt);
+
+  if (musicLoadedItemId !== item.id) {
+    musicLoadedItemId = item.id;
+    const opts = { videoId: item.videoId, startSeconds: targetMs / 1000 };
+    if (musicState.playing) musicPlayer.loadVideoById(opts);
+    else musicPlayer.cueVideoById(opts);
+    return;
+  }
+
+  const state = musicPlayer.getPlayerState();
+  if (state === YT_STATE.ENDED) return; // aguardando o servidor avançar a fila
+  // seekTo num vídeo só "cued" começa a tocar; pausado e cued já está no ponto certo
+  const seekable = musicState.playing || state === YT_STATE.PAUSED;
+  if (seekable && needsSeek(musicPlayer.getCurrentTime() * 1000, targetMs)) {
+    musicPlayer.seekTo(targetMs / 1000, true);
+  }
+  const running = state === YT_STATE.PLAYING || state === YT_STATE.BUFFERING;
+  if (musicState.playing && !running) musicPlayer.playVideo();
+  else if (!musicState.playing && running) musicPlayer.pauseVideo();
+}
+
+function onMusicPlayerStateChange(state) {
+  if (!musicState || !musicState.queue.length) return;
+  const current = musicState.queue[0];
+  if (state === YT_STATE.ENDED) {
+    // Vários clientes avisam; o servidor só avança se o item ainda for o atual
+    if (musicLoadedItemId === current.id) socket.emit('music-ended', current.id);
+    return;
+  }
+  // Pausa por clique no vídeo (ou play com o estado pausado): volta ao estado compartilhado.
+  // Ao começar a tocar também confere o minuto (o carregamento do vídeo atrasa a posição).
+  const contradicts = state === YT_STATE.PAUSED && musicState.playing;
+  if (contradicts || state === YT_STATE.PLAYING) syncMusicPlayer();
+}
+
+function applyMusicState(pub) {
+  if (!currentVoiceRoom) return; // música só para quem está na voz
+  if (!pub || !Array.isArray(pub.queue) || pub.queue.length === 0) {
+    musicState = null;
+    destroyMusicPlayer();
+    return;
+  }
+  musicState = { ...pub, receivedAt: Date.now() };
+  syncMusicTile();
+  if (!musicPlayer) createMusicPlayer(); // onReady aplica o estado
+  else syncMusicPlayer();
+}
+
+// Sair da voz (ou trocar de canal): a música para para esta pessoa.
+function resetMusic() {
+  musicState = null;
+  destroyMusicPlayer();
+}
+
+let toastTimer = null;
+function showToast(text) {
+  const toast = document.getElementById('toast');
+  if (!toast) return;
+  toast.textContent = text;
+  toast.classList.remove('hidden');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toast.classList.add('hidden'), 4000);
+}
+
+socket.on('music-state', (pub) => applyMusicState(pub));
+socket.on('music-notice', (notice) => {
+  if (notice && typeof notice.text === 'string') showToast(notice.text);
+});
 
 /* ================= VISUALIZAÇÃO EM TELA CHEIA ================= */
 function openFullscreenView(stream, name) {
@@ -2018,6 +2227,7 @@ function leaveVoice() {
   }
   stopLocalMedia();
   closeFullscreenView();
+  resetMusic();
 
   sharingScreen = false;
   camEnabled = false;
