@@ -7,6 +7,8 @@ const os = require('os');
 const crypto = require('crypto');
 const { publicUser, applyStatePatch, joinVoiceRoom, leaveVoiceRoom, canUseTextRoom, socketRoomsToLeave } = require('./room-state');
 const { isTextChannel, isVoiceChannel } = require('./channels');
+const { parseYouTubeId, lookupVideo } = require('./youtube');
+const { RESYNC_INTERVAL_MS, createMusicState, addTrack, removeTrack, advanceIfCurrent, endedIfCurrent, togglePause, toPublic } = require('./music-state');
 const { PROTOCOL_VERSION, VERSION_MISMATCH_MESSAGE, isCompatible } = require('./protocol');
 
 // ---------- Banco simples (arquivos JSON) ----------
@@ -44,6 +46,8 @@ let users = loadUsers();
 
 const authenticated = new Map(); // socket.id -> username
 const roomUsers = new Map();     // room -> Map(socket.id -> { username, muted })
+
+const musicByRoom = new Map();   // sala de voz -> estado da fila de música
 
 let mainWindow = null;
 let io = null;
@@ -144,14 +148,58 @@ function purgeOldMessages() {
 purgeOldMessages();
 setInterval(purgeOldMessages, 60 * 60 * 1000);
 
+// ---------- Música ----------
+function emptyMusicState() {
+  return { queue: [], playing: false, positionMs: 0, serverNow: Date.now() };
+}
+
+function musicStateFor(room) {
+  const state = musicByRoom.get(room);
+  return state ? toPublic(state, Date.now()) : emptyMusicState();
+}
+
+// Difunde o estado da sala; fila vazia apaga o estado.
+function broadcastMusic(room) {
+  if (!io) return;
+  const state = musicByRoom.get(room);
+  if (state && state.queue.length === 0) musicByRoom.delete(room);
+  io.to(room).emit('music-state', musicStateFor(room));
+}
+
+// Sala de voz sem ninguém: a fila some junto.
+function dropMusicIfRoomEmpty(room) {
+  if (!room) return;
+  const map = roomUsers.get(room);
+  if (!map || map.size === 0) musicByRoom.delete(room);
+}
+
+// Reenvia periodicamente a posição para corrigir deriva nos clientes.
+setInterval(() => {
+  for (const [room, state] of musicByRoom) {
+    if (state.playing) broadcastMusic(room);
+  }
+}, RESYNC_INTERVAL_MS);
+
 function removeSocketFromRooms(socketId) {
   const left = leaveVoiceRoom(roomUsers, socketId);
-  if (left) broadcastRoomUsers(left);
+  if (left) {
+    dropMusicIfRoomEmpty(left);
+    broadcastRoomUsers(left);
+  }
   broadcastVoiceRooms();
 }
 
 // ---------- App ----------
 app.whenReady().then(() => {
+  // O player do YouTube recusa (erro 153) páginas file:// sem Referer; injeta o do projeto.
+  session.defaultSession.webRequest.onBeforeSendHeaders(
+    { urls: ['https://www.youtube.com/*', 'https://*.youtube.com/*', 'https://*.googlevideo.com/*'] },
+    (details, callback) => {
+      details.requestHeaders['Referer'] = 'https://github.com/viniciusog1/vox';
+      callback({ requestHeaders: details.requestHeaders });
+    }
+  );
+
   createWindow();
 
   // Permissões de câmera, microfone e captura de tela
@@ -277,7 +325,10 @@ app.whenReady().then(() => {
       });
       if (previous) {
         socket.leave(previous);
-        if (previous !== room) broadcastRoomUsers(previous);
+        if (previous !== room) {
+          dropMusicIfRoomEmpty(previous);
+          broadcastRoomUsers(previous);
+        }
       }
       socket.join(room);
       socket.data.voiceRoom = room;
@@ -287,6 +338,7 @@ app.whenReady().then(() => {
       }
       broadcastRoomUsers(room);
       broadcastVoiceRooms();
+      socket.emit('music-state', musicStateFor(room));
     });
 
     socket.on('leave-voice', () => {
@@ -294,9 +346,82 @@ app.whenReady().then(() => {
       socket.data.voiceRoom = null;
       if (left) {
         socket.leave(left);
+        dropMusicIfRoomEmpty(left);
         broadcastRoomUsers(left);
       }
       broadcastVoiceRooms();
+    });
+
+    // Exige login e voz; devolve a sala de voz ou null (e responde { ok: false }).
+    function requireVoice(callback) {
+      const room = authenticated.has(socket.id) ? socket.data.voiceRoom : null;
+      if (!room) {
+        if (typeof callback === 'function') callback({ ok: false });
+        return null;
+      }
+      return room;
+    }
+
+    socket.on('music-add', async (url, callback) => {
+      const reply = typeof callback === 'function' ? callback : () => {};
+      const room = requireVoice(reply);
+      if (!room) return;
+      const id = parseYouTubeId(url);
+      if (!id) return reply({ ok: false, message: 'Link do YouTube inválido' });
+      const info = await lookupVideo(id);
+      if (!info.ok) {
+        return reply({ ok: false, message: 'Esse vídeo não pode ser tocado aqui (privado, removido ou com incorporação desativada).' });
+      }
+      // Durante a consulta a pessoa pode ter saído da voz ou trocado de sala
+      if (!authenticated.has(socket.id) || socket.data.voiceRoom !== room) return reply({ ok: false });
+      let state = musicByRoom.get(room);
+      if (!state) state = createMusicState();
+      const item = {
+        id: crypto.randomUUID(),
+        videoId: id,
+        title: info.title,
+        thumbnail: info.thumbnail,
+        addedBy: socket.data.status === 'invisible' ? null : authenticated.get(socket.id)
+      };
+      const result = addTrack(state, item, Date.now());
+      if (!result.ok) return reply({ ok: false, message: 'A fila está cheia (50 músicas).' });
+      musicByRoom.set(room, state);
+      reply({ ok: true });
+      broadcastMusic(room);
+    });
+
+    // Aplica uma função da fila ao estado da sala e difunde se algo mudou.
+    function musicMutate(apply) {
+      const room = requireVoice();
+      const state = room && musicByRoom.get(room);
+      if (!state) return;
+      const result = apply(state);
+      if (result) broadcastMusic(room);
+      return result;
+    }
+
+    socket.on('music-remove', (itemId) => {
+      musicMutate((state) => removeTrack(state, itemId, Date.now()));
+    });
+    socket.on('music-skip', (itemId) => {
+      musicMutate((state) => advanceIfCurrent(state, itemId, Date.now()));
+    });
+    socket.on('music-ended', (itemId) => {
+      musicMutate((state) => endedIfCurrent(state, itemId, Date.now()));
+    });
+    socket.on('music-toggle', () => {
+      musicMutate((state) => { togglePause(state, Date.now()); return true; });
+    });
+    socket.on('music-error', (payload) => {
+      const { itemId } = payload || {};
+      const room = requireVoice();
+      const state = room && musicByRoom.get(room);
+      if (!state) return;
+      const current = state.queue[0];
+      const title = current && current.id === itemId ? current.title : null;
+      if (!advanceIfCurrent(state, itemId, Date.now())) return;
+      broadcastMusic(room);
+      io.to(room).emit('music-notice', { text: `Não foi possível tocar «${title}»` });
     });
 
     socket.on('update-state', (patch) => {
