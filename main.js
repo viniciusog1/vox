@@ -5,6 +5,7 @@ const { Server } = require('socket.io');
 const fs = require('fs');
 const os = require('os');
 const crypto = require('crypto');
+const { publicUser, applyStatePatch } = require('./room-state');
 
 // ---------- Banco simples (arquivos JSON) ----------
 // Em desenvolvimento os dados ficam na pasta do projeto.
@@ -74,12 +75,7 @@ function buildRoomUserList(room, viewerId) {
   if (map) {
     for (const [id, u] of map) {
       if (u.status === 'invisible' && id !== viewerId) continue;
-      list.push({
-        id,
-        username: u.username,
-        muted: !!u.muted,
-        status: u.status || 'online'
-      });
+      list.push(publicUser(id, u));
     }
   }
 
@@ -103,12 +99,7 @@ function buildVoiceRooms(viewerId) {
     const list = [];
     for (const [id, u] of map) {
       if (u.status === 'invisible' && id !== viewerId) continue;
-      list.push({
-        id,
-        username: u.username,
-        muted: !!u.muted,
-        status: u.status || 'online'
-      });
+      list.push(publicUser(id, u));
     }
     if (list.length) result[room] = list;
   }
@@ -278,7 +269,8 @@ app.whenReady().then(() => {
       roomUsers.get(room).set(socket.id, {
         username,
         muted: !!socket.data.muted,
-        status: socket.data.status || 'online'
+        status: socket.data.status || 'online',
+        sharing: false // o cliente reenvia o estado ao entrar
       });
 
       if ((socket.data.status || 'online') !== 'invisible') {
@@ -300,25 +292,19 @@ app.whenReady().then(() => {
       }
     });
 
-    socket.on('update-state', ({ muted, status }) => {
+    socket.on('update-state', (patch) => {
       if (!requireAuth()) return;
       const room = socket.data.room;
       if (!room) return;
       const map = roomUsers.get(room);
       if (!map || !map.has(socket.id)) return;
 
-      if (typeof muted === 'boolean') {
-        map.get(socket.id).muted = muted;
-        socket.data.muted = muted;
-      }
-
-      const allowed = ['online', 'busy', 'away', 'invisible'];
-      const before = map.get(socket.id).status || 'online';
-      if (typeof status === 'string' && allowed.includes(status)) {
-        map.get(socket.id).status = status;
-        socket.data.status = status;
-      }
-      const after = map.get(socket.id).status || 'online';
+      const entry = map.get(socket.id);
+      const before = entry.status || 'online';
+      applyStatePatch(entry, patch);
+      socket.data.muted = !!entry.muted;
+      socket.data.status = entry.status || 'online';
+      const after = entry.status || 'online';
 
       // Ao voltar de invisível, os outros precisam refazer a conexão de mídia
       if (before === 'invisible' && after !== 'invisible') {
