@@ -1123,7 +1123,46 @@ function renderTiles() {
   });
 
   applyOutputDevice();
+  layoutTiles();
 }
+
+// Grade da chamada: escolhe o nº de colunas que deixa os tiles (16:9) maiores
+// no espaço disponível; abaixo do mínimo, mantém o mínimo e a grade rola.
+const TILE_RATIO = 16 / 9;
+const TILE_GAP = 12;
+const TILE_MIN_W = 260;
+const MUSIC_TILE_MIN_H = 240; // player do YouTube (mín. 200) + faixa
+
+function layoutTiles() {
+  const tiles = [...videoGrid.children].filter((el) => !el.classList.contains('hidden') && el.style.display !== 'none');
+  const n = tiles.length;
+  if (!n) return;
+  const cs = getComputedStyle(videoGrid);
+  const W = videoGrid.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+  const H = videoGrid.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
+  if (W <= 0 || H <= 0) return;
+
+  let best = { cols: 1, w: 0 };
+  for (let cols = 1; cols <= n; cols++) {
+    const rows = Math.ceil(n / cols);
+    const w = Math.min((W - TILE_GAP * (cols - 1)) / cols, ((H - TILE_GAP * (rows - 1)) / rows) * TILE_RATIO);
+    if (w > best.w) best = { cols, w };
+  }
+  let cols = best.cols;
+  let w = Math.floor(best.w);
+  if (w < TILE_MIN_W) {
+    w = Math.min(TILE_MIN_W, Math.floor(W));
+    cols = Math.max(1, Math.floor((W + TILE_GAP) / (w + TILE_GAP)));
+  }
+  let h = Math.floor(w / TILE_RATIO);
+  if (musicTileEl && tiles.includes(musicTileEl) && h < MUSIC_TILE_MIN_H) h = MUSIC_TILE_MIN_H;
+
+  videoGrid.style.setProperty('--grid-cols', String(Math.min(cols, n)));
+  videoGrid.style.setProperty('--tile-w', w + 'px');
+  videoGrid.style.setProperty('--tile-h', h + 'px');
+}
+
+if (window.ResizeObserver) new ResizeObserver(() => layoutTiles()).observe(videoGrid);
 
 /* ================= MÚSICA DO YOUTUBE ================= */
 // Cada pessoa toca o player oficial; o servidor só diz o que toca, se está pausado e o minuto.
@@ -1195,6 +1234,7 @@ function syncMusicTile() {
   if (!active) {
     if (musicTileEl) musicTileEl.classList.add('hidden');
     if (fullscreenMusicOnly) closeFullscreenView();
+    layoutTiles();
     return;
   }
   ensureMusicTile();
@@ -1205,6 +1245,7 @@ function syncMusicTile() {
   musicTileEl.querySelector('.music-tile-text').textContent =
     `${current.title || current.videoId} · ${musicState.queue.length - 1} na fila`; // queue[0] é a atual
   if (fullscreenMusicOnly) setFullscreenMusicName(current);
+  layoutTiles();
 }
 
 // Ícone no estilo do YouTube (desenhado aqui, nada é baixado)
@@ -2324,8 +2365,8 @@ btnScreen.addEventListener('click', async () => {
     renderTiles();
 
     btnScreen.textContent = '⏹️ Parar';
-    btnScreen.classList.remove('warn');
-    btnScreen.classList.add('danger');
+    btnScreen.classList.remove('off');
+    btnScreen.classList.add('primary');
 
     screenStream.getVideoTracks()[0].addEventListener('ended', stopScreenShare);
   } catch (e) {
@@ -2359,8 +2400,8 @@ function stopScreenShare() {
   replaceVideoTrackEverywhere(camTrack || null, localStream);
 
   btnScreen.textContent = '🖥️ Tela';
-  btnScreen.classList.remove('danger');
-  btnScreen.classList.add('warn');
+  btnScreen.classList.remove('primary');
+  btnScreen.classList.add('off');
   renderTiles();
 }
 
@@ -2520,8 +2561,8 @@ function leaveVoice() {
   lastUsersSignature = '';
 
   btnScreen.textContent = '🖥️ Tela';
-  btnScreen.classList.remove('danger');
-  btnScreen.classList.add('warn');
+  btnScreen.classList.remove('primary');
+  btnScreen.classList.add('off');
   voiceConnection.classList.add('hidden');
 
   updateControlButtons();
