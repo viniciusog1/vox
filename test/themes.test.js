@@ -4,9 +4,11 @@ const themes = require('../themes.js');
 
 const IDS = ['escuro', 'grafite', 'dracula', 'nord', 'aquatico', 'natureza', 'por-do-sol',
   'cyberpunk', 'neon-verde', 'neon-vermelho', 'neon-azul',
+  'bizarro', 'manga', 'ninja',
   'claro', 'sepia', 'lavanda', 'algodao-doce'];
 const NAMES = ['Escuro', 'Grafite', 'Drácula', 'Nord', 'Aquático', 'Natureza', 'Pôr do sol',
   'Cyberpunk', 'Neon Verde', 'Neon Vermelho', 'Neon Azul',
+  'Bizarro', 'Mangá', 'Ninja',
   'Claro', 'Sépia', 'Lavanda / Sakura', 'Algodão-doce'];
 const TOKENS = ['bg', 'bg2', 'bg3', 'rail', 'border', 'text', 'text2', 'muted', 'accent', 'onAccent', 'link', 'speak', 'red', 'dangerBg'];
 
@@ -20,15 +22,16 @@ function contrast(a, b) {
   return (hi + 0.05) / (lo + 0.05);
 }
 
-test('exporta 15 temas com ids, nomes e grupos', () => {
+test('exporta 18 temas com ids, nomes e grupos', () => {
   assert.deepEqual(themes.THEMES.map((t) => t.id), IDS);
   assert.deepEqual(themes.THEMES.map((t) => t.name), NAMES);
-  assert.equal(themes.THEMES.filter((t) => t.kind === 'dark').length, 11);
-  assert.equal(themes.THEMES.filter((t) => t.kind === 'light').length, 4);
-  assert.deepEqual(themes.THEME_GROUPS, [['escuros', 'Escuros'], ['neon', 'Neon'], ['claros', 'Claros']]);
+  assert.equal(themes.THEMES.filter((t) => t.kind === 'dark').length, 13);
+  assert.equal(themes.THEMES.filter((t) => t.kind === 'light').length, 5);
+  assert.deepEqual(themes.THEME_GROUPS, [['escuros', 'Escuros'], ['neon', 'Neon'], ['anime', 'Anime'], ['claros', 'Claros']]);
   const ids = (g) => themes.THEMES.filter((t) => t.group === g).map((t) => t.id);
   assert.deepEqual(ids('escuros'), ['escuro', 'grafite', 'dracula', 'nord', 'aquatico', 'natureza', 'por-do-sol']);
   assert.deepEqual(ids('neon'), ['cyberpunk', 'neon-verde', 'neon-vermelho', 'neon-azul']);
+  assert.deepEqual(ids('anime'), ['bizarro', 'manga', 'ninja']);
   assert.deepEqual(ids('claros'), ['claro', 'sepia', 'lavanda', 'algodao-doce']);
 });
 
@@ -64,9 +67,9 @@ test('contraste mínimo em todos os temas', () => {
   }
 });
 
-test('glow só nos temas Neon e no aquatico', () => {
+test('glow só nos temas Neon, Anime escuros e no aquatico', () => {
   for (const t of themes.THEMES) {
-    if (['cyberpunk', 'neon-verde', 'neon-vermelho', 'neon-azul', 'aquatico'].includes(t.id)) assert.notEqual(t.glow, 'none', t.id);
+    if (['cyberpunk', 'neon-verde', 'neon-vermelho', 'neon-azul', 'aquatico', 'bizarro', 'ninja'].includes(t.id)) assert.notEqual(t.glow, 'none', t.id);
     else {
       assert.equal(t.glow, 'none', t.id);
       assert.equal(t.glowSoft, 'none', t.id);
@@ -153,4 +156,20 @@ test('paletas Neon Vermelho e Neon Azul aprovadas', () => {
     '#c88d94', '#ff2a3d', '#1a0003', '#ff8a6b', '#ff2a3d', '#ff6b57', '#c4121f']);
   assert.deepEqual(values('neon-azul'), ['#03070f', '#060d1c', '#0b1730', '#02050b', '#14305e', '#e8f3ff', '#c3daf5',
     '#86a3cc', '#1f8bff', '#00142b', '#6fe3ff', '#00e5ff', '#ff5a7a', '#c42b4a']);
+});
+
+test('reduzir animações: salva, carrega e marca o root', () => {
+  const store = {};
+  const storage = { getItem: (k) => store[k] ?? null, setItem: (k, v) => { store[k] = v; } };
+  assert.equal(themes.loadReduceMotion(storage), false);
+  themes.saveReduceMotion(storage, true);
+  assert.equal(store['concord-reduce-motion'], '1');
+  assert.equal(themes.loadReduceMotion(storage), true);
+  assert.equal(themes.loadReduceMotion({ getItem() { throw new Error('x'); } }), false);
+  assert.doesNotThrow(() => themes.saveReduceMotion({ setItem() { throw new Error('x'); } }, true));
+  const root = { dataset: {} };
+  themes.applyReduceMotion(true, root);
+  assert.equal(root.dataset.reduceMotion, '1');
+  themes.applyReduceMotion(false, root);
+  assert.equal(root.dataset.reduceMotion, undefined);
 });

@@ -2,6 +2,7 @@
 // tema salvo antes da primeira pintura. Também roda no Node (testes).
 (function () {
   const STORAGE_KEY = 'concord-theme';
+  const MOTION_KEY = 'concord-reduce-motion';
   const DEFAULT_THEME_ID = 'escuro';
   const TOKEN_ORDER = ['bg', 'bg2', 'bg3', 'rail', 'border', 'text', 'text2', 'muted',
     'accent', 'onAccent', 'link', 'speak', 'red', 'dangerBg'];
@@ -25,6 +26,12 @@
       '0 0 10px rgba(255,42,61,.65)', 'inset 2px 0 0 #ff2a3d, 0 0 8px rgba(255,42,61,.25)'],
     ['neon-azul', 'Neon Azul', 'dark', 'neon', '#03070f #060d1c #0b1730 #02050b #14305e #e8f3ff #c3daf5 #86a3cc #1f8bff #00142b #6fe3ff #00e5ff #ff5a7a #c42b4a',
       '0 0 10px rgba(31,139,255,.65)', 'inset 2px 0 0 #1f8bff, 0 0 8px rgba(31,139,255,.25)'],
+    // Anime: efeitos extras (fundos, animações) no CSS por [data-theme]
+    ['bizarro', 'Bizarro', 'dark', 'anime', '#1a0b2e #220f3d #2d1550 #12071f #4b2a7a #fff4d6 #f0dcae #b9a0d8 #ffd23f #2a1400 #b8ff3c #b8ff3c #ff6b95 #c2185b',
+      '0 0 10px rgba(255,210,63,.55)', 'inset 2px 0 0 #ffd23f, 0 0 8px rgba(184,255,60,.2)'],
+    ['manga', 'Mangá', 'light', 'anime', '#ffffff #f4f4f4 #e6e6e6 #ececec #1a1a1a #111111 #2b2b2b #555555 #111111 #ffffff #c4122f #111111 #c4122f #c4122f'],
+    ['ninja', 'Ninja', 'dark', 'anime', '#0f1626 #141d31 #1c2841 #0a0f1b #2c3b5c #fff3e6 #f2d9c2 #a5acc4 #ff7a1a #1f0d00 #ffb04d #ff9a2e #ff6a5f #c73a2f',
+      '0 0 10px rgba(255,122,26,.55)', 'inset 2px 0 0 #ff7a1a, 0 0 8px rgba(255,122,26,.2)'],
     ['claro', 'Claro', 'light', 'claros', '#ffffff #f3f4f7 #e6e8ee #e3e5eb #d7dae2 #1d2129 #3a404c #616774 #4f5bd5 #ffffff #3b47c4 #23934a #d3292c #d7393c'],
     ['sepia', 'Sépia', 'light', 'claros', '#f6efdf #ede3cb #e2d5b7 #e0d2b0 #d3c39f #3b2f22 #544433 #695945 #8f4e22 #fff7ec #7a4a1f #5f8a3a #af3f2c #b3402d'],
     ['lavanda', 'Lavanda / Sakura', 'light', 'claros', '#fcf8fd #f3ebf7 #e9dcf0 #eadcf2 #dccbe6 #2e2236 #4a3b54 #6e5c78 #8e56b5 #ffffff #b73c73 #d9578f #c3324d #cc3a55'],
@@ -32,7 +39,7 @@
   ];
 
   // Grupos do seletor de tema, na ordem em que aparecem
-  const THEME_GROUPS = [['escuros', 'Escuros'], ['neon', 'Neon'], ['claros', 'Claros']];
+  const THEME_GROUPS = [['escuros', 'Escuros'], ['neon', 'Neon'], ['anime', 'Anime'], ['claros', 'Claros']];
 
   const THEMES = PALETTES.map(([id, name, kind, group, values, glow = 'none', glowSoft = 'none']) => {
     const list = values.split(' ');
@@ -124,7 +131,20 @@
     return theme.id;
   }
 
-  const api = { THEMES, THEME_GROUPS, DEFAULT_THEME_ID, STORAGE_KEY, resolveThemeId, getTheme, themeCssVars, loadThemeId, saveThemeId, applyTheme };
+  // "Reduzir animações": desliga as animações dos temas (CSS por [data-reduce-motion])
+  function loadReduceMotion(storage) {
+    try { return storage.getItem(MOTION_KEY) === '1'; } catch (e) { return false; }
+  }
+  function saveReduceMotion(storage, on) {
+    try { storage.setItem(MOTION_KEY, on ? '1' : '0'); } catch (e) {}
+  }
+  function applyReduceMotion(on, root) {
+    const target = root || document.documentElement;
+    if (on) target.dataset.reduceMotion = '1';
+    else delete target.dataset.reduceMotion;
+  }
+
+  const api = { MOTION_KEY, loadReduceMotion, saveReduceMotion, applyReduceMotion, THEMES, THEME_GROUPS, DEFAULT_THEME_ID, STORAGE_KEY, resolveThemeId, getTheme, themeCssVars, loadThemeId, saveThemeId, applyTheme };
 
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = api;
@@ -133,5 +153,6 @@
     let storage = null;
     try { storage = window.localStorage; } catch (e) {}
     applyTheme(loadThemeId(storage));
+    applyReduceMotion(loadReduceMotion(storage));
   }
 })();
