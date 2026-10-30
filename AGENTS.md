@@ -82,7 +82,7 @@ Saída: `dist\Concord Setup 1.0.0.exe`.
 | --- | --- |
 | `main.js` | Processo principal: janela, permissões, servidor Socket.io, autenticação, presença, salas, mensagens, retenção, `desktopCapturer` e seletor de tela, fila de música por sala de voz (`musicByRoom`) e o `Referer` injetado nas requisições do YouTube. |
 | `renderer.js` | Interface e lógica do cliente: login, canais, chat, WebRTC, câmera/microfone, compartilhamento de tela, status, configurações de áudio. |
-| `themes.js` | Os 13 temas (paletas, id padrão `escuro`), leitura/gravação em `localStorage['concord-theme']` e `applyTheme`. Carregado no `<head>` antes do CSS para aplicar o tema antes da primeira pintura. Também é módulo Node (testes). |
+| `themes.js` | Os 15 temas (paletas, id padrão `escuro`) e os grupos do seletor (`THEME_GROUPS`: Escuros, Neon, Claros; cada tema tem `group`), leitura/gravação em `localStorage['concord-theme']` e `applyTheme`. Carregado no `<head>` antes do CSS para aplicar o tema antes da primeira pintura. Também é módulo Node (testes). |
 | `speaking.js` | Detecção de "falando" com histerese (liga ≥ 0.12, desliga após 250 ms abaixo) para o anel do avatar. |
 | `channels.js` | Lista fixa de canais: `TEXT_CHANNELS` (`geral`, `jogos`, `musica`) e `VOICE_CHANNELS` (`voz-sala`, `voz-jogos`, `voz-musica`); padrões `geral` e `voz-sala`. Usado por `main.js` e `renderer.js`. Também é módulo Node (testes). |
 | `protocol.js` | `PROTOCOL_VERSION` (hoje `3`), mensagem de versão incompatível e `isCompatible`. Usado por `main.js` e `renderer.js`. Também é módulo Node (testes). |

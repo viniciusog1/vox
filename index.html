@@ -202,13 +202,6 @@
   .ctrl.warn:hover { background: color-mix(in srgb, var(--yellow) 85%, #000); }
   .ctrl.off { background: var(--control); color: var(--muted); }
   .ctrl:disabled { opacity: .4; cursor: not-allowed; box-shadow: none; }
-  .win-controls { display: flex; gap: 4px; margin-left: 10px; }
-  .win-controls button {
-    width: 30px; height: 30px; border-radius: 50%; border: none;
-    background: transparent; color: var(--muted); cursor: pointer; font-size: 13px;
-  }
-  .win-controls button:hover { background: color-mix(in srgb, var(--text) 8%, transparent); color: var(--text); }
-  #btn-close:hover { background: var(--danger-bg); color: #fff; }
 
   /* ================= CALL AREA ================= */
   #call-area {
@@ -265,11 +258,19 @@
   .music-player-host { flex: 1 1 auto; min-height: 200px; min-width: 200px; position: relative; background: #000; }
   .music-player-host iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; display: block; }
   .music-tile-label {
-    flex: 0 0 auto; padding: 8px 12px; font-size: 12px; font-weight: 600;
-    color: var(--text); background: var(--bg-2); border-top: 1px solid var(--border);
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer;
+    flex: 0 0 auto; display: flex; align-items: center; gap: 8px;
+    padding: 6px 8px 6px 12px; font-size: 12px; font-weight: 600;
+    color: var(--text); background: var(--bg-2); border-top: 1px solid var(--border); cursor: pointer;
   }
   .music-tile-label:hover { background: var(--bg-3); }
+  .yt-icon { flex: 0 0 auto; display: inline-block; vertical-align: -2px; }
+  .music-tile-text { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* ⛶ fica na faixa de baixo, nunca por cima do vídeo */
+  .music-fs-btn {
+    flex: 0 0 auto; border: none; background: transparent; color: var(--muted);
+    font-size: 14px; line-height: 1; padding: 4px 6px; border-radius: 6px; cursor: pointer;
+  }
+  .music-fs-btn:hover { color: var(--text); background: color-mix(in srgb, var(--text) 8%, transparent); }
   /* Na tela cheia o player vai para um canto, por cima do vídeo (16:9, mín. 200×200) */
   #fullscreen-music {
     position: absolute; right: 16px; bottom: 16px; z-index: 2;
@@ -292,6 +293,11 @@
     background: #000; display: flex; align-items: center; justify-content: center;
   }
   #fullscreen-video { width: 100%; height: 100%; object-fit: contain; background: #000; display: block; }
+  /* Tela cheia só da música: o player ocupa a área abaixo da barra do topo */
+  #fullscreen-view.music-only #fullscreen-video { display: none; }
+  #fullscreen-view.music-only #fullscreen-music {
+    inset: 52px 24px 24px; width: auto; height: auto; border-radius: 0; box-shadow: none;
+  }
   #fullscreen-topbar {
     position: absolute; top: 0; left: 0; right: 0; height: 52px;
     display: flex; align-items: center; justify-content: space-between;
@@ -412,6 +418,7 @@
   }
   .member:hover { background: color-mix(in srgb, var(--text) 4%, transparent); }
   .member .avatar { width: 30px; height: 30px; font-size: 12px; }
+  .member .member-status-dot { position: absolute; right: -3px; bottom: -3px; width: 10px; height: 10px; border: 2px solid var(--bg-2); box-sizing: content-box; }
   .member-name {
     flex: 1; min-width: 0; font-size: 13px; overflow: hidden;
     text-overflow: ellipsis; white-space: nowrap;
@@ -506,7 +513,16 @@
     font-size: 12px; font-weight: 700; letter-spacing: .6px; text-transform: uppercase;
     color: var(--muted); margin: 4px 0 10px;
   }
-  #theme-grid { margin-bottom: 22px; }
+  #theme-grid { margin-bottom: 8px; }
+  .settings-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 16px; }
+  .settings-tab {
+    border: none; background: transparent; color: var(--muted); font: inherit; font-size: 13px; font-weight: 600;
+    padding: 8px 12px; border-bottom: 2px solid transparent; margin-bottom: -1px; cursor: pointer;
+  }
+  .settings-tab:hover { color: var(--text); }
+  .settings-tab.active { color: var(--text); border-bottom-color: var(--accent); }
+  .settings-panel { min-height: 300px; }
+  .account-line { font-size: 14px; color: var(--text-2); margin: 4px 0 16px; }
   .theme-group-title { font-size: 12px; color: var(--muted); font-weight: 600; margin: 6px 0 8px; }
   .theme-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 8px; }
   .theme-option {
@@ -648,7 +664,6 @@
       </button>
       <button class="mini-btn" id="btn-mic-mini" title="Microfone">🎙️</button>
       <button class="mini-btn" id="btn-settings" title="Configurações de áudio">⚙️</button>
-      <button class="mini-btn" id="btn-logout" title="Sair da conta">⏻</button>
 
       <div id="status-menu" class="popover hidden">
         <button data-status="online"><span class="status-dot online"></span> Online</button>
@@ -668,13 +683,8 @@
         <button class="ctrl primary" id="btn-mic" title="Microfone">🎙️ Mic</button>
         <button class="ctrl off" id="btn-cam" title="Câmera">📷 Cam Off</button>
         <button class="ctrl warn" id="btn-screen" title="Compartilhar tela">🖥️ Tela</button>
-        <button class="ctrl off" id="btn-music" title="Música" aria-expanded="false">🎵</button>
+        <button class="ctrl off" id="btn-music" title="Música" aria-label="Música" aria-expanded="false"><svg class="yt-icon" viewBox="0 0 28 20" width="18" height="13" aria-hidden="true"><rect width="28" height="20" rx="5" fill="#FF0000"/><path d="M11 5.5v9l8-4.5z" fill="#FFFFFF"/></svg></button>
         <button class="ctrl danger" id="btn-hangup" title="Sair da chamada" style="font-size:16px;font-weight:800;">✕</button>
-        <div class="win-controls">
-          <button id="btn-min">—</button>
-          <button id="btn-max">□</button>
-          <button id="btn-close">✕</button>
-        </div>
       </div>
     </header>
 
@@ -695,7 +705,7 @@
       <!-- Painel da música: fica sobre o chat, nunca sobre a área da chamada (o player não pode ser coberto) -->
       <div id="music-panel" class="hidden" role="dialog" aria-label="Música">
         <div class="music-panel-head">
-          <h3>🎵 Música</h3>
+          <h3><svg class="yt-icon" viewBox="0 0 28 20" width="18" height="13" aria-hidden="true"><rect width="28" height="20" rx="5" fill="#FF0000"/><path d="M11 5.5v9l8-4.5z" fill="#FFFFFF"/></svg> Música</h3>
           <button id="music-panel-close" class="music-icon-btn" title="Fechar (Esc)">✕</button>
         </div>
         <input type="text" id="music-url" placeholder="Cole um link do YouTube…" autocomplete="off" spellcheck="false">
@@ -800,10 +810,22 @@
   <div class="settings-card">
     <h3>Configurações</h3>
 
-    <h4 class="settings-section">Aparência</h4>
-    <div id="theme-grid"></div>
+    <div class="settings-tabs" role="tablist" aria-label="Seções das configurações">
+      <button type="button" class="settings-tab active" role="tab" id="settings-tabbtn-aparencia" aria-selected="true" aria-controls="settings-tab-aparencia" data-tab="aparencia">Aparência</button>
+      <button type="button" class="settings-tab" role="tab" id="settings-tabbtn-audio" aria-selected="false" aria-controls="settings-tab-audio" data-tab="audio">Áudio</button>
+      <button type="button" class="settings-tab" role="tab" id="settings-tabbtn-conta" aria-selected="false" aria-controls="settings-tab-conta" data-tab="conta">Conta</button>
+    </div>
 
-    <h4 class="settings-section">Áudio</h4>
+    <div class="settings-panel" id="settings-tab-aparencia" role="tabpanel" aria-labelledby="settings-tabbtn-aparencia">
+      <div id="theme-grid"></div>
+    </div>
+
+    <div class="settings-panel hidden" id="settings-tab-conta" role="tabpanel" aria-labelledby="settings-tabbtn-conta">
+      <p class="account-line">Conectado como <strong id="account-name">—</strong></p>
+      <button type="button" id="btn-logout" class="btn-danger-outline">Sair da conta</button>
+    </div>
+
+    <div class="settings-panel hidden" id="settings-tab-audio" role="tabpanel" aria-labelledby="settings-tabbtn-audio">
 
     <div class="field">
       <label>Entrada (microfone)</label>
@@ -835,6 +857,8 @@
       <span>Ouvir meu microfone (teste)</span>
     </label>
     <p class="settings-hint">Ao ativar, você ouvirá sua própria voz. Use fones de ouvido para evitar microfonia.</p>
+    </div>
+
     <p class="settings-hint">As mensagens ficam salvas por 7 dias e depois são apagadas automaticamente.</p>
 
     <div id="settings-error" class="auth-error"></div>

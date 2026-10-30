@@ -2,9 +2,11 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const themes = require('../themes.js');
 
-const IDS = ['escuro', 'grafite', 'cyberpunk', 'neon-verde', 'dracula', 'nord', 'aquatico', 'natureza', 'por-do-sol',
+const IDS = ['escuro', 'grafite', 'dracula', 'nord', 'aquatico', 'natureza', 'por-do-sol',
+  'cyberpunk', 'neon-verde', 'neon-vermelho', 'neon-azul',
   'claro', 'sepia', 'lavanda', 'algodao-doce'];
-const NAMES = ['Escuro', 'Grafite', 'Cyberpunk', 'Neon Verde', 'Drácula', 'Nord', 'Aquático', 'Natureza', 'Pôr do sol',
+const NAMES = ['Escuro', 'Grafite', 'Drácula', 'Nord', 'Aquático', 'Natureza', 'Pôr do sol',
+  'Cyberpunk', 'Neon Verde', 'Neon Vermelho', 'Neon Azul',
   'Claro', 'Sépia', 'Lavanda / Sakura', 'Algodão-doce'];
 const TOKENS = ['bg', 'bg2', 'bg3', 'rail', 'border', 'text', 'text2', 'muted', 'accent', 'onAccent', 'link', 'speak', 'red', 'dangerBg'];
 
@@ -18,11 +20,16 @@ function contrast(a, b) {
   return (hi + 0.05) / (lo + 0.05);
 }
 
-test('exporta 13 temas com ids e nomes da spec', () => {
+test('exporta 15 temas com ids, nomes e grupos', () => {
   assert.deepEqual(themes.THEMES.map((t) => t.id), IDS);
   assert.deepEqual(themes.THEMES.map((t) => t.name), NAMES);
-  assert.equal(themes.THEMES.filter((t) => t.kind === 'dark').length, 9);
+  assert.equal(themes.THEMES.filter((t) => t.kind === 'dark').length, 11);
   assert.equal(themes.THEMES.filter((t) => t.kind === 'light').length, 4);
+  assert.deepEqual(themes.THEME_GROUPS, [['escuros', 'Escuros'], ['neon', 'Neon'], ['claros', 'Claros']]);
+  const ids = (g) => themes.THEMES.filter((t) => t.group === g).map((t) => t.id);
+  assert.deepEqual(ids('escuros'), ['escuro', 'grafite', 'dracula', 'nord', 'aquatico', 'natureza', 'por-do-sol']);
+  assert.deepEqual(ids('neon'), ['cyberpunk', 'neon-verde', 'neon-vermelho', 'neon-azul']);
+  assert.deepEqual(ids('claros'), ['claro', 'sepia', 'lavanda', 'algodao-doce']);
 });
 
 test('cada tema tem os 14 tokens em hex #rrggbb', () => {
@@ -57,9 +64,9 @@ test('contraste mínimo em todos os temas', () => {
   }
 });
 
-test('glow só em cyberpunk, neon-verde e aquatico', () => {
+test('glow só nos temas Neon e no aquatico', () => {
   for (const t of themes.THEMES) {
-    if (['cyberpunk', 'neon-verde', 'aquatico'].includes(t.id)) assert.notEqual(t.glow, 'none', t.id);
+    if (['cyberpunk', 'neon-verde', 'neon-vermelho', 'neon-azul', 'aquatico'].includes(t.id)) assert.notEqual(t.glow, 'none', t.id);
     else {
       assert.equal(t.glow, 'none', t.id);
       assert.equal(t.glowSoft, 'none', t.id);
@@ -68,6 +75,8 @@ test('glow só em cyberpunk, neon-verde e aquatico', () => {
   assert.equal(themes.getTheme('aquatico').glowSoft, 'none');
   assert.equal(themes.getTheme('cyberpunk').glow, '0 0 10px rgba(255,43,214,.65)');
   assert.equal(themes.getTheme('neon-verde').glowSoft, 'inset 2px 0 0 #39ff14, 0 0 8px rgba(57,255,20,.25)');
+  assert.equal(themes.getTheme('neon-vermelho').glow, '0 0 10px rgba(255,42,61,.65)');
+  assert.equal(themes.getTheme('neon-azul').glowSoft, 'inset 2px 0 0 #1f8bff, 0 0 8px rgba(31,139,255,.25)');
 });
 
 test('resolveThemeId cai no escuro', () => {
@@ -136,4 +145,12 @@ test('texto de status (verde/amarelo/vermelho) legível em todos os temas', () =
       assert.ok(c >= 4.5, `${t.id}: ${name} sobre ${bg} = ${c.toFixed(2)}`);
     }
   }
+});
+
+test('paletas Neon Vermelho e Neon Azul aprovadas', () => {
+  const values = (id) => TOKENS.map((k) => themes.getTheme(id).tokens[k]);
+  assert.deepEqual(values('neon-vermelho'), ['#0d0507', '#160809', '#220d10', '#080304', '#4a1218', '#ffecee', '#f2c9cd',
+    '#c88d94', '#ff2a3d', '#1a0003', '#ff8a6b', '#ff2a3d', '#ff6b57', '#c4121f']);
+  assert.deepEqual(values('neon-azul'), ['#03070f', '#060d1c', '#0b1730', '#02050b', '#14305e', '#e8f3ff', '#c3daf5',
+    '#86a3cc', '#1f8bff', '#00142b', '#6fe3ff', '#00e5ff', '#ff5a7a', '#c42b4a']);
 });

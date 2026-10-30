@@ -48,9 +48,6 @@ const btnScreen = document.getElementById('btn-screen');
 const btnHangup = document.getElementById('btn-hangup');
 const btnMusic = document.getElementById('btn-music');
 
-const btnMin = document.getElementById('btn-min');
-const btnMax = document.getElementById('btn-max');
-const btnClose = document.getElementById('btn-close');
 
 const sourceList = document.getElementById('source-list');
 const sourceCancel = document.getElementById('source-cancel');
@@ -899,15 +896,17 @@ function renderMembers() {
     const isMe = u.username === currentUser;
     const row = document.createElement('div');
     row.className = 'member';
-    row.appendChild(makeAvatar(u.username));
+    // Bolinha de status sobre o avatar, como na lista do canal de voz
+    const avatarWrap = document.createElement('span');
+    avatarWrap.className = 'avatar-wrap';
+    avatarWrap.appendChild(makeAvatar(u.username));
+    const dot = document.createElement('span');
+    dot.className = 'status-dot member-status-dot ' + (u.status || 'online');
+    avatarWrap.appendChild(dot);
+    row.appendChild(avatarWrap);
 
     const name = document.createElement('div');
     name.className = 'member-name';
-
-    const dot = document.createElement('span');
-    dot.className = 'status-dot ' + (u.status || 'online');
-    dot.style.marginRight = '6px';
-    name.appendChild(dot);
     name.appendChild(document.createTextNode(u.username));
 
     if (isMe) {
@@ -1090,6 +1089,16 @@ function ensureMusicTile() {
   const label = document.createElement('div');
   label.className = 'music-tile-label';
   label.title = 'Abrir o painel de música';
+  const text = document.createElement('span');
+  text.className = 'music-tile-text';
+  const fsBtn = document.createElement('button');
+  fsBtn.type = 'button';
+  fsBtn.className = 'music-fs-btn';
+  fsBtn.title = 'Ver em tela cheia';
+  fsBtn.setAttribute('aria-label', 'Ver o vídeo da música em tela cheia');
+  fsBtn.textContent = '⛶';
+  fsBtn.addEventListener('click', openMusicFullscreen);
+  label.append(youtubeIcon(), text, fsBtn);
   musicTileEl.append(host, label);
   // Cliques no próprio vídeo ficam dentro do iframe; o resto do tile abre o painel
   musicTileEl.addEventListener('click', openMusicPanel);
@@ -1102,6 +1111,7 @@ function syncMusicTile() {
   if (fullscreenMusicHost) fullscreenMusicHost.classList.toggle('hidden', !active);
   if (!active) {
     if (musicTileEl) musicTileEl.classList.add('hidden');
+    if (fullscreenMusicOnly) closeFullscreenView();
     return;
   }
   ensureMusicTile();
@@ -1109,8 +1119,49 @@ function syncMusicTile() {
   if (musicTileEl.parentNode !== videoGrid) videoGrid.prepend(musicTileEl);
   musicTileEl.classList.remove('hidden');
   const current = musicState.queue[0];
-  musicTileEl.querySelector('.music-tile-label').textContent =
-    `🎵 ${current.title || current.videoId} · ${musicState.queue.length - 1} na fila`; // queue[0] é a atual
+  musicTileEl.querySelector('.music-tile-text').textContent =
+    `${current.title || current.videoId} · ${musicState.queue.length - 1} na fila`; // queue[0] é a atual
+  if (fullscreenMusicOnly) setFullscreenMusicName(current);
+}
+
+// Ícone no estilo do YouTube (desenhado aqui, nada é baixado)
+function youtubeIcon() {
+  const ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('class', 'yt-icon');
+  svg.setAttribute('viewBox', '0 0 28 20');
+  svg.setAttribute('width', '18');
+  svg.setAttribute('height', '13');
+  svg.setAttribute('aria-hidden', 'true');
+  const rect = document.createElementNS(ns, 'rect');
+  rect.setAttribute('width', '28');
+  rect.setAttribute('height', '20');
+  rect.setAttribute('rx', '5');
+  rect.setAttribute('fill', '#FF0000');
+  const play = document.createElementNS(ns, 'path');
+  play.setAttribute('d', 'M11 5.5v9l8-4.5z');
+  play.setAttribute('fill', '#FFFFFF');
+  svg.append(rect, play);
+  return svg;
+}
+
+function setFullscreenMusicName(item) {
+  fullscreenName.textContent = '';
+  fullscreenName.append(youtubeIcon(), ' ' + (item.title || item.videoId));
+}
+
+// Tela cheia só da música: o player grande no lugar do vídeo de alguém
+let fullscreenMusicOnly = false;
+
+function openMusicFullscreen(ev) {
+  if (ev) ev.stopPropagation(); // não abre o painel
+  if (!fullscreenView || !musicState || !musicState.queue.length) return;
+  fullscreenMusicOnly = true;
+  fullscreenView.classList.add('music-only');
+  setFullscreenMusicName(musicState.queue[0]);
+  fullscreenView.classList.remove('hidden');
+  relocateMusicPlayer();
+  if (fullscreenView.requestFullscreen) fullscreenView.requestFullscreen().catch(() => {});
 }
 
 // Host onde o player deve estar: o canto da tela cheia enquanto ela está aberta
@@ -1406,8 +1457,10 @@ function closeFullscreenView() {
   clearTimeout(fullscreenMuteTimer);
   fullscreenMuteTimer = null;
   fullscreenStream = null;
+  fullscreenMusicOnly = false;
   if (fullscreenVideo) fullscreenVideo.srcObject = null;
   if (fullscreenView) fullscreenView.classList.add('hidden');
+  if (fullscreenView) fullscreenView.classList.remove('music-only');
   relocateMusicPlayer(); // de volta ao tile
   if (document.fullscreenElement) {
     document.exitFullscreen().catch(() => {});
@@ -1424,18 +1477,11 @@ if (fullscreenNative) {
 if (fullscreenVideo) fullscreenVideo.addEventListener('dblclick', closeFullscreenView);
 
 document.addEventListener('fullscreenchange', () => {
-  if (!document.fullscreenElement && fullscreenStream) {
-    clearTimeout(fullscreenMuteTimer);
-    fullscreenMuteTimer = null;
-    fullscreenStream = null;
-    if (fullscreenVideo) fullscreenVideo.srcObject = null;
-    if (fullscreenView) fullscreenView.classList.add('hidden');
-    relocateMusicPlayer();
-  }
+  if (!document.fullscreenElement && (fullscreenStream || fullscreenMusicOnly)) closeFullscreenView();
 });
 
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && fullscreenStream && !document.fullscreenElement) {
+  if (e.key === 'Escape' && (fullscreenStream || fullscreenMusicOnly) && !document.fullscreenElement) {
     closeFullscreenView();
   }
 });
@@ -1827,18 +1873,34 @@ function renderThemePicker() {
   if (!themeGrid || !window.ConcordThemes) return;
   const currentId = document.documentElement.dataset.theme || window.ConcordThemes.DEFAULT_THEME_ID;
   themeGrid.innerHTML = '';
-  [['dark', 'Escuros'], ['light', 'Claros']].forEach(([kind, label]) => {
+  window.ConcordThemes.THEME_GROUPS.forEach(([group, label]) => {
     const title = document.createElement('div');
     title.className = 'theme-group-title';
     title.textContent = label;
     const row = document.createElement('div');
     row.className = 'theme-row';
-    row.dataset.kind = kind;
-    window.ConcordThemes.THEMES.filter((t) => t.kind === kind)
+    row.dataset.group = group;
+    window.ConcordThemes.THEMES.filter((t) => t.group === group)
       .forEach((t) => row.appendChild(buildThemeOption(t, currentId)));
     themeGrid.append(title, row);
   });
 }
+
+// Abas das configurações (Aparência / Áudio)
+function showSettingsTab(name) {
+  document.querySelectorAll('.settings-tab').forEach((btn) => {
+    const on = btn.dataset.tab === name;
+    btn.classList.toggle('active', on);
+    btn.setAttribute('aria-selected', String(on));
+  });
+  document.querySelectorAll('.settings-panel').forEach((panel) => {
+    panel.classList.toggle('hidden', panel.id !== 'settings-tab-' + name);
+  });
+}
+
+document.querySelectorAll('.settings-tab').forEach((btn) => {
+  btn.addEventListener('click', () => showSettingsTab(btn.dataset.tab));
+});
 
 /* ================= DISPOSITIVOS DE ÁUDIO ================= */
 function fillDeviceSelect(select, devices, savedId, defaultLabel) {
@@ -1954,6 +2016,8 @@ btnSettings.addEventListener('click', async () => {
   statusMenu.classList.add('hidden');
   settingsError.textContent = '';
   renderThemePicker();
+  document.getElementById('account-name').textContent = currentUser || '—';
+  showSettingsTab('aparencia');
   settingsModal.classList.remove('hidden');
   monitorToggle.checked = monitorEnabled;
   applyNoiseSuppressionUI();
@@ -2409,6 +2473,7 @@ btnLeaveVoice.addEventListener('click', leaveVoice);
 
 function logout() {
   if (!window.confirm('Sair da conta?')) return;
+  settingsModal.classList.add('hidden');
   socket.emit('logout');
   leaveVoice();
   currentTextRoom = '';
@@ -2433,11 +2498,6 @@ function logout() {
 }
 
 if (btnLogout) btnLogout.addEventListener('click', logout);
-
-/* ================= JANELA ================= */
-btnMin.addEventListener('click', () => window.electronAPI.minimize());
-btnMax.addEventListener('click', () => window.electronAPI.maximize());
-btnClose.addEventListener('click', () => window.electronAPI.close());
 
 /* ================= DIAGNÓSTICO DE VÍDEO (Ctrl+Shift+D) ================= */
 // Mostra, por participante, o que sai e o que chega: fps, resolução, banda,

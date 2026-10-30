@@ -63,3 +63,12 @@ test('"Conectado" fica fixo logo acima do painel do usuário, fora da lista de c
   assert.ok(vc > scrollEnd, 'voice-connection ainda está dentro do channel-scroll');
   assert.match(html.slice(divEnd(vc)), /^\s*<div id="user-panel">/, 'voice-connection deve vir logo antes do user-panel');
 });
+
+test('configurações com abas Aparência e Áudio', () => {
+  const card = html.slice(html.indexOf('<div id="settings-modal"'), html.indexOf('</div>', html.indexOf('id="settings-close"')));
+  assert.match(card, /role="tablist"/);
+  assert.match(card, /<button[^>]*role="tab"[^>]*data-tab="aparencia"[^>]*>Aparência<\/button>/);
+  assert.match(card, /<button[^>]*role="tab"[^>]*data-tab="audio"[^>]*>Áudio<\/button>/);
+  assert.match(card, /<div[^>]*id="settings-tab-aparencia"[^>]*role="tabpanel"[^>]*>[\s\S]*id="theme-grid"/);
+  assert.match(card, /<div[^>]*id="settings-tab-audio"[^>]*role="tabpanel"[^>]*>[\s\S]*id="input-device"/);
+});
