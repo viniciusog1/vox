@@ -20,5 +20,5 @@
 
   const api = { STATUS_MODES, effectiveStatus, onIdle, onActivity };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
-  else window.ConcordPresence = api;
+  else window.VoxPresence = api;
 })();

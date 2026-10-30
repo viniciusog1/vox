@@ -1,8 +1,8 @@
 {
-  "name": "concord",
+  "name": "vox",
   "version": "1.1.0",
-  "description": "Concord - chat, voz, vídeo e compartilhamento de tela para Windows 11",
-  "author": "Concord",
+  "description": "Vox - chat, voz, vídeo e compartilhamento de tela para Windows 11",
+  "author": "Vox",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
@@ -12,7 +12,7 @@
   },
   "build": {
     "appId": "com.seunome.concord",
-    "productName": "Concord",
+    "productName": "Vox",
     "asar": true,
     "files": [
       "**/*",
@@ -22,7 +22,7 @@
       "!README.md",
       "!AGENTS.md",
       "!tools/**",
-      "!IniciarTunelConcord.bat",
+      "!IniciarTunelVox.bat",
       "!*.log",
       "!test/**",
       "!docs/**",
@@ -37,7 +37,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Concord"
+      "shortcutName": "Vox"
     }
   },
   "devDependencies": {

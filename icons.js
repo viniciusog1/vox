@@ -1,5 +1,5 @@
 // Ícones SVG do Lucide (lucide-static 0.460.0), iguais em qualquer sistema.
-// Só os ícones usados pelo Concord, copiados de lucide-static/icons/*.svg.
+// Só os ícones usados pelo Vox, copiados de lucide-static/icons/*.svg.
 //
 /*
 ISC License
@@ -66,5 +66,5 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
   const api = { ICONS, icon, setIcon, hydrate };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
-  else window.ConcordIcons = api;
+  else window.VoxIcons = api;
 })();

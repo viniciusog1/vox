@@ -11,6 +11,34 @@ const { parseYouTubeId, lookupVideo } = require('./youtube');
 const { RESYNC_INTERVAL_MS, createMusicState, addTrack, removeTrack, advanceIfCurrent, endedIfCurrent, togglePause, toPublic } = require('./music-state');
 const { PROTOCOL_VERSION, VERSION_MISMATCH_MESSAGE, isCompatible } = require('./protocol');
 
+// ---------- Dados do antigo Concord ----------
+// O app se chamava Concord. Na primeira execução como Vox, copia a pasta de dados
+// antiga (contas e mensagens do app instalado; localStorage com tema e preferências).
+const LEGACY_SKIP = new Set(['Cache', 'Code Cache', 'GPUCache', 'DawnCache', 'Crashpad']);
+function migrateLegacyUserData() {
+  // O Electron já cria a pasta (vazia) antes deste código rodar; por isso a marca
+  // e a checagem de dados próprios do Vox em vez de "a pasta existe".
+  const current = app.getPath('userData');
+  const marker = path.join(current, '.migrado-do-concord');
+  if (fs.existsSync(marker)) return;
+  const hasOwnData = ['Local Storage', 'users.json', 'messages.json'].some((n) => fs.existsSync(path.join(current, n)));
+  const legacy = ['Concord', 'concord'].map((n) => path.join(app.getPath('appData'), n))
+    .find((p) => fs.existsSync(p) && path.resolve(p) !== path.resolve(current));
+  try {
+    if (!hasOwnData && legacy) {
+      fs.cpSync(legacy, current, {
+        recursive: true, force: false,
+        filter: (src) => !LEGACY_SKIP.has(path.basename(src)) && !path.basename(src).startsWith('Singleton')
+      });
+    }
+    fs.mkdirSync(current, { recursive: true });
+    fs.writeFileSync(marker, new Date().toISOString());
+  } catch (e) {
+    console.error('Falha ao copiar dados do Concord:', e.message);
+  }
+}
+migrateLegacyUserData();
+
 // ---------- Banco simples (arquivos JSON) ----------
 // Em desenvolvimento os dados ficam na pasta do projeto.
 // No app instalado, ficam na pasta de dados do usuário (o app.asar é somente leitura).

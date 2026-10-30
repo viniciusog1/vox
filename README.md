@@ -1,6 +1,6 @@
-# Concord
+# Vox
 
-App desktop para Windows 11 inspirado no Discord, feito com Electron, WebRTC e Socket.io.
+App desktop para Windows 11 de chat, voz, vídeo e compartilhamento de tela, feito com Electron, WebRTC e Socket.io.
 
 ## Recursos
 
@@ -16,10 +16,10 @@ App desktop para Windows 11 inspirado no Discord, feito com Electron, WebRTC e S
 - Painel de participantes com indicação de microfone mudo
 - Canal de voz mostrando quem está conectado, com avatar, anel de quem está falando, 🔇 e selo "AO VIVO" para quem compartilha a tela
 - Música do YouTube na chamada: cole um link do YouTube no painel 🎵 e ele entra na fila do canal de voz. Todos na chamada ouvem a mesma música, sincronizada, e qualquer pessoa da chamada pode pausar, pular ou remover músicas da fila. A fila aparece como o primeiro bloco da grade de participantes; clique nele ou no botão 🎵 da barra superior para abrir o painel, onde também ficam o volume (só no seu computador) e a capa e o título de cada música
-- O vídeo do YouTube aparece no próprio Concord; nada é baixado. Cada pessoa usa o player oficial do YouTube. Ao sair da voz, a música para para você. Em tela cheia, o player vai para um canto da própria visualização
+- O vídeo do YouTube aparece no próprio Vox; nada é baixado. Cada pessoa usa o player oficial do YouTube. Ao sair da voz, a música para para você. Em tela cheia, o player vai para um canto da própria visualização
 - 15 temas de cor (Configurações → aba Aparência), salvos no próprio computador e organizados em três grupos — Escuros: Escuro, Grafite, Drácula, Nord, Aquático, Natureza, Pôr do sol; Neon: Cyberpunk, Neon Verde, Neon Vermelho, Neon Azul; Claros: Claro, Sépia, Lavanda / Sakura, Algodão-doce
 - Indicador visual de áudio (quem está falando)
-- Layout estilo Discord com rail de servidores, canais, chat e participantes
+- Layout com rail de servidores, canais, chat e participantes
 - Status Online, Ausente, Ocupado e Invisível. Ausente pode ser escolhido no menu e também é automático após 5 minutos sem atividade (a partir de Online)
 - Configuração do microfone e do dispositivo de saída de áudio
 - Opção de ouvir o próprio microfone para testar (use fones)
@@ -30,7 +30,7 @@ Os temas Drácula e Nord usam as paletas dos projetos [Dracula](https://draculat
 
 ## Pré-requisitos
 
-Para usar o instalador, não é necessário instalar nada além do próprio Concord. Para desenvolver ou gerar o instalador, instale o [Node.js](https://nodejs.org/) (versão LTS).
+Para usar o instalador, não é necessário instalar nada além do próprio Vox. Para desenvolver ou gerar o instalador, instale o [Node.js](https://nodejs.org/) (versão LTS).
 
 ## Rodar
 
@@ -50,10 +50,10 @@ A primeira tela é o login. Crie uma conta ou entre com uma existente.
 npm run dist
 ```
 
-O instalador fica em `dist/Concord Setup 1.0.0.exe`.
+O instalador fica em `dist/Vox Setup 1.0.0.exe`.
 
 - O instalador é **sem assinatura digital** (para não exigir certificado pago). O Windows pode mostrar o aviso do SmartScreen: clique em **Mais informações → Executar assim mesmo**.
-- O app instalado grava usuários e mensagens em `%APPDATA%\Concord`.
+- O app instalado grava usuários e mensagens em `%APPDATA%\Vox`.
 - A versão de desenvolvimento (`npm start`) continua usando os arquivos da pasta do projeto.
 - O instalador usa o ícone padrão do Electron. Para trocar, adicione um `icon.ico` e ajuste a configuração em `package.json`.
 
@@ -63,20 +63,20 @@ O servidor já escuta na rede local (`0.0.0.0:3000`). Não é mais preciso edita
 
 ### Mesma rede (Wi-Fi/cabo)
 
-1. **Você (host)**: abra o Concord, deixe o servidor em `http://127.0.0.1:3000` e entre/crie sua conta.
+1. **Você (host)**: abra o Vox, deixe o servidor em `http://127.0.0.1:3000` e entre/crie sua conta.
 2. Descubra seu IPv4 com `ipconfig` (ex.: `192.168.1.15`).
-3. **Seu amigo**: instale o Concord, abra e, no campo **Servidor** da tela de login, digite `http://192.168.1.15:3000` e clique em **Aplicar**.
+3. **Seu amigo**: instale o Vox, abra e, no campo **Servidor** da tela de login, digite `http://192.168.1.15:3000` e clique em **Aplicar**.
 4. Seu amigo cria a conta dele (a conta fica no seu servidor) e, ao entrar, cai em `#geral` e na Sala Principal, como você.
-5. Se o Windows perguntar, permita o Concord em **Redes privadas**. Se a rede estiver marcada como **Pública** ou a conexão não funcionar, libere a porta 3000 no PowerShell como administrador:
+5. Se o Windows perguntar, permita o Vox em **Redes privadas**. Se a rede estiver marcada como **Pública** ou a conexão não funcionar, libere a porta 3000 no PowerShell como administrador:
    ```powershell
-   New-NetFirewallRule -DisplayName "Concord 3000" -Direction Inbound -Protocol TCP -LocalPort 3000 -Action Allow -Profile Private,Public
+   New-NetFirewallRule -DisplayName "Vox 3000" -Direction Inbound -Protocol TCP -LocalPort 3000 -Action Allow -Profile Private,Public
    ```
    Use o perfil `Public` apenas durante o teste e em uma rede confiável.
 
 ### Casas diferentes (internet)
 
-1. No seu PC, com o Concord aberto, crie um túnel gratuito para `http://localhost:3000`:
-   - mais fácil: execute `IniciarTunelConcord.bat` na pasta do projeto e mantenha a janela aberta;
+1. No seu PC, com o Vox aberto, crie um túnel gratuito para `http://localhost:3000`:
+   - mais fácil: execute `IniciarTunelVox.bat` na pasta do projeto e mantenha a janela aberta;
    - ou Cloudflare Tunnel: `cloudflared tunnel --url http://localhost:3000`;
    - ou ngrok: `ngrok http 3000`.
 2. Copie a URL pública gerada (ex.: `https://algo.trycloudflare.com`).
@@ -90,7 +90,7 @@ O Cloudflare Tunnel já está baixado em `tools/cloudflared.exe`. A URL do túne
 ## Observações
 
 - Desenvolvimento: `users.json` e `messages.json` ficam na pasta do projeto.
-- Instalado: ficam em `%APPDATA%\Concord`.
+- Instalado: ficam em `%APPDATA%\Vox`.
 - O campo **Servidor** fica na tela de login e é salvo no computador.
 - Versão: o app e o servidor precisam ser da mesma versão. Se forem diferentes, o login mostra um aviso para atualizar o Vox, e o amigo precisa instalar a versão nova.
 - Na mesma rede, a conexão usa HTTP (sem TLS). Use em uma rede confiável; para internet, prefira o túnel HTTPS.
