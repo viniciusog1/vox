@@ -84,7 +84,10 @@ Saída: `dist\Concord Setup 1.0.0.exe`.
 | `renderer.js` | Interface e lógica do cliente: login, canais, chat, WebRTC, câmera/microfone, compartilhamento de tela, status, configurações de áudio. |
 | `themes.js` | Os 13 temas (paletas, id padrão `escuro`), leitura/gravação em `localStorage['concord-theme']` e `applyTheme`. Carregado no `<head>` antes do CSS para aplicar o tema antes da primeira pintura. Também é módulo Node (testes). |
 | `speaking.js` | Detecção de "falando" com histerese (liga ≥ 0.12, desliga após 250 ms abaixo) para o anel do avatar. |
-| `room-state.js` | Estado público do usuário na sala (`publicUser`, `applyStatePatch`: `muted`, `status`, `sharing`). Usado por `main.js`. |
+| `channels.js` | Lista fixa de canais: `TEXT_CHANNELS` (`geral`, `jogos`, `musica`) e `VOICE_CHANNELS` (`voz-sala`, `voz-jogos`, `voz-musica`); padrões `geral` e `voz-sala`. Usado por `main.js` e `renderer.js`. Também é módulo Node (testes). |
+| `protocol.js` | `PROTOCOL_VERSION` (hoje `2`), mensagem de versão incompatível e `isCompatible`. Usado por `main.js` e `renderer.js`. Também é módulo Node (testes). |
+| `presence.js` | Regras de status: modo escolhido (`online`, `away`, `busy`, `invisible`), ausente automático só a partir de Online e atividade que desfaz só o automático. Também é módulo Node (testes). |
+| `room-state.js` | Estado público do usuário na sala de voz (`publicUser`, `applyStatePatch`: `muted`, `status`, `sharing`) e troca de canais (`joinVoiceRoom`, `leaveVoiceRoom`, `canUseTextRoom`, `socketRoomsToLeave`). Usado por `main.js`. |
 | `test/` | Testes `node:test` (`npm test`): paletas e contraste, CSS sem cores fixas, estado da sala, detecção de fala. Fora do instalador. |
 | `preload.js` | Ponte segura `contextBridge` para controles da janela e IPC do seletor de tela. |
 | `index.html` | Layout e CSS de toda a interface; também contém os modais e a tela de login. |
@@ -107,7 +110,8 @@ Saída: `dist\Concord Setup 1.0.0.exe`.
 - Escuta em `0.0.0.0:3000` para permitir acesso pela rede local.
 - Mantém em memória:
   - `authenticated`: `socket.id -> username`;
-  - `roomUsers`: `room -> Map(socket.id -> { username, muted, status, sharing })`;
+  - `roomUsers`: `voiceRoom -> Map(socket.id -> { username, muted, status, sharing })`, só para canais de voz;
+  - `socket.data.textRoom` e `socket.data.voiceRoom`: canal de texto e de voz atuais do socket (`null` quando não há);
   - `users`: objeto carregado de `users.json`;
   - `messages`: objeto carregado de `messages.json`.
 - Usa `desktopCapturer` + `session.setDisplayMediaRequestHandler` para o seletor de tela personalizado.
@@ -142,9 +146,9 @@ Saída: `dist\Concord Setup 1.0.0.exe`.
 
 ### Eventos Socket.io principais
 
-- `register`, `login`
-- `join-room`, `leave-room`
-- `room-users`
+- `register`, `login` (recebem `protocol`; ver “Versão do protocolo”)
+- `join-text` (room), `join-voice` (room), `leave-voice`
+- `room-users`, `voice-rooms`
 - `user-joined`, `user-left`
 - `update-state` (mudo/status/`sharing` — compartilhando tela)
 - `signal` (offer, answer, candidate)
@@ -152,14 +156,35 @@ Saída: `dist\Concord Setup 1.0.0.exe`.
 - `delete-my-messages`
 - `disconnect`
 
+- `join-text` troca o canal de texto (sem mídia). `join-voice` entra numa voz (sai antes da anterior). `leave-voice` sai da voz. Só aceitam ids da lista em `channels.js`.
+- `save-message`, `get-messages` e `delete-my-messages` só funcionam para o canal de texto atual do socket (`canUseTextRoom`).
+
 O servidor atualmente confia no campo `user` enviado em `save-message`. Para endurecer a segurança, troque para o username autenticado do socket.
+
+### Canais de texto e de voz
+
+- Texto e voz são independentes: a pessoa está sempre em **exatamente 1** canal de texto e em **no máximo 1** canal de voz.
+- Trocar de canal de texto nunca mexe em mídia nem na chamada; trocar ou sair da voz não mexe no chat.
+- Canais de texto não abrem microfone nem WebRTC. Canais de voz não têm chat.
+- Login: entra sempre em `#geral` e na `voz-sala`, com o microfone aberto.
+- Não existe mais tela “Entrar em um canal”.
+- Câmera e compartilhamento de tela só funcionam com voz conectada; os botões Cam, Tela e ✕ ficam desabilitados sem voz.
+
+### Versão do protocolo
+
+- `PROTOCOL_VERSION` em `protocol.js` é compartilhado por cliente e servidor. Hoje é `2` (a versão 1 usava `join-room`/`leave-room`).
+- O cliente envia `protocol` em `register` e `login`; o servidor recusa versão diferente (inclusive cliente antigo, sem o campo) com a mensagem “Seu Vox está em uma versão diferente da do servidor. Atualize para entrar.”
+- **Suba `PROTOCOL_VERSION` sempre que um evento ou payload mudar de forma incompatível** (nome, campos obrigatórios, significado). Mudança compatível não exige.
 
 ### Presença e status
 
-- Modos: `online`, `busy`, `invisible`.
-- `away` é automático após 5 minutos de inatividade, apenas no modo `online`.
+- Modos: `online`, `away` (Ausente), `busy`, `invisible`. O menu de status tem Online, Ausente, Ocupado e Invisível.
+- Ausente manual fica até a pessoa trocar de modo; atividade não o desfaz.
+- `away` automático após 5 minutos de inatividade, apenas no modo `online`; atividade desfaz só o automático.
+- O status vale também sem voz: fica em `socket.data.status` e é aplicado na próxima entrada na voz.
 - Usuários invisíveis não aparecem para os outros; o servidor filtra a lista por socket.
 - Ao ficar invisível, o cliente fecha os peers de mídia; ao voltar, recria.
+- A lista da voz mostra a bolinha de status ao lado do avatar.
 - Não reintroduzir participantes fantasma/de teste: foram removidos.
 
 ### Chat e retenção
@@ -247,7 +272,10 @@ Manter estas decisões, salvo pedido explícito do usuário:
 - O layout do chat não pode crescer com o histórico; use grids/flex com altura fixa e scroll interno.
 - Câmera começa **desligada**; o usuário liga manualmente.
 - Microfone começa ligado.
-- Status Online/Ocupado/Invisível + Ausente automático após 5 minutos.
+- Status Online/Ausente/Ocupado/Invisível; Ausente automático após 5 minutos (só a partir de Online) e manual pelo menu.
+- Sempre exatamente 1 canal de texto ativo; no máximo 1 canal de voz.
+- Login entra em `#geral` e na `voz-sala` com microfone aberto. Sem tela de “Entrar em um canal”.
+- Cam e Tela só com voz conectada.
 - Configurações de entrada/saída de áudio e monitoramento do próprio microfone.
 - Compartilhamento de tela com seletor de janela/tela.
 - Sem participantes fantasma.
@@ -315,6 +343,11 @@ Pare o app antes de copiar.
 - Contraste mínimo 4.5:1 testado em `test/themes.test.js`. `accent` é fundo (texto `on-accent`); para texto destacado use `--link`. Fundo de botão de perigo e selo AO VIVO: `--danger-bg`.
 - Cores das bolinhas de avatar (`AVATAR_COLORS`) não mudam por tema.
 
+### Versão incompatível
+
+- Cliente e servidor com `PROTOCOL_VERSION` diferentes não entram: o login é recusado com a mensagem para atualizar. Quem usa o instalador antigo precisa instalar o novo.
+- Ao mudar eventos (ver “Versão do protocolo” na seção 4), suba a versão nos dois lados e lembre de gerar o instalador novo.
+
 ### Bundle do Socket.io
 
 `socket.io.min.js` é copiado de `node_modules/socket.io/client-dist/socket.io.min.js` pelo `postinstall`. Não editar manualmente; rode `npm install` se precisar regenerar.
@@ -335,7 +368,7 @@ Antes de considerar uma alteração concluída:
    - ligar mostra vídeo local;
    - desligar remove o vídeo.
 4. Testar login/cadastro e chat em um canal.
-5. Testar entrada/saída de canal de voz e botão de sair.
+5. Testar entrada/saída de canal de voz e botão de sair; trocar de canal de texto não deve derrubar a voz.
 6. Testar compartilhamento de tela: abrir seletor, escolher, parar.
 7. Testar layout com muitas mensagens: a janela não deve crescer.
 8. Gerar instalador e, se possível, testar `dist\win-unpacked\Concord.exe`.
