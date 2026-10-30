@@ -133,10 +133,14 @@
     width: 10px; height: 10px; border-radius: 50%;
     display: inline-block; flex-shrink: 0;
   }
-  .status-dot.online { background: var(--green); }
-  .status-dot.busy { background: var(--red); }
-  .status-dot.away { background: var(--yellow); }
+  .status-dot.online { background: var(--green); --dot-glow: var(--green); }
+  .status-dot.busy { background: var(--red); --dot-glow: var(--red); }
+  .status-dot.away { background: var(--yellow); --dot-glow: var(--yellow); }
   .status-dot.invisible { background: var(--gray); }
+  /* Brilho para fora da bolinha (fica além da borda que a recorta do avatar) */
+  .status-dot.online, .status-dot.busy, .status-dot.away {
+    box-shadow: 0 0 6px 1px color-mix(in srgb, var(--dot-glow) 70%, transparent);
+  }
   #btn-status {
     background: transparent; border: none; text-align: left;
     cursor: pointer; padding: 0; color: inherit; min-width: 0; flex: 1;
