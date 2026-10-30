@@ -1,3 +1,6 @@
+// Ícones estáticos do index.html (<i data-icon>) viram SVG
+ConcordIcons.hydrate();
+
 const SERVER_URL = localStorage.getItem('concord-server-url') || 'http://127.0.0.1:3000';
 const socket = io(SERVER_URL);
 
@@ -486,15 +489,15 @@ async function acquireLocalMedia() {
 }
 
 function updateControlButtons() {
-  btnMic.textContent = micEnabled ? '🎙️ Mic' : '🔇 Mic';
+  ConcordIcons.setIcon(btnMic, micEnabled ? 'mic' : 'mic-off', 'Mic');
   btnMic.classList.toggle('off', !micEnabled);
   btnMic.classList.toggle('primary', micEnabled);
 
-  btnCam.textContent = camEnabled ? '📷 Cam' : '📷 Cam Off';
+  ConcordIcons.setIcon(btnCam, camEnabled ? 'video' : 'video-off', camEnabled ? 'Cam' : 'Cam Off');
   btnCam.classList.toggle('off', !camEnabled);
   btnCam.classList.toggle('primary', camEnabled);
 
-  btnMicMini.textContent = micEnabled ? '🎙️' : '🔇';
+  ConcordIcons.setIcon(btnMicMini, micEnabled ? 'mic' : 'mic-off');
   btnMicMini.classList.toggle('off', !micEnabled);
 }
 
@@ -995,7 +998,7 @@ function renderMembers() {
 
     const status = document.createElement('span');
     status.className = 'muted-icon';
-    status.textContent = u.muted ? '🔇' : '🎙️';
+    ConcordIcons.setIcon(status, u.muted ? 'mic-off' : 'mic', '', 14);
     status.style.opacity = u.muted ? '1' : '.35';
     row.appendChild(status);
 
@@ -1048,7 +1051,7 @@ function renderMembers() {
       line.appendChild(name);
       const icons = document.createElement('span');
       icons.className = 'vu-icons';
-      if (u.muted) icons.appendChild(document.createTextNode('🔇'));
+      if (u.muted) icons.appendChild(ConcordIcons.icon('mic-off', 13));
       if (u.sharing) {
         const live = document.createElement('span');
         live.className = 'live-badge';
@@ -1108,10 +1111,11 @@ function renderTiles() {
     empty.style.background = 'color-mix(in srgb, var(--text) 2%, transparent)';
     empty.innerHTML = `
       <div style="display:flex;flex-direction:column;align-items:center;gap:10px;color:var(--muted);padding:20px;text-align:center;">
-        <div style="font-size:28px;">👋</div>
+        <i data-icon="hand" data-size="28"></i>
         <div style="font-weight:600;color:var(--text);">Aguardando alguém entrar...</div>
         <div style="font-size:12px;">Compartilhe o canal ${roomDisplayName(currentVoiceRoom)} com seus amigos.</div>
       </div>`;
+    ConcordIcons.hydrate(empty);
     videoGrid.appendChild(empty);
   }
 
@@ -1218,7 +1222,7 @@ function ensureMusicTile() {
   fsBtn.className = 'music-fs-btn';
   fsBtn.title = 'Ver em tela cheia';
   fsBtn.setAttribute('aria-label', 'Ver o vídeo da música em tela cheia');
-  fsBtn.textContent = '⛶';
+  ConcordIcons.setIcon(fsBtn, 'maximize', '', 14);
   fsBtn.addEventListener('click', openMusicFullscreen);
   label.append(youtubeIcon(), text, fsBtn);
   musicTileEl.append(host, label);
@@ -1483,7 +1487,7 @@ function renderMusicPanel() {
     const remove = document.createElement('button');
     remove.className = 'music-icon-btn';
     remove.title = 'Tirar da fila';
-    remove.textContent = '✕';
+    ConcordIcons.setIcon(remove, 'x', '', 14);
     remove.addEventListener('click', () => socket.emit('music-remove', item.id));
     row.append(img, info, remove);
     return row;
@@ -1492,6 +1496,7 @@ function renderMusicPanel() {
   musicToggleBtn.disabled = queue.length === 0;
   musicSkipBtn.disabled = queue.length === 0;
   musicToggleBtn.title = musicState && musicState.playing ? 'Pausar para todos' : 'Tocar para todos';
+  ConcordIcons.setIcon(musicToggleBtn, musicState && musicState.playing ? 'pause' : 'play');
 }
 
 function submitMusicUrl() {
@@ -1658,7 +1663,7 @@ function buildTile(name, stream, opts = {}) {
     const fullBtn = document.createElement('button');
     fullBtn.className = 'tile-btn';
     fullBtn.title = 'Ver em tela cheia';
-    fullBtn.textContent = '⛶';
+    ConcordIcons.setIcon(fullBtn, 'maximize', '', 16);
     fullBtn.addEventListener('click', (ev) => {
       ev.stopPropagation();
       openFullscreenView(stream, name);
@@ -2364,7 +2369,7 @@ btnScreen.addEventListener('click', async () => {
     replaceVideoTrackEverywhere(screenTrack, screenStream);
     renderTiles();
 
-    btnScreen.textContent = '⏹️ Parar';
+    ConcordIcons.setIcon(btnScreen, 'monitor-stop', 'Parar');
     btnScreen.classList.remove('off');
     btnScreen.classList.add('primary');
 
@@ -2399,7 +2404,7 @@ function stopScreenShare() {
   const camTrack = localStream ? localStream.getVideoTracks()[0] : null;
   replaceVideoTrackEverywhere(camTrack || null, localStream);
 
-  btnScreen.textContent = '🖥️ Tela';
+  ConcordIcons.setIcon(btnScreen, 'monitor-up', 'Tela');
   btnScreen.classList.remove('primary');
   btnScreen.classList.add('off');
   renderTiles();
@@ -2560,7 +2565,7 @@ function leaveVoice() {
   userMap.clear();
   lastUsersSignature = '';
 
-  btnScreen.textContent = '🖥️ Tela';
+  ConcordIcons.setIcon(btnScreen, 'monitor-up', 'Tela');
   btnScreen.classList.remove('primary');
   btnScreen.classList.add('off');
   voiceConnection.classList.add('hidden');
