@@ -8,6 +8,7 @@
 <style>
   :root {
     --radius: 10px;
+    --bottom-bar-h: 64px; /* painel do usuário e barra de mensagem alinhados */
     /* Cores vêm de themes.js; aqui só derivados dos tokens do tema */
     --panel: color-mix(in srgb, var(--bg-3) 85%, var(--border));
     --control: color-mix(in srgb, var(--border) 90%, var(--text));
@@ -105,7 +106,7 @@
   .voice-user .bot-tag { font-size: 10px; color: var(--link); }
 
   #voice-connection {
-    margin: 6px 8px 10px; padding: 8px 10px;
+    flex-shrink: 0; margin: 0 8px 8px; padding: 8px 10px;
     background: color-mix(in srgb, var(--green) 10%, transparent); border: 1px solid color-mix(in srgb, var(--green) 35%, transparent);
     border-radius: 8px; display: flex; align-items: center; justify-content: space-between; gap: 8px;
   }
@@ -120,7 +121,7 @@
   #voice-connection button:hover { background: var(--danger-hover); }
 
   #user-panel {
-    flex-shrink: 0; height: 56px; position: relative;
+    flex-shrink: 0; height: var(--bottom-bar-h); position: relative;
     display: flex; align-items: center; gap: 8px;
     padding: 0 12px; background: var(--rail); border-top: 1px solid var(--border);
   }
@@ -304,8 +305,8 @@
   .msg-user { font-size: 11px; font-weight: 700; color: var(--muted); margin-bottom: 3px; text-transform: uppercase; letter-spacing: .3px; }
   .msg-text { font-size: 14px; line-height: 1.45; word-break: break-word; }
   .chat-input-row {
-    flex-shrink: 0; display: flex; gap: 10px; align-items: center;
-    padding: 12px 20px; border-top: 1px solid var(--border); background: var(--bg-2);
+    flex-shrink: 0; display: flex; gap: 10px; align-items: center; height: var(--bottom-bar-h);
+    padding: 0 20px; border-top: 1px solid var(--border); background: var(--bg-2);
   }
   #msg-input {
     flex: 1; min-width: 0; height: 42px; padding: 0 14px;
@@ -555,10 +556,10 @@
       <div class="channel voice" data-room="voz-sala"><span class="voice-icon">🔊</span> Sala Principal</div>
       <div class="channel voice" data-room="voz-jogos"><span class="voice-icon">🔊</span> Jogos</div>
       <div class="channel voice" data-room="voz-musica"><span class="voice-icon">🔊</span> Música</div>
-      <div id="voice-connection" class="hidden">
-        <div class="vc-info">🔊 <span id="voice-conn-name">—</span></div>
-        <button id="btn-leave-voice">Desconectar</button>
-      </div>
+    </div>
+    <div id="voice-connection" class="hidden">
+      <div class="vc-info">🔊 <span id="voice-conn-name">—</span></div>
+      <button id="btn-leave-voice">Desconectar</button>
     </div>
     <div id="user-panel">
       <div class="avatar-wrap">

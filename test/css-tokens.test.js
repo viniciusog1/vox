@@ -37,3 +37,29 @@ test('instalador não leva mockups do brainstorming', () => {
   const pkg = require('../package.json');
   assert.ok(pkg.build.files.includes('!.superpowers/**'));
 });
+
+test('painel do usuário e barra de mensagem têm a mesma altura', () => {
+  const css = styleBlocks();
+  assert.match(css, /--bottom-bar-h:\s*\d+px/);
+  assert.match(css, /#user-panel \{[^}]*height: var\(--bottom-bar-h\)/);
+  assert.match(css, /\.chat-input-row \{[^}]*height: var\(--bottom-bar-h\)/);
+});
+
+// Índice logo após o </div> que fecha o <div> que começa em `start`
+function divEnd(start) {
+  const re = /<div\b|<\/div>/g;
+  re.lastIndex = start;
+  let depth = 0, m;
+  while ((m = re.exec(html))) {
+    depth += m[0] === '</div>' ? -1 : 1;
+    if (depth === 0) return re.lastIndex;
+  }
+  return -1;
+}
+
+test('"Conectado" fica fixo logo acima do painel do usuário, fora da lista de canais', () => {
+  const scrollEnd = divEnd(html.indexOf('<div id="channel-scroll">'));
+  const vc = html.indexOf('<div id="voice-connection"');
+  assert.ok(vc > scrollEnd, 'voice-connection ainda está dentro do channel-scroll');
+  assert.match(html.slice(divEnd(vc)), /^\s*<div id="user-panel">/, 'voice-connection deve vir logo antes do user-panel');
+});
