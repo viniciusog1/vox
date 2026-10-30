@@ -43,6 +43,34 @@
     speak: '--speak', red: '--red', dangerBg: '--danger-bg'
   };
 
+  // Contraste WCAG entre duas cores #rrggbb
+  function luminance(hex) {
+    const lin = (i) => {
+      const c = parseInt(hex.slice(i, i + 2), 16) / 255;
+      return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+    };
+    return 0.2126 * lin(1) + 0.7152 * lin(3) + 0.0722 * lin(5);
+  }
+  function contrast(a, b) {
+    const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+    return (hi + 0.05) / (lo + 0.05);
+  }
+  // Mistura sRGB: pct da cor a + (1 - pct) da cor b
+  function mix(a, b, pct) {
+    const ch = (h, i) => parseInt(h.slice(i, i + 2), 16);
+    return '#' + [1, 3, 5].map((i) => Math.round(ch(a, i) * pct + ch(b, i) * (1 - pct))
+      .toString(16).padStart(2, '0')).join('');
+  }
+  // Cor de status usada como texto: puxa em direção ao texto do tema até
+  // ficar legível (≥ 4.5:1) sobre todos os fundos onde aparece.
+  function readableOn(color, backgrounds, text) {
+    for (let step = 0; step <= 20; step++) {
+      const c = mix(text, color, step / 20);
+      if (backgrounds.every((bg) => contrast(c, bg) >= 4.6)) return c;
+    }
+    return text;
+  }
+
   function resolveThemeId(id) {
     return THEMES.some((t) => t.id === id) ? id : DEFAULT_THEME_ID;
   }
@@ -57,7 +85,14 @@
     TOKEN_ORDER.forEach((k) => { vars[CSS_NAMES[k]] = theme.tokens[k]; });
     vars['--glow'] = theme.glow;
     vars['--glow-soft'] = theme.glowSoft;
-    return Object.assign(vars, FIXED_VARS);
+    Object.assign(vars, FIXED_VARS);
+    // Texto de status (Online/Ausente/Ocupado, "Conectado a…", erros, botão de
+    // perigo contornado). Fundos: painel do usuário, colunas e as faixas tingidas.
+    const k = theme.tokens;
+    vars['--ok-text'] = readableOn(FIXED_VARS['--green'], [k.rail, k.bg2, mix(FIXED_VARS['--green'], k.bg2, 0.10)], k.text);
+    vars['--warn-text'] = readableOn(FIXED_VARS['--yellow'], [k.rail, k.bg2], k.text);
+    vars['--danger-text'] = readableOn(k.red, [k.rail, k.bg2, mix(k.red, k.bg2, 0.12)], k.text);
+    return vars;
   }
 
   function loadThemeId(storage) {

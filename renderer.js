@@ -209,9 +209,9 @@ function updateMyStatusUI() {
   const s = effectiveStatus();
   myStatusEl.textContent = STATUS_LABELS[s] || 'Online';
   myStatusEl.style.color =
-    s === 'busy' ? 'var(--red)' :
-    s === 'away' ? 'var(--yellow)' :
-    s === 'invisible' ? 'var(--muted)' : 'var(--green)';
+    s === 'busy' ? 'var(--danger-text)' :
+    s === 'away' ? 'var(--warn-text)' :
+    s === 'invisible' ? 'var(--muted)' : 'var(--ok-text)';
   myStatusDot.className = 'status-dot ' + s;
 }
 
@@ -304,7 +304,7 @@ function applyServerUrl() {
     new URL(url);
   } catch (e) {
     serverStatus.textContent = 'Endereço inválido.';
-    serverStatus.style.color = 'var(--red)';
+    serverStatus.style.color = 'var(--danger-text)';
     return;
   }
 
@@ -319,20 +319,20 @@ serverUrlInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') apply
 
 socket.on('connect', () => {
   serverStatus.textContent = `Conectado: ${SERVER_URL}`;
-  serverStatus.style.color = 'var(--green)';
+  serverStatus.style.color = 'var(--ok-text)';
 });
 socket.on('connect_error', () => {
   serverStatus.textContent = 'Sem conexão. Confira o endereço do servidor.';
-  serverStatus.style.color = 'var(--red)';
+  serverStatus.style.color = 'var(--danger-text)';
 });
 socket.on('disconnect', () => {
   serverStatus.textContent = 'Desconectado do servidor.';
-  serverStatus.style.color = 'var(--red)';
+  serverStatus.style.color = 'var(--danger-text)';
 });
 
 if (socket.connected) {
   serverStatus.textContent = `Conectado: ${SERVER_URL}`;
-  serverStatus.style.color = 'var(--green)';
+  serverStatus.style.color = 'var(--ok-text)';
 } else {
   serverStatus.textContent = 'Conectando ao servidor...';
   serverStatus.style.color = 'var(--muted)';

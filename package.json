@@ -25,7 +25,8 @@
       "!IniciarTunelConcord.bat",
       "!*.log",
       "!test/**",
-      "!docs/**"
+      "!docs/**",
+      "!.superpowers/**"
     ],
     "win": {
       "target": "nsis",

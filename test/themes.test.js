@@ -114,3 +114,26 @@ test('applyTheme escreve no root', () => {
   assert.equal(themes.applyTheme('??', root), 'escuro');
   assert.equal(root.dataset.theme, 'escuro');
 });
+
+// Cor sólida resultante de `color-mix(in srgb, fg pct%, transparent)` desenhada sobre bg
+function over(fg, pct, bg) {
+  const ch = (h, i) => parseInt(h.slice(i, i + 2), 16);
+  return '#' + [1, 3, 5].map((i) => Math.round(ch(fg, i) * pct + ch(bg, i) * (1 - pct)).toString(16).padStart(2, '0')).join('');
+}
+
+test('texto de status (verde/amarelo/vermelho) legível em todos os temas', () => {
+  for (const t of themes.THEMES) {
+    const v = themes.themeCssVars(t);
+    const k = t.tokens;
+    const checks = [
+      ['--ok-text', k.rail], ['--ok-text', k.bg2], ['--ok-text', over(v['--green'], 0.10, k.bg2)],
+      ['--warn-text', k.rail], ['--warn-text', k.bg2],
+      ['--danger-text', k.rail], ['--danger-text', k.bg2], ['--danger-text', over(k.red, 0.12, k.bg2)]
+    ];
+    for (const [name, bg] of checks) {
+      assert.match(v[name] || '', /^#[0-9a-f]{6}$/, `${t.id}: ${name}`);
+      const c = contrast(v[name], bg);
+      assert.ok(c >= 4.5, `${t.id}: ${name} sobre ${bg} = ${c.toFixed(2)}`);
+    }
+  }
+});
