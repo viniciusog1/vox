@@ -697,6 +697,76 @@
     box-shadow: 0 0 0 2px var(--bg-2), 0 0 0 4px var(--text);
     animation: fx-shake .2s steps(2) infinite;
   }
+  /* Mangá é só preto e branco: avatares, ícone do YouTube e status sem cor.
+     Status pela forma: online cheio, ausente cinza, ocupado anel, invisível vazado. */
+  /* Botões e avatares: fundo branco, borda preta e texto preto (nada de bloco preto).
+     Ativo/ligado ganha retícula em vez de fundo preto. */
+  :root[data-theme="manga"] {
+    --control: var(--bg); --control-hover: var(--bg-3); --accent-2: var(--bg-3); --danger-hover: var(--bg-3);
+  }
+  :root[data-theme="manga"] .avatar { background: var(--bg) !important; color: var(--text); border: 2px solid var(--text); }
+  :root[data-theme="manga"] :is(.rail-btn, .brand-logo, .ctrl, .submit-btn, #send-btn, .server-row button,
+    .btn-secondary, .music-icon-btn, .tab-btn, #voice-connection button) {
+    background: var(--bg); color: var(--text); border: 2px solid var(--text); box-shadow: none;
+  }
+  :root[data-theme="manga"] :is(.rail-btn, .ctrl, .submit-btn, #send-btn, .server-row button,
+    .btn-secondary, .music-icon-btn, .tab-btn, #voice-connection button):hover { background: var(--bg-3); }
+  :root[data-theme="manga"] :is(.rail-btn.active, .ctrl.primary, .tab-btn.active, .brand-logo) {
+    background: radial-gradient(color-mix(in srgb, var(--text) 32%, transparent) 1px, transparent 1.5px) 0 0 / 4px 4px, var(--bg);
+  }
+  :root[data-theme="manga"] .ctrl.off { color: var(--muted); border-color: var(--muted); }
+  :root[data-theme="manga"] ::-webkit-scrollbar-thumb { background: var(--muted); }
+  :root[data-theme="manga"] .yt-icon rect { fill: var(--text); }
+  :root[data-theme="manga"] .yt-icon path { fill: var(--bg); }
+  :root[data-theme="manga"] .status-dot { box-shadow: none; }
+  :root[data-theme="manga"] .status-dot.busy { background: var(--bg); box-shadow: inset 0 0 0 2.5px var(--text); }
+  :root[data-theme="manga"] .status-dot.invisible { background: var(--bg); box-shadow: inset 0 0 0 1.5px var(--muted); }
+  :root[data-theme="manga"] .voice-dot { box-shadow: none; }
+  /* Vídeos (câmera, tela, YouTube) continuam coloridos: só a interface é P&B. */
+  /* Mangá: detalhes nas colunas e no login (retícula, linhas de ação, onomatopeias) */
+  :root[data-theme="manga"] #server-rail {
+    background:
+      linear-gradient(to bottom, var(--rail) 35%, transparent),
+      repeating-linear-gradient(90deg, color-mix(in srgb, var(--text) 12%, transparent) 0 1px, transparent 1px 7px),
+      var(--rail);
+  }
+  :root[data-theme="manga"] #channel-scroll {
+    background:
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='90' viewBox='0 0 220 90'%3E%3Ctext x='50%25' y='60%25' text-anchor='middle' dominant-baseline='middle' transform='rotate(-8 110.0 45.0)' font-family='Hiragino Kaku Gothic StdN, Yu Gothic, Meiryo, sans-serif' font-weight='900' font-size='34' fill='black' fill-opacity='0.1'%3E%E3%82%B7%E3%83%BC%E3%83%B3%E2%80%A6%3C/text%3E%3C/svg%3E") center bottom 14px / 200px auto no-repeat,
+      linear-gradient(to bottom, var(--bg-2) 45%, transparent),
+      radial-gradient(color-mix(in srgb, var(--text) 20%, transparent) 1px, transparent 1.6px) 0 0 / 6px 6px,
+      var(--bg-2);
+  }
+  :root[data-theme="manga"] #members {
+    background:
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='100' viewBox='0 0 220 100'%3E%3Ctext x='50%25' y='60%25' text-anchor='middle' dominant-baseline='middle' transform='rotate(8 110.0 50.0)' font-family='Hiragino Kaku Gothic StdN, Yu Gothic, Meiryo, sans-serif' font-weight='900' font-size='30' fill='black' fill-opacity='0.1'%3E%E3%82%B6%E3%83%AF %E3%82%B6%E3%83%AF%3C/text%3E%3C/svg%3E") center bottom 16px / 200px auto no-repeat,
+      linear-gradient(to bottom, var(--bg-2) 50%, transparent),
+      repeating-linear-gradient(45deg, color-mix(in srgb, var(--text) 9%, transparent) 0 1px, transparent 1px 7px),
+      repeating-linear-gradient(-45deg, color-mix(in srgb, var(--text) 9%, transparent) 0 1px, transparent 1px 7px),
+      var(--bg-2);
+  }
+  :root[data-theme="manga"] #messages {
+    background:
+      radial-gradient(circle at 100% 100%, transparent 0, var(--bg) 42%),
+      radial-gradient(color-mix(in srgb, var(--text) 16%, transparent) 1px, transparent 1.6px) 0 0 / 7px 7px,
+      var(--bg);
+  }
+  :root[data-theme="manga"] #auth-screen {
+    background:
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='520' height='260' viewBox='0 0 520 260'%3E%3Ctext x='50%25' y='60%25' text-anchor='middle' dominant-baseline='middle' transform='rotate(-10 260.0 130.0)' font-family='Hiragino Kaku Gothic StdN, Yu Gothic, Meiryo, sans-serif' font-weight='900' font-size='120' fill='none' stroke='black' stroke-width='2' stroke-opacity='0.56'%3E%E3%83%89%E3%83%89%E3%83%B3%21%3C/text%3E%3C/svg%3E") left 3% bottom 4% / min(46vw, 520px) auto no-repeat,
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='160' viewBox='0 0 300 160'%3E%3Ctext x='50%25' y='60%25' text-anchor='middle' dominant-baseline='middle' transform='rotate(12 150.0 80.0)' font-family='Hiragino Kaku Gothic StdN, Yu Gothic, Meiryo, sans-serif' font-weight='900' font-size='70' fill='black' fill-opacity='0.09'%3E%E3%83%90%E3%83%B3%21%3C/text%3E%3C/svg%3E") right 6% top 6% / min(26vw, 300px) auto no-repeat,
+      radial-gradient(circle at 50% 50%, var(--bg) 0, var(--bg) 22%, transparent 58%),
+      repeating-conic-gradient(from 0deg at 50% 50%, color-mix(in srgb, var(--text) 13%, transparent) 0deg 1.4deg, transparent 1.4deg 6deg),
+      radial-gradient(color-mix(in srgb, var(--text) 18%, transparent) 1px, transparent 1.6px) 0 0 / 6px 6px,
+      var(--bg);
+  }
+  :root[data-theme="manga"] .overlay-card {
+    position: relative; background: var(--bg); border: 3px solid var(--text); border-radius: 4px;
+    box-shadow: 8px 8px 0 var(--text);
+  }
+  :root[data-theme="manga"] .field input { border: 2px solid var(--text); border-radius: 4px; }
+  :root[data-theme="manga"] .field input:focus { box-shadow: 3px 3px 0 var(--text); }
+
   @keyframes fx-shake { 0% { transform: translate(0, 0); } 50% { transform: translate(1px, -1px); } }
 
   /* Ninja: preto e laranja com tinta vermelha, kanji 忍 em pincel, espiral girando,
