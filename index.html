@@ -96,6 +96,7 @@
   .voice-user:hover { background: color-mix(in srgb, var(--text) 5%, transparent); }
   .voice-user .vu-avatar { width: 24px; height: 24px; font-size: 10px; flex-shrink: 0; transition: box-shadow .12s ease; }
   .voice-user.speaking .vu-avatar { box-shadow: 0 0 0 2px var(--bg-2), 0 0 0 4px var(--speak); }
+  .voice-user .vu-status-dot { position: absolute; right: -3px; bottom: -3px; width: 9px; height: 9px; border: 2px solid var(--bg-2); box-sizing: content-box; }
   .voice-user .vu-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .voice-user .vu-icons { margin-left: auto; display: flex; align-items: center; gap: 4px; font-size: 11px; flex-shrink: 0; }
   .live-badge {
@@ -200,6 +201,7 @@
   .ctrl.warn { background: var(--yellow); color: #000; }
   .ctrl.warn:hover { background: color-mix(in srgb, var(--yellow) 85%, #000); }
   .ctrl.off { background: var(--control); color: var(--muted); }
+  .ctrl:disabled { opacity: .4; cursor: not-allowed; box-shadow: none; }
   .win-controls { display: flex; gap: 4px; margin-left: 10px; }
   .win-controls button {
     width: 30px; height: 30px; border-radius: 50%; border: none;
@@ -340,13 +342,14 @@
     text-overflow: ellipsis; white-space: nowrap;
     display: flex; align-items: center;
   }
+  .members-empty { color: var(--muted); font-size: 12px; padding: 6px 8px; }
   .member .you { color: var(--muted); font-size: 11px; font-weight: 400; }
   .member .muted-icon { color: var(--red); font-size: 12px; }
   .member .speaking { color: var(--green); font-size: 12px; }
   .member.bot .member-name { color: var(--link); font-style: italic; }
 
   /* ================= OVERLAYS ================= */
-  #auth-screen, #room-screen {
+  #auth-screen {
     position: fixed; inset: 0; z-index: 100;
     display: flex; align-items: center; justify-content: center;
     background:
@@ -354,7 +357,6 @@
       radial-gradient(circle at 80% 80%, color-mix(in srgb, var(--green) 12%, transparent), transparent 40%),
       var(--bg);
   }
-  #room-screen { display: none; }
   .overlay-card {
     width: 400px; background: var(--bg-2); border: 1px solid var(--border);
     border-radius: 16px; padding: 34px 38px;
@@ -393,7 +395,6 @@
   .submit-btn:hover { background: var(--accent-2); }
   .submit-btn:disabled { opacity: .6; cursor: not-allowed; }
   .auth-error { color: var(--red); font-size: 12px; min-height: 16px; margin-bottom: 8px; }
-  #room-status { color: var(--muted); font-size: 13px; text-align: center; margin-top: 14px; min-height: 18px; }
 
   /* ================= SERVIDOR ================= */
   .server-box { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); }
@@ -576,6 +577,7 @@
 
       <div id="status-menu" class="popover hidden">
         <button data-status="online"><span class="status-dot online"></span> Online</button>
+        <button data-status="away"><span class="status-dot away"></span> Ausente</button>
         <button data-status="busy"><span class="status-dot busy"></span> Ocupado</button>
         <button data-status="invisible"><span class="status-dot invisible"></span> Invisível</button>
         <div class="popover-hint">Você ficará ausente automaticamente após 5 minutos sem atividade.</div>
@@ -604,8 +606,8 @@
       <div id="video-grid"></div>
       <div id="call-empty">
         <div class="avatar" id="empty-avatar">?</div>
-        <h3>Aguardando alguém entrar...</h3>
-        <p id="empty-text">Compartilhe o nome do canal com seus amigos.</p>
+        <h3>Você não está em um canal de voz</h3>
+        <p id="empty-text">Escolha um canal de voz à esquerda para entrar.</p>
       </div>
       <div id="audio-indicator">
         <div id="audio-bar"><div id="audio-level"></div></div>
@@ -668,21 +670,6 @@
       <div id="server-status" class="server-status">Conectando ao servidor...</div>
       <p class="server-hint">Para testar com um amigo, use o IP da sua máquina (ex.: http://192.168.0.10:3000) ou um túnel.</p>
     </div>
-  </div>
-</div>
-
-<!-- Tela de escolha de sala (depois do login) -->
-<div id="room-screen">
-  <div class="overlay-card">
-    <div class="brand">
-      <div class="brand-logo">💬</div>
-      <h1>Concord</h1>
-    </div>
-    <h2>Entrar em um canal</h2>
-    <p class="sub" id="room-user-info">Logado como —</p>
-    <div class="field"><label>Nome do canal</label><input type="text" id="input-room" value="geral" placeholder="ex: geral"></div>
-    <button class="submit-btn" id="btn-join">Entrar no canal</button>
-    <div id="room-status"></div>
   </div>
 </div>
 
@@ -784,6 +771,9 @@
   }
 </script>
 <script src="speaking.js"></script>
+<script src="presence.js"></script>
+<script src="channels.js"></script>
+<script src="protocol.js"></script>
 <script src="renderer.js"></script>
 </body>
 </html>
