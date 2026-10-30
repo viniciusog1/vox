@@ -11,15 +11,16 @@ Guia para agentes de IA que forem alterar este projeto. Leia antes de editar.
 - Não há banco de dados: usuários e mensagens ficam em arquivos JSON.
 - O servidor Socket.io é embutido no processo principal do Electron e escuta em `0.0.0.0:3000`.
 - Não há nuvem central: o PC do host é o servidor.
-- Não há repositório git configurado neste workspace; não assuma comandos git.
+- Repositório: https://github.com/viniciusog1/vox (público). Trabalho em branch própria a partir da `main` atualizada e entra por PR; antes de cada push, confira se o PR da branch ainda está aberto (PRs já foram juntados antes de commits chegarem).
+- Desenvolvimento acontece também no macOS (`~/Documents/vox`); o Windows é o alvo do instalador.
 
-Caminhos principais:
+Caminhos no PC com Windows (a pasta do projeto lá ainda se chama `discord-clone-windows`):
 
 ```text
 Projeto:              C:\Users\Usuario\discord-clone-windows
-App instalado:        C:\Users\Usuario\AppData\Local\Programs\Vox\Vox.exe
-Dados do instalado:   C:\Users\Usuario\AppData\Roaming\Vox
-Instalador gerado:    C:\Users\Usuario\discord-clone-windows\dist\Vox Setup 1.0.0.exe
+App instalado:        C:\Users\Usuario\AppData\Local\Programs\Vox\Vox.exe  (versões antigas: ...\Programs\Concord\Concord.exe)
+Dados do instalado:   C:\Users\Usuario\AppData\Roaming\Vox  (copiados de ...\Roaming\Concord na primeira execução)
+Instalador gerado:    C:\Users\Usuario\discord-clone-windows\dist\Vox Setup <versão>.exe
 Ferramenta de túnel:  C:\Users\Usuario\discord-clone-windows\tools\cloudflared.exe
 Atalho do túnel:      C:\Users\Usuario\discord-clone-windows\IniciarTunelVox.bat
 ```
@@ -68,7 +69,7 @@ $env:Path = 'C:\Program Files\nodejs;' + $env:Path
 npm run dist
 ```
 
-Saída: `dist\Vox Setup 1.0.0.exe`.
+Saída: `dist\Vox Setup <versão>.exe` (versão de `package.json`).
 
 ### Instalar/testar o pacote
 
@@ -80,9 +81,10 @@ Saída: `dist\Vox Setup 1.0.0.exe`.
 
 | Arquivo | Responsabilidade |
 | --- | --- |
-| `main.js` | Processo principal: janela, permissões, servidor Socket.io, autenticação, presença, salas, mensagens, retenção, `desktopCapturer` e seletor de tela, fila de música por sala de voz (`musicByRoom`) e o `Referer` injetado nas requisições do YouTube. |
-| `renderer.js` | Interface e lógica do cliente: login, canais, chat, WebRTC, câmera/microfone, compartilhamento de tela, status, configurações de áudio. |
-| `themes.js` | Os 15 temas (paletas, id padrão `escuro`) e os grupos do seletor (`THEME_GROUPS`: Escuros, Neon, Claros; cada tema tem `group`), leitura/gravação em `localStorage['vox-theme']` e `applyTheme`. Carregado no `<head>` antes do CSS para aplicar o tema antes da primeira pintura. Também é módulo Node (testes). |
+| `main.js` | Processo principal: cópia única dos dados do antigo Concord (`migrateLegacyUserData`), janela, permissões, servidor Socket.io, autenticação, presença, membros do servidor (`buildServerMembers`), salas, mensagens, retenção, `desktopCapturer` e seletor de tela, fila de música por sala de voz (`musicByRoom`) e o `Referer` injetado nas requisições do YouTube. |
+| `renderer.js` | Interface e lógica do cliente: login, canais, chat, WebRTC, estado da conexão e ping por pessoa, grade de tiles (`layoutTiles`), câmera/microfone, compartilhamento de tela, música, status, membros, configurações em abas. |
+| `themes.js` | Os 18 temas (paletas, id padrão `escuro`) e os grupos do seletor (`THEME_GROUPS`: Escuros, Neon, Anime, Claros; cada tema tem `group`), leitura/gravação em `localStorage['vox-theme']`, `applyTheme`, opção "Reduzir animações" (`vox-reduce-motion`, `data-reduce-motion` no `<html>`) e `migrateLegacyStorage` (copia `concord-*` → `vox-*`). Carregado no `<head>` antes do CSS para aplicar o tema antes da primeira pintura. Também é módulo Node (testes). |
+| `icons.js` | Ícones SVG do Lucide (lucide-static 0.460.0, licença ISC) usados na interface: `icon(name, size)`, `setIcon(el, name, text, size)` e `hydrate(root)`, que troca `<i data-icon="…">` pelo SVG. Só os ícones usados estão no arquivo; para um novo, copie de `lucide-static/icons/*.svg`. Também é módulo Node (testes). |
 | `speaking.js` | Detecção de "falando" com histerese (liga ≥ 0.12, desliga após 250 ms abaixo) para o anel do avatar. |
 | `channels.js` | Lista fixa de canais: `TEXT_CHANNELS` (`geral`, `jogos`, `musica`) e `VOICE_CHANNELS` (`voz-sala`, `voz-jogos`, `voz-musica`); padrões `geral` e `voz-sala`. Usado por `main.js` e `renderer.js`. Também é módulo Node (testes). |
 | `protocol.js` | `PROTOCOL_VERSION` (hoje `4`), mensagem de versão incompatível e `isCompatible`. Usado por `main.js` e `renderer.js`. Também é módulo Node (testes). |
@@ -90,8 +92,8 @@ Saída: `dist\Vox Setup 1.0.0.exe`.
 | `music-state.js` | Regras puras da fila de música: `MAX_QUEUE` (50), `SYNC_TOLERANCE_MS` (2000), `RESYNC_INTERVAL_MS` (15000), `SEEK_COOLDOWN_MS` (5000), `shouldCorrectSeek`, adicionar/remover, pular ou terminar só se o item ainda é o atual, alternar pausa e posição atual. Usado por `main.js` e `renderer.js`. Também é módulo Node (testes). |
 | `presence.js` | Regras de status: modo escolhido (`online`, `away`, `busy`, `invisible`), ausente automático só a partir de Online e atividade que desfaz só o automático. Também é módulo Node (testes). |
 | `room-state.js` | Estado público do usuário na sala de voz (`publicUser`, `applyStatePatch`: `muted`, `status`, `sharing`) e troca de canais (`joinVoiceRoom`, `leaveVoiceRoom`, `canUseTextRoom`, `socketRoomsToLeave`). Usado por `main.js`. |
-| `test/` | Testes `node:test` (`npm test`): paletas e contraste, CSS sem cores fixas, estado da sala, detecção de fala, YouTube e fila de música. Fora do instalador. |
-| `preload.js` | Ponte segura `contextBridge` para controles da janela e IPC do seletor de tela. |
+| `test/` | Testes `node:test` (`npm test`): paletas e contraste, CSS sem cores fixas, estrutura das configurações, estado da sala, canais, presença, protocolo, detecção de fala, YouTube e fila de música. Fora do instalador. |
+| `preload.js` | Ponte segura `contextBridge` para o IPC do seletor de tela. Ainda expõe `minimize`/`maximize`/`close`, sem uso desde que a janela passou a usar os botões nativos. |
 | `index.html` | Layout e CSS de toda a interface; também contém os modais e a tela de login. |
 | `package.json` | Scripts, dependências e configuração do electron-builder. |
 | `socket.io.min.js` | Bundle do cliente Socket.io copiado pelo `postinstall`; **não editar à mão**. |
@@ -144,9 +146,14 @@ Saída: `dist\Vox Setup 1.0.0.exe`.
   - O `<video>` de cada stream é reaproveitado entre `renderTiles` (`videoElements`); `mute` remoto só troca para o avatar após 1,5 s.
   - Diagnóstico: **Ctrl+Shift+D** mostra fps/resolução/banda/codec/limitação por participante.
   - Ao parar, volta para a câmera (se ligada) ou remove o vídeo.
-  - Visualização em tela cheia: cada tile com vídeo tem botão ⛶ e duplo clique; usa `#fullscreen-view` + `requestFullscreen`.
+  - Visualização em tela cheia: cada tile com vídeo tem botão de tela cheia e duplo clique; usa `#fullscreen-view` + `requestFullscreen`.
+- Estado da conexão: `peerConn` guarda o estado de cada peer; a cada 2 s o RTT vem do par de candidatos ICE nomeado. A coluna Membros mostra "Conectando…", "Conectado · N ms", "Reconectando…" ou "Falhou" para quem está na mesma voz.
+- Grade da chamada: `layoutTiles()` calcula colunas e tamanho dos tiles (16:9, gap 12, largura mínima 260; tile da música com altura mínima 240) e grava `--grid-cols`, `--tile-w`, `--tile-h`. Roda num `ResizeObserver` e ao fim de `renderTiles`/`syncMusicTile`.
+- Membros: `server-members` traz todas as contas do servidor; `renderMembers` separa Online/Offline. Invisíveis aparecem como offline para os outros.
+- Ícones: `VoxIcons.hydrate()` roda no início de `renderer.js`; ícones trocados em tempo de execução usam `VoxIcons.setIcon`.
 - Música (YouTube):
-  - A fila aparece como primeiro tile da grade de chamada enquanto houver música; o botão 🎵 da barra superior (desabilitado sem voz) e o tile abrem o painel `#btn-music` / modal de música.
+  - A fila aparece como primeiro tile da grade de chamada enquanto houver música; o botão do YouTube da barra superior (`#btn-music`, desabilitado sem voz) e o tile abrem o painel de música. O tile tem botão para abrir só o vídeo em tela cheia.
+  - `music-rooms` diz quais canais de voz têm música; a lista de canais mostra o ícone do YouTube ao lado deles.
   - Quem está na voz controla a fila. Sair da voz interrompe a música só para quem saiu.
   - Nada é baixado: o player oficial do YouTube (IFrame API) toca em cada computador. Em tela cheia, o player vai para um canto dentro de `#fullscreen-view`.
   - Volume local em `localStorage['vox-music-volume']` (não é sincronizado).
@@ -156,13 +163,15 @@ Saída: `dist\Vox Setup 1.0.0.exe`.
   - `micProcessedTrack` é a faixa enviada aos peers; `getOutboundAudioTracks()` decide entre processada e bruta.
   - Modos em `vox-noise-suppression`: `off`, `browser`, `strong`. Intensidade em `vox-noise-gate-level`.
   - O monitor do próprio microfone toca a faixa processada.
-- O indicador de áudio analisa **somente streams remotos**. O microfone local não entra na barra; para testar o próprio microfone existe o toggle de monitoramento nas configurações.
+- Quem está falando aparece pelo anel no avatar da lista da voz (`speaking.js`), inclusive você. A antiga barra "Ninguém falando" foi removida.
 
 ### Eventos Socket.io principais
 
 - `register`, `login` (recebem `protocol`; ver “Versão do protocolo”)
 - `join-text` (room), `join-voice` (room), `leave-voice`
 - `room-users`, `voice-rooms`
+- `server-members` (servidor → cada cliente autenticado: todas as contas, com `online`, `status`, `voiceRoom`, `muted`; reenviado após login, logout, desconexão, mudanças de voz e de status)
+- `music-rooms` (servidor → clientes autenticados: lista de canais de voz com música)
 - `user-joined`, `user-left`
 - `update-state` (mudo/status/`sharing` — compartilhando tela)
 - `signal` (offer, answer, candidate)
@@ -200,7 +209,7 @@ O servidor atualmente confia no campo `user` enviado em `save-message`. Para end
 - O status vale também sem voz: fica em `socket.data.status` e é aplicado na próxima entrada na voz.
 - Usuários invisíveis não aparecem para os outros; o servidor filtra a lista por socket.
 - Ao ficar invisível, o cliente fecha os peers de mídia; ao voltar, recria.
-- A lista da voz mostra a bolinha de status ao lado do avatar.
+- A lista da voz e a coluna Membros mostram a bolinha de status sobre o avatar, com brilho.
 - Não reintroduzir participantes fantasma/de teste: foram removidos.
 
 ### Chat e retenção
@@ -210,7 +219,7 @@ O servidor atualmente confia no campo `user` enviado em `save-message`. Para end
   - ao iniciar;
   - a cada hora;
   - antes de ler/gravar mensagens.
-- O botão de configurações permite apagar todas as mensagens do próprio usuário no canal atual.
+- Configurações → aba Áudio (no fim) tem o botão para apagar todas as mensagens do próprio usuário no canal atual.
 
 ## 5. Dados e persistência
 
@@ -266,13 +275,21 @@ const DATA_DIR = app.isPackaged ? app.getPath('userData') : __dirname;
 ### Preferências no localStorage
 
 - `vox-server-url`
-- `audioInputId`
-- `audioOutputId`
-- `monitorEnabled`
+- `audioInputId`, `audioOutputId`, `monitorEnabled`
+- `vox-noise-suppression`, `vox-noise-gate-level`
+- `vox-share-resolution`, `vox-share-fps`
+- `vox-peer-volumes` (volume de cada pessoa, só neste computador)
 - `vox-theme` (id do tema; inválido ou ausente → `escuro`)
+- `vox-reduce-motion` (`1` desliga as animações dos temas)
 - `vox-music-volume` (volume local do player de música, 0–100, padrão 50; só neste computador)
 
-Ficam no perfil do Electron em `%APPDATA%\Vox`.
+Ficam no perfil do Electron em `%APPDATA%\Vox` (no macOS em desenvolvimento: `~/Library/Application Support/vox`). Antes do Vox as chaves começavam com `concord-`; `migrateLegacyStorage` copia para `vox-*` sem sobrescrever.
+
+### Migração do Concord
+
+- `migrateLegacyUserData` (topo de `main.js`) copia a pasta `Concord`/`concord` para a `userData` do Vox uma única vez, sem `Cache`, `Code Cache`, `GPUCache`, `DawnCache`, `Crashpad` e arquivos `Singleton*`, e grava a marca `.migrado-do-concord`.
+- **Medido:** o Electron cria a pasta `userData` (vazia) antes do código de `main.js` rodar. Por isso a checagem usa a marca e a presença de dados próprios (`Local Storage`, `users.json`, `messages.json`), não "a pasta existe".
+- `appId` continua `com.seunome.concord` de propósito: trocar faria o Windows tratar o Vox como outro programa em vez de atualizar o instalado.
 
 ### Regras
 
@@ -298,6 +315,10 @@ Manter estas decisões, salvo pedido explícito do usuário:
 - Sem participantes fantasma.
 - Mensagens apagadas após 7 dias e limite de 200 por canal.
 - Música: sem download; o player oficial do YouTube toca em cada pessoa; fila de até 50 músicas por sala de voz; sair da voz para a música de quem saiu.
+- Ícones SVG (Lucide) em vez de emojis, para ficar igual em qualquer sistema.
+- A janela usa os botões nativos do sistema (sem minimizar/maximizar/fechar próprios).
+- Efeitos de tema nunca ficam por cima dos vídeos nem do player do YouTube (os termos do YouTube proíbem cobrir o player).
+- Temas inspirados em obras (Anime) sem imagens, logos nem nomes oficiais: o repositório é público.
 - Não usar serviços pagos.
 
 ## 7. Armadilhas conhecidas
@@ -351,7 +372,6 @@ Pare o app antes de copiar.
 
 ### Áudio
 
-- A barra “Ninguém falando” é normal quando se está sozinho: ela só analisa áudio remoto.
 - Para testar o microfone, use “Ouvir meu microfone (teste)” com fones.
 - Ao mexer no áudio local, cuidado para não criar loop/feedback.
 
@@ -360,6 +380,9 @@ Pare o app antes de copiar.
 - Todo o CSS de `index.html` usa só variáveis do tema (`var(--bg)`, `var(--accent)`…); tons derivados usam `color-mix()`. `test/css-tokens.test.js` falha se aparecer cor fixa (só `#fff`, `#000` e `rgba(0,0,0,…)` são aceitos).
 - Contraste mínimo 4.5:1 testado em `test/themes.test.js`. `accent` é fundo (texto `on-accent`); para texto destacado use `--link`. Fundo de botão de perigo e selo AO VIVO: `--danger-bg`.
 - Cores das bolinhas de avatar (`AVATAR_COLORS`) não mudam por tema.
+- Efeitos dos temas Anime ficam em `:root[data-theme="…"]` no fim do CSS. Camadas de fundo da chamada usam `#call-area::before/::after` com `z-index: 0`; `#video-grid` e `#call-empty` ficam em `z-index: 1`. Padrões em SVG entram como máscara (`-webkit-mask`, cor vinda de `background: var(--…)`), assim o teste de cores fixas continua valendo.
+- Toda animação nova de tema precisa entrar na regra de "Reduzir animações" (`[data-reduce-motion="1"]` e `prefers-reduced-motion`).
+- O kanji 忍 do tema Ninja usa fonte Mincho do sistema (Hiragino no macOS, Yu Mincho no Windows — não verificado no Windows).
 
 ### Versão incompatível
 
@@ -404,10 +427,10 @@ Antes de considerar uma alteração concluída:
 
 ## 9. Estado atual conhecido
 
-- Versão `1.0.2` (qualidade do compartilhamento: 480p/720p/1080p e 30/60 fps, padrão 1080p30).
-- Instaladores preservados: `dist\Vox Setup 1.0.0.exe`, `1.0.1.exe` e `1.0.2.exe`.
-- Instalador NSIS gerado, sem assinatura e com ícone padrão do Electron.
-- App instalado nesta máquina em `%LOCALAPPDATA%\Programs\Vox`.
-- Dados do instalado em `%APPDATA%\Vox`; a conta `vinicius` e o histórico do canal `geral` foram copiados para lá.
+- Versão em `package.json`: `1.1.0`. `PROTOCOL_VERSION` `4`.
+- Instaladores antigos (ainda com o nome Concord) no PC com Windows: `dist\Concord Setup 1.0.0.exe`, `1.0.1.exe` e `1.0.2.exe`. Nenhum instalador foi gerado desde a troca de nome e as mudanças de temas, música, membros e conexão.
+- Instalador NSIS sem assinatura e com ícone padrão do Electron.
+- No Windows, o app antigo está instalado como Concord (`%LOCALAPPDATA%\Programs\Concord`), com dados em `%APPDATA%\Concord` (conta `vinicius` e histórico de `geral`).
+- Pendências: testar no Windows o compartilhamento 1080p60 e o player do YouTube; servidor TURN; áudio do app no compartilhamento de tela; atualização automática.
 - O app instalado e o de desenvolvimento podem estar em estados diferentes; sempre confirme qual está rodando.
 - O Cloudflare Tunnel pode estar ativo. A URL é temporária e não deve ser documentada como fixa.
