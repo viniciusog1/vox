@@ -96,6 +96,7 @@
   .voice-user:hover { background: color-mix(in srgb, var(--text) 5%, transparent); }
   .voice-user .vu-avatar { width: 24px; height: 24px; font-size: 10px; flex-shrink: 0; transition: box-shadow .12s ease; }
   .voice-user.speaking .vu-avatar { box-shadow: 0 0 0 2px var(--bg-2), 0 0 0 4px var(--speak); }
+  .voice-user .vu-status-dot { position: absolute; right: -3px; bottom: -3px; width: 9px; height: 9px; border: 2px solid var(--bg-2); box-sizing: content-box; }
   .voice-user .vu-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .voice-user .vu-icons { margin-left: auto; display: flex; align-items: center; gap: 4px; font-size: 11px; flex-shrink: 0; }
   .live-badge {
@@ -576,6 +577,7 @@
 
       <div id="status-menu" class="popover hidden">
         <button data-status="online"><span class="status-dot online"></span> Online</button>
+        <button data-status="away"><span class="status-dot away"></span> Ausente</button>
         <button data-status="busy"><span class="status-dot busy"></span> Ocupado</button>
         <button data-status="invisible"><span class="status-dot invisible"></span> Invisível</button>
         <div class="popover-hint">Você ficará ausente automaticamente após 5 minutos sem atividade.</div>
@@ -769,6 +771,7 @@
   }
 </script>
 <script src="speaking.js"></script>
+<script src="presence.js"></script>
 <script src="channels.js"></script>
 <script src="protocol.js"></script>
 <script src="renderer.js"></script>

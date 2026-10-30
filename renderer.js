@@ -145,7 +145,7 @@ let fullscreenMuteTimer = null;
 let shareResolution = localStorage.getItem('concord-share-resolution') || '1080';
 let shareFps = Number(localStorage.getItem('concord-share-fps') || 30) === 60 ? 60 : 30;
 
-let statusMode = 'online'; // online | busy | invisible
+let statusMode = 'online'; // online | away | busy | invisible
 let autoAway = false;
 let idleTimer = null;
 const IDLE_MS = 5 * 60 * 1000;
@@ -200,8 +200,10 @@ function roomDisplayName(room) {
 /* ================= STATUS ================= */
 const STATUS_LABELS = { online: 'Online', busy: 'Ocupado', away: 'Ausente', invisible: 'Invisível' };
 
+const presence = window.ConcordPresence;
+
 function effectiveStatus() {
-  return statusMode === 'online' && autoAway ? 'away' : statusMode;
+  return presence.effectiveStatus(statusMode, autoAway);
 }
 
 function updateMyStatusUI() {
@@ -221,7 +223,7 @@ function sendStatus() {
 function resetIdleTimer() {
   clearTimeout(idleTimer);
   idleTimer = setTimeout(() => {
-    if (statusMode === 'online') {
+    if (presence.onIdle(statusMode)) {
       autoAway = true;
       updateMyStatusUI();
       sendStatus();
@@ -231,7 +233,7 @@ function resetIdleTimer() {
 
 function markActive() {
   if (autoAway) {
-    autoAway = false;
+    autoAway = presence.onActivity(autoAway);
     updateMyStatusUI();
     sendStatus();
   }
@@ -768,7 +770,13 @@ function renderMembers() {
       line.dataset.id = u.id;
       const state = speakingStates.get(u.id);
       if (state && state.speaking) line.classList.add('speaking');
-      line.appendChild(makeAvatar(u.username, 'vu-avatar'));
+      const avatarWrap = document.createElement('div');
+      avatarWrap.className = 'avatar-wrap';
+      avatarWrap.appendChild(makeAvatar(u.username, 'vu-avatar'));
+      const dot = document.createElement('span');
+      dot.className = 'status-dot vu-status-dot ' + (u.status || 'online');
+      avatarWrap.appendChild(dot);
+      line.appendChild(avatarWrap);
       const name = document.createElement('span');
       name.className = 'vu-name';
       name.textContent = u.username;
