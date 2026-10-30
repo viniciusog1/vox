@@ -202,13 +202,6 @@
   .ctrl.warn:hover { background: color-mix(in srgb, var(--yellow) 85%, #000); }
   .ctrl.off { background: var(--control); color: var(--muted); }
   .ctrl:disabled { opacity: .4; cursor: not-allowed; box-shadow: none; }
-  .win-controls { display: flex; gap: 4px; margin-left: 10px; }
-  .win-controls button {
-    width: 30px; height: 30px; border-radius: 50%; border: none;
-    background: transparent; color: var(--muted); cursor: pointer; font-size: 13px;
-  }
-  .win-controls button:hover { background: color-mix(in srgb, var(--text) 8%, transparent); color: var(--text); }
-  #btn-close:hover { background: var(--danger-bg); color: #fff; }
 
   /* ================= CALL AREA ================= */
   #call-area {
@@ -529,6 +522,7 @@
   .settings-tab:hover { color: var(--text); }
   .settings-tab.active { color: var(--text); border-bottom-color: var(--accent); }
   .settings-panel { min-height: 300px; }
+  .account-line { font-size: 14px; color: var(--text-2); margin: 4px 0 16px; }
   .theme-group-title { font-size: 12px; color: var(--muted); font-weight: 600; margin: 6px 0 8px; }
   .theme-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 8px; }
   .theme-option {
@@ -670,7 +664,6 @@
       </button>
       <button class="mini-btn" id="btn-mic-mini" title="Microfone">🎙️</button>
       <button class="mini-btn" id="btn-settings" title="Configurações de áudio">⚙️</button>
-      <button class="mini-btn" id="btn-logout" title="Sair da conta">⏻</button>
 
       <div id="status-menu" class="popover hidden">
         <button data-status="online"><span class="status-dot online"></span> Online</button>
@@ -692,11 +685,6 @@
         <button class="ctrl warn" id="btn-screen" title="Compartilhar tela">🖥️ Tela</button>
         <button class="ctrl off" id="btn-music" title="Música" aria-label="Música" aria-expanded="false"><svg class="yt-icon" viewBox="0 0 28 20" width="18" height="13" aria-hidden="true"><rect width="28" height="20" rx="5" fill="#FF0000"/><path d="M11 5.5v9l8-4.5z" fill="#FFFFFF"/></svg></button>
         <button class="ctrl danger" id="btn-hangup" title="Sair da chamada" style="font-size:16px;font-weight:800;">✕</button>
-        <div class="win-controls">
-          <button id="btn-min">—</button>
-          <button id="btn-max">□</button>
-          <button id="btn-close">✕</button>
-        </div>
       </div>
     </header>
 
@@ -825,10 +813,16 @@
     <div class="settings-tabs" role="tablist" aria-label="Seções das configurações">
       <button type="button" class="settings-tab active" role="tab" id="settings-tabbtn-aparencia" aria-selected="true" aria-controls="settings-tab-aparencia" data-tab="aparencia">Aparência</button>
       <button type="button" class="settings-tab" role="tab" id="settings-tabbtn-audio" aria-selected="false" aria-controls="settings-tab-audio" data-tab="audio">Áudio</button>
+      <button type="button" class="settings-tab" role="tab" id="settings-tabbtn-conta" aria-selected="false" aria-controls="settings-tab-conta" data-tab="conta">Conta</button>
     </div>
 
     <div class="settings-panel" id="settings-tab-aparencia" role="tabpanel" aria-labelledby="settings-tabbtn-aparencia">
       <div id="theme-grid"></div>
+    </div>
+
+    <div class="settings-panel hidden" id="settings-tab-conta" role="tabpanel" aria-labelledby="settings-tabbtn-conta">
+      <p class="account-line">Conectado como <strong id="account-name">—</strong></p>
+      <button type="button" id="btn-logout" class="btn-danger-outline">Sair da conta</button>
     </div>
 
     <div class="settings-panel hidden" id="settings-tab-audio" role="tabpanel" aria-labelledby="settings-tabbtn-audio">

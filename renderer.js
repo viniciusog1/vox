@@ -48,9 +48,6 @@ const btnScreen = document.getElementById('btn-screen');
 const btnHangup = document.getElementById('btn-hangup');
 const btnMusic = document.getElementById('btn-music');
 
-const btnMin = document.getElementById('btn-min');
-const btnMax = document.getElementById('btn-max');
-const btnClose = document.getElementById('btn-close');
 
 const sourceList = document.getElementById('source-list');
 const sourceCancel = document.getElementById('source-cancel');
@@ -2019,6 +2016,7 @@ btnSettings.addEventListener('click', async () => {
   statusMenu.classList.add('hidden');
   settingsError.textContent = '';
   renderThemePicker();
+  document.getElementById('account-name').textContent = currentUser || '—';
   showSettingsTab('aparencia');
   settingsModal.classList.remove('hidden');
   monitorToggle.checked = monitorEnabled;
@@ -2475,6 +2473,7 @@ btnLeaveVoice.addEventListener('click', leaveVoice);
 
 function logout() {
   if (!window.confirm('Sair da conta?')) return;
+  settingsModal.classList.add('hidden');
   socket.emit('logout');
   leaveVoice();
   currentTextRoom = '';
@@ -2499,11 +2498,6 @@ function logout() {
 }
 
 if (btnLogout) btnLogout.addEventListener('click', logout);
-
-/* ================= JANELA ================= */
-btnMin.addEventListener('click', () => window.electronAPI.minimize());
-btnMax.addEventListener('click', () => window.electronAPI.maximize());
-btnClose.addEventListener('click', () => window.electronAPI.close());
 
 /* ================= DIAGNÓSTICO DE VÍDEO (Ctrl+Shift+D) ================= */
 // Mostra, por participante, o que sai e o que chega: fps, resolução, banda,
