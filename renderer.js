@@ -85,7 +85,7 @@ const fullscreenNative = document.getElementById('fullscreen-native');
 /* ================= ESTADO ================= */
 const { DEFAULT_TEXT_CHANNEL, DEFAULT_VOICE_CHANNEL, isTextChannel, isVoiceChannel } = window.ConcordChannels;
 const { PROTOCOL_VERSION, VERSION_MISMATCH_MESSAGE, isCompatible } = window.ConcordProtocol;
-const { targetPositionMs, needsSeek } = window.ConcordMusic;
+const { targetPositionMs, shouldCorrectSeek } = window.ConcordMusic;
 const NO_VOICE_TEXT = 'Você não está em um canal de voz';
 
 let currentUser = '';
@@ -149,6 +149,7 @@ let musicPlayer = null;    // instância YT.Player ou null
 let musicTileEl = null;    // tile persistente com o player: renderTiles nunca o remove nem o move
 let musicPlayerReady = false;
 let musicLoadedItemId = null; // item da fila carregado no player
+let musicLastSeekAt = null;    // último seek corretivo no item carregado (limita a um por SEEK_COOLDOWN_MS)
 let musicPlayerGen = 0;       // invalida criações de player pendentes (API ainda carregando)
 let youTubeApiPromise = null;
 
@@ -1088,7 +1089,7 @@ function syncMusicTile() {
   musicTileEl.classList.remove('hidden');
   const current = musicState.queue[0];
   musicTileEl.querySelector('.music-tile-label').textContent =
-    `🎵 ${current.title || current.videoId} · ${musicState.queue.length} na fila`;
+    `🎵 ${current.title || current.videoId} · ${musicState.queue.length - 1} na fila`; // queue[0] é a atual
 }
 
 function destroyMusicPlayer() {
@@ -1099,6 +1100,7 @@ function destroyMusicPlayer() {
   musicPlayer = null;
   musicPlayerReady = false;
   musicLoadedItemId = null;
+  musicLastSeekAt = null;
   if (musicTileEl) {
     const host = musicTileEl.querySelector('.music-player-host');
     host.innerHTML = '';
@@ -1155,6 +1157,7 @@ function syncMusicPlayer() {
 
   if (musicLoadedItemId !== item.id) {
     musicLoadedItemId = item.id;
+    musicLastSeekAt = null;
     const opts = { videoId: item.videoId, startSeconds: targetMs / 1000 };
     if (musicState.playing) musicPlayer.loadVideoById(opts);
     else musicPlayer.cueVideoById(opts);
@@ -1165,7 +1168,10 @@ function syncMusicPlayer() {
   if (state === YT_STATE.ENDED) return; // aguardando o servidor avançar a fila
   // seekTo num vídeo só "cued" começa a tocar; pausado e cued já está no ponto certo
   const seekable = musicState.playing || state === YT_STATE.PAUSED;
-  if (seekable && needsSeek(musicPlayer.getCurrentTime() * 1000, targetMs)) {
+  const now = Date.now();
+  // Um seek corretivo por janela: com buffering lento, o PLAYING seguinte ao seek já chega atrasado
+  if (seekable && shouldCorrectSeek(musicPlayer.getCurrentTime() * 1000, targetMs, musicLastSeekAt, now)) {
+    musicLastSeekAt = now;
     musicPlayer.seekTo(targetMs / 1000, true);
   }
   const running = state === YT_STATE.PLAYING || state === YT_STATE.BUFFERING;

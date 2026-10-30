@@ -106,3 +106,15 @@ test('needsSeek', () => {
   assert.equal(M.needsSeek(10000, 11900), false);
   assert.equal(M.needsSeek(10000, 12100), true);
 });
+
+test('shouldCorrectSeek: no máximo uma correção por janela de SEEK_COOLDOWN_MS', () => {
+  assert.equal(M.SEEK_COOLDOWN_MS, 5000);
+  // primeira correção (sem seek anterior no item) é aceita
+  assert.equal(M.shouldCorrectSeek(10000, 15000, null, 100000), true);
+  // segunda correção dentro da janela é recusada, mesmo com deriva grande (buffering lento)
+  assert.equal(M.shouldCorrectSeek(15000, 18500, 100000, 103000), false);
+  // passada a janela, volta a corrigir
+  assert.equal(M.shouldCorrectSeek(15000, 18500, 100000, 105000), true);
+  // sem deriva acima da tolerância, nunca corrige
+  assert.equal(M.shouldCorrectSeek(10000, 11900, null, 100000), false);
+});

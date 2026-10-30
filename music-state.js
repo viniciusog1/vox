@@ -5,6 +5,9 @@
   const MAX_QUEUE = 50;
   const SYNC_TOLERANCE_MS = 2000;
   const RESYNC_INTERVAL_MS = 15000;
+  // Intervalo mínimo entre seeks corretivos no mesmo item: com buffering lento depois de um
+  // seek, a deriva volta a passar da tolerância e corrigir de novo entraria em laço.
+  const SEEK_COOLDOWN_MS = 5000;
 
   function createMusicState() {
     return { queue: [], playing: false, positionMs: 0, startedAt: null };
@@ -82,10 +85,16 @@
     return Math.abs(currentMs - targetMs) > SYNC_TOLERANCE_MS;
   }
 
+  // lastSeekAtMs: quando foi o último seek corretivo no item atual (null = nenhum).
+  function shouldCorrectSeek(currentMs, targetMs, lastSeekAtMs, nowMs) {
+    if (!needsSeek(currentMs, targetMs)) return false;
+    return lastSeekAtMs === null || nowMs - lastSeekAtMs >= SEEK_COOLDOWN_MS;
+  }
+
   const api = {
-    MAX_QUEUE, SYNC_TOLERANCE_MS, RESYNC_INTERVAL_MS,
+    MAX_QUEUE, SYNC_TOLERANCE_MS, RESYNC_INTERVAL_MS, SEEK_COOLDOWN_MS,
     createMusicState, addTrack, removeTrack, advanceIfCurrent, endedIfCurrent,
-    togglePause, positionAt, toPublic, targetPositionMs, needsSeek
+    togglePause, positionAt, toPublic, targetPositionMs, needsSeek, shouldCorrectSeek
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else window.ConcordMusic = api;
