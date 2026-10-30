@@ -87,10 +87,19 @@
   .channel .hash { color: var(--muted); font-weight: 600; width: 16px; text-align: center; }
   .channel.voice .voice-icon { width: 16px; text-align: center; }
 
-  .voice-users { padding: 2px 0 6px 26px; }
+  .voice-users { padding: 2px 0 6px 22px; }
   .voice-user {
-    display: flex; align-items: center; gap: 6px;
-    font-size: 12.5px; color: var(--muted); padding: 3px 0;
+    display: flex; align-items: center; gap: 8px; min-width: 0;
+    font-size: 13px; color: var(--text-2); padding: 3px 6px; border-radius: 5px;
+  }
+  .voice-user:hover { background: color-mix(in srgb, var(--text) 5%, transparent); }
+  .voice-user .vu-avatar { width: 24px; height: 24px; font-size: 10px; flex-shrink: 0; transition: box-shadow .12s ease; }
+  .voice-user.speaking .vu-avatar { box-shadow: 0 0 0 2px var(--bg-2), 0 0 0 4px var(--speak); }
+  .voice-user .vu-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .voice-user .vu-icons { margin-left: auto; display: flex; align-items: center; gap: 4px; font-size: 11px; flex-shrink: 0; }
+  .live-badge {
+    background: var(--danger-bg); color: #fff; font-size: 9px; font-weight: 800;
+    letter-spacing: .4px; padding: 1px 5px; border-radius: 4px;
   }
   .voice-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); box-shadow: 0 0 6px var(--green); }
   .voice-user .bot-tag { font-size: 10px; color: var(--link); }
@@ -773,6 +782,7 @@
     document.write('<script src="https://cdn.socket.io/4.7.2/socket.io.min.js"><\/script>');
   }
 </script>
+<script src="speaking.js"></script>
 <script src="renderer.js"></script>
 </body>
 </html>

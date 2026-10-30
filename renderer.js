@@ -124,6 +124,8 @@ function setPeerVolume(name, vol) {
   applyPeerVolume(name);
 }
 const analysers = new Map();      // socketId -> AnalyserNode
+const speakingStates = new Map(); // socketId (inclusive o próprio) -> estado do anel de fala
+let localAnalyser = null;         // { trackId, analyser } do microfone enviado
 
 let audioContext = null;
 let rafId = null;
@@ -214,7 +216,7 @@ function updateMyStatusUI() {
 }
 
 function sendStatus() {
-  socket.emit('update-state', { muted: !micEnabled, status: effectiveStatus() });
+  socket.emit('update-state', { muted: !micEnabled, status: effectiveStatus(), sharing: sharingScreen });
 }
 
 function resetIdleTimer() {
@@ -725,19 +727,24 @@ function renderMembers() {
     list.forEach((u) => {
       const line = document.createElement('div');
       line.className = 'voice-user';
-      const dot = document.createElement('span');
-      dot.className = 'status-dot ' + (u.status || 'online');
-      dot.style.width = '8px';
-      dot.style.height = '8px';
-      line.appendChild(dot);
-      line.appendChild(document.createTextNode(u.username));
-      if (u.muted) {
-        const mute = document.createElement('span');
-        mute.textContent = '🔇';
-        mute.style.marginLeft = '4px';
-        mute.style.fontSize = '11px';
-        line.appendChild(mute);
+      line.dataset.id = u.id;
+      const state = speakingStates.get(u.id);
+      if (state && state.speaking) line.classList.add('speaking');
+      line.appendChild(makeAvatar(u.username, 'vu-avatar'));
+      const name = document.createElement('span');
+      name.className = 'vu-name';
+      name.textContent = u.username;
+      line.appendChild(name);
+      const icons = document.createElement('span');
+      icons.className = 'vu-icons';
+      if (u.muted) icons.appendChild(document.createTextNode('🔇'));
+      if (u.sharing) {
+        const live = document.createElement('span');
+        live.className = 'live-badge';
+        live.textContent = 'AO VIVO';
+        icons.appendChild(live);
       }
+      if (icons.childNodes.length) line.appendChild(icons);
       listEl.appendChild(line);
     });
 
@@ -1125,9 +1132,50 @@ function setupAnalyser(id, stream) {
   }
 }
 
+// Analisa a faixa que é enviada aos outros (já com redução de ruído).
+// Refeito quando a faixa muda (troca de microfone ou de modo de ruído).
+function getLocalAnalyser() {
+  const track = getOutboundAudioTracks()[0];
+  if (!track) return null;
+  if (!localAnalyser || localAnalyser.trackId !== track.id) {
+    try {
+      const ctx = ensureAudioContext();
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 256;
+      ctx.createMediaStreamSource(new MediaStream([track])).connect(analyser);
+      localAnalyser = { trackId: track.id, analyser };
+    } catch (e) {
+      console.warn('Não foi possível analisar o microfone:', e);
+      return null;
+    }
+  }
+  return localAnalyser.analyser;
+}
+
+// Anel de "falando" nos avatares do canal de voz atual
+function updateSpeakingRings() {
+  const { levelFromAnalyser, createSpeakingState, updateSpeaking } = window.ConcordSpeaking;
+  const now = performance.now();
+  const levels = new Map();
+  analysers.forEach((analyser, id) => levels.set(id, levelFromAnalyser(analyser)));
+  const mine = micEnabled ? getLocalAnalyser() : null;
+  levels.set(socket.id, mine ? levelFromAnalyser(mine) : 0);
+
+  levels.forEach((level, id) => {
+    let state = speakingStates.get(id);
+    if (!state) { state = createSpeakingState(); speakingStates.set(id, state); }
+    const was = state.speaking;
+    if (updateSpeaking(state, level, now) === was) return;
+    document.querySelectorAll(`.voice-user[data-id="${CSS.escape(id)}"]`)
+      .forEach((el) => el.classList.toggle('speaking', state.speaking));
+  });
+  speakingStates.forEach((_, id) => { if (!levels.has(id)) speakingStates.delete(id); });
+}
+
 function startAudioLoop() {
   if (rafId) return;
   const loop = () => {
+    if (currentRoom) updateSpeakingRings();
     if (analysers.size === 0) {
       audioLevelEl.style.width = '0%';
       audioLabel.textContent = 'Ninguém falando';
@@ -1530,6 +1578,7 @@ btnScreen.addEventListener('click', async () => {
     });
 
     sharingScreen = true;
+    sendStatus();
     replaceVideoTrackEverywhere(screenStream.getVideoTracks()[0], screenStream);
     renderTiles();
 
@@ -1562,6 +1611,7 @@ function stopScreenShare() {
     screenStream = null;
   }
   sharingScreen = false;
+  sendStatus();
 
   const camTrack = localStream ? localStream.getVideoTracks()[0] : null;
   replaceVideoTrackEverywhere(camTrack || null, localStream);
@@ -1693,6 +1743,8 @@ function leaveCall() {
   if (monitorAudio) monitorAudio.srcObject = null;
   if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
   analysers.clear();
+  speakingStates.clear();
+  localAnalyser = null;
   destroyMicProcessing();
   closeFullscreenView();
 
