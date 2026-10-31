@@ -46,5 +46,8 @@
   },
   "dependencies": {
     "socket.io": "^4.7.0"
+  },
+  "allowScripts": {
+    "electron": true
   }
 }
