@@ -11,6 +11,7 @@ App desktop para Windows 11 de chat, voz, vídeo e compartilhamento de tela, fei
 - Chamada de voz e vídeo P2P (WebRTC); câmera e compartilhamento de tela só com a voz conectada
 - Compartilhamento de tela com seletor de janela/tela
 - Qualidade do compartilhamento: 480p, 720p ou 1080p e 30 ou 60 FPS (padrão 1080p 30 FPS)
+- Áudio do PC no compartilhamento (Windows, opcional): vai todo o som do computador, inclusive as vozes da chamada
 - Visualização do compartilhamento em tela cheia (botão de tela cheia no bloco ou duplo clique)
 - Redução de ruído do microfone (gate + filtro + compressor), com níveis de intensidade
 - Coluna **Membros** com todas as contas do servidor, separadas em Online e Offline, com bolinha de status sobre o avatar e, para quem está na sua chamada, o estado da conexão e o ping ("Conectando…", "Conectado · 32 ms", "Reconectando…", "Falhou")
@@ -57,7 +58,7 @@ A primeira tela é o login. Crie uma conta ou entre com uma existente.
 npm run dist
 ```
 
-O instalador fica em `dist/Vox Setup <versão>.exe` (a versão vem de `package.json`, hoje `1.1.0`).
+O instalador fica em `dist/Vox Setup <versão>.exe` (a versão vem de `package.json`, hoje `1.2.0`).
 
 - O instalador é **sem assinatura digital** (para não exigir certificado pago). O Windows pode mostrar o aviso do SmartScreen: clique em **Mais informações → Executar assim mesmo**.
 - O app instalado grava usuários e mensagens em `%APPDATA%\Vox`.

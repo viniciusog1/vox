@@ -6,6 +6,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   close: () => ipcRenderer.send('window-close'),
 
   onDisplaySources: (cb) => ipcRenderer.on('display-sources', (event, list) => cb(list)),
-  selectDisplaySource: (id) => ipcRenderer.send('display-source-selected', id),
+  selectDisplaySource: (id, opts) => ipcRenderer.send('display-source-selected', id, { audio: !!(opts && opts.audio) }),
   cancelDisplaySource: () => ipcRenderer.send('display-source-cancelled')
 });
