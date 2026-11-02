@@ -135,7 +135,9 @@ Saída: `dist\Vox Setup <versão>.exe` (versão de `package.json`).
   - Um transceiver de vídeo é criado mesmo com a câmera desligada, para permitir `replaceTrack` depois sem renegociação.
   - Streams remotos sem vídeo ativo mostram avatar e um `<audio class="remote-audio">` escondido.
 - Compartilhamento de tela:
-  - `getDisplayMedia({ video: currentShareVideoConstraints(), audio: false })`.
+  - `getDisplayMedia({ video: currentShareVideoConstraints(), audio: SHARE_AUDIO_SUPPORTED })` (só Windows).
+  - Áudio do PC: caixa `#share-audio` no seletor, sempre desmarcada ao abrir. Marcada, `main.js` responde `audio: 'loopback'`, que pega **todo** o som do PC, inclusive as vozes da chamada (quem fala se ouve com atraso). O Electron 28 não tem como excluir o som do próprio Vox. O aviso fica no seletor.
+  - Transporte do áudio da tela: cada peer tem um segundo transceiver de áudio desde `createPeer` (`getScreenAudioTransceiver`: o 2º áudio com mid); `applyScreenAudio` faz `replaceTrack` sem renegociar. Quem recebe toca essa faixa num `<audio>` próprio (`screenAudioEls`): o `<audio>`/`<video>` do tile só toca a primeira faixa de áudio do stream.
   - Qualidade escolhida no seletor: `#share-resolution` (480/720/1080) e `#share-fps` (30/60), padrão 1080p30.
   - Persistência em `vox-share-resolution` e `vox-share-fps`.
   - O track da tela substitui o da câmera em todos os peers via `replaceVideoTrackEverywhere`.
@@ -427,10 +429,11 @@ Antes de considerar uma alteração concluída:
 
 ## 9. Estado atual conhecido
 
-- Versão em `package.json`: `1.1.0`. `PROTOCOL_VERSION` `4`.
+- Versão em `package.json`: `1.2.0`. `PROTOCOL_VERSION` `4`.
+- npm 12 bloqueia scripts de instalação: `allowScripts` em `package.json` libera o do `electron` (sem ele o `electron.exe` não é baixado).
 - Instaladores antigos (ainda com o nome Concord) no PC com Windows: `dist\Concord Setup 1.0.0.exe`, `1.0.1.exe` e `1.0.2.exe`. Nenhum instalador foi gerado desde a troca de nome e as mudanças de temas, música, membros e conexão.
 - Instalador NSIS sem assinatura e com ícone padrão do Electron.
 - No Windows, o app antigo está instalado como Concord (`%LOCALAPPDATA%\Programs\Concord`), com dados em `%APPDATA%\Concord` (conta `vinicius` e histórico de `geral`).
-- Pendências: testar no Windows o compartilhamento 1080p60 e o player do YouTube; servidor TURN; áudio do app no compartilhamento de tela; atualização automática.
+- Pendências: testar no Windows o compartilhamento 1080p60 e o player do YouTube; servidor TURN; áudio da tela sem as vozes da chamada (exige Electron mais novo); atualização automática.
 - O app instalado e o de desenvolvimento podem estar em estados diferentes; sempre confirme qual está rodando.
 - O Cloudflare Tunnel pode estar ativo. A URL é temporária e não deve ser documentada como fixa.

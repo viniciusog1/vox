@@ -301,12 +301,14 @@ app.whenReady().then(() => {
 
       mainWindow.webContents.send('display-sources', list);
 
-      pendingDisplayCallback = async (sourceId) => {
+      pendingDisplayCallback = async (sourceId, opts = {}) => {
         if (!sourceId) return callback({});
         const fresh = await desktopCapturer.getSources({ types: ['screen', 'window'] });
         const chosen = fresh.find((s) => s.id === sourceId);
-        if (chosen) return callback({ video: chosen });
-        return callback({});
+        if (!chosen) return callback({});
+        // 'loopback' só existe no Windows e captura todo o som do PC (inclusive a chamada).
+        const withAudio = opts.audio && request.audioRequested && process.platform === 'win32';
+        return callback(withAudio ? { video: chosen, audio: 'loopback' } : { video: chosen });
       };
     } catch (e) {
       console.error('[DISPLAY] Erro ao listar fontes:', e);
@@ -314,10 +316,10 @@ app.whenReady().then(() => {
     }
   });
 
-  ipcMain.on('display-source-selected', async (event, sourceId) => {
+  ipcMain.on('display-source-selected', async (event, sourceId, opts) => {
     const cb = pendingDisplayCallback;
     pendingDisplayCallback = null;
-    if (cb) await cb(sourceId);
+    if (cb) await cb(sourceId, opts);
   });
 
   ipcMain.on('display-source-cancelled', () => {

@@ -53,6 +53,8 @@ const sourceList = document.getElementById('source-list');
 const sourceCancel = document.getElementById('source-cancel');
 const shareResolutionSelect = document.getElementById('share-resolution');
 const shareFpsSelect = document.getElementById('share-fps');
+const shareAudioField = document.getElementById('share-audio-field');
+const shareAudioCheckbox = document.getElementById('share-audio');
 
 const myStatusEl = document.getElementById('my-status');
 const myStatusDot = document.getElementById('my-status-dot');
@@ -128,6 +130,10 @@ function applyPeerVolume(name) {
     if (tile.dataset.peerKey !== name) return;
     tile.querySelectorAll('video, audio').forEach((el) => { el.volume = vol; });
   });
+  screenAudioEls.forEach((el, id) => {
+    const u = userMap.get(id);
+    if (u && u.username === name) el.volume = vol;
+  });
 }
 
 function setPeerVolume(name, vol) {
@@ -170,6 +176,9 @@ let fullscreenMuteTimer = null;
 // Qualidade do compartilhamento de tela
 let shareResolution = localStorage.getItem('vox-share-resolution') || '1080';
 let shareFps = Number(localStorage.getItem('vox-share-fps') || 30) === 60 ? 60 : 30;
+// Áudio do PC na tela: só o Windows tem captura 'loopback' no Electron.
+const SHARE_AUDIO_SUPPORTED = /Windows/.test(navigator.userAgent);
+const screenAudioEls = new Map(); // socketId -> <audio> com o áudio do PC de quem compartilha
 
 let statusMode = 'online'; // online | away | busy | invisible
 let autoAway = false;
@@ -539,8 +548,50 @@ async function adoptOfferTransceivers(pc) {
       if (orphan.sender.track && !negotiated.sender.track) await negotiated.sender.replaceTrack(orphan.sender.track);
       orphan.stop();
     }
-    if (negotiated.direction === 'recvonly') negotiated.direction = 'sendrecv';
+    // Inclui o segundo áudio (tela): sem sendrecv, quem respondeu não envia o áudio do PC.
+    ofKind.filter((t) => t.mid !== null && t.direction === 'recvonly').forEach((t) => { t.direction = 'sendrecv'; });
   }
+}
+
+// Segundo transceiver de áudio negociado (o primeiro é o microfone): áudio do PC
+// no compartilhamento de tela. Null com quem não tem essa m-line.
+function getScreenAudioTransceiver(pc) {
+  const list = pc.getTransceivers().filter(
+    (t) => !t.stopped && t.mid !== null && t.receiver && t.receiver.track && t.receiver.track.kind === 'audio'
+  );
+  return list[1] || null;
+}
+
+function applyScreenAudio(pc) {
+  const transceiver = getScreenAudioTransceiver(pc);
+  if (!transceiver) return;
+  const track = (sharingScreen && screenStream && screenStream.getAudioTracks()[0]) || null;
+  if (transceiver.sender.track === track) return;
+  transceiver.sender.replaceTrack(track)
+    .catch((e) => console.warn('Falha ao trocar áudio da tela:', e));
+}
+
+// Elemento próprio: o <audio>/<video> do tile só toca a primeira faixa de áudio do stream.
+function attachScreenAudio(id, track) {
+  removeScreenAudio(id);
+  const audio = document.createElement('audio');
+  audio.autoplay = true;
+  audio.className = 'remote-audio';
+  audio.style.display = 'none';
+  audio.srcObject = new MediaStream([track]);
+  const u = userMap.get(id);
+  audio.volume = getPeerVolume(u ? u.username : '');
+  if (typeof audio.setSinkId === 'function') audio.setSinkId(audioOutputId || '').catch(() => {});
+  document.body.appendChild(audio);
+  screenAudioEls.set(id, audio);
+}
+
+function removeScreenAudio(id) {
+  const audio = screenAudioEls.get(id);
+  if (!audio) return;
+  audio.srcObject = null;
+  audio.remove();
+  screenAudioEls.delete(id);
 }
 
 function preferVideoCodecs(pc) {
@@ -665,6 +716,9 @@ function createPeer(id) {
     pc.addTransceiver('video', { direction: 'sendrecv' });
   }
 
+  // Áudio do PC no compartilhamento de tela, também sem renegociar (applyScreenAudio).
+  pc.addTransceiver('audio', { direction: 'sendrecv' });
+
   pc._pendingCandidates = [];
 
   pc.onicecandidate = (e) => {
@@ -672,6 +726,10 @@ function createPeer(id) {
   };
 
   pc.ontrack = (e) => {
+    if (e.track.kind === 'audio' && e.transceiver === getScreenAudioTransceiver(pc)) {
+      attachScreenAudio(id, e.track);
+      return;
+    }
     let stream = remoteStreams.get(id);
     if (!stream) {
       stream = e.streams[0] || new MediaStream();
@@ -708,6 +766,7 @@ function createPeer(id) {
     if (['failed', 'closed', 'disconnected'].includes(pc.connectionState)) {
       if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
         remoteStreams.delete(id);
+        removeScreenAudio(id);
         analysers.delete(id);
         peers.delete(id);
         renderTiles();
@@ -724,6 +783,7 @@ function closeAllPeers() {
   peers.clear();
   peerConn.clear();
   remoteStreams.clear();
+  [...screenAudioEls.keys()].forEach(removeScreenAudio);
   analysers.clear();
   renderTiles();
 }
@@ -833,10 +893,12 @@ socket.on('signal', async ({ from, data }) => {
       await pc.setLocalDescription(answer);
       socket.emit('signal', { to: from, data: { answer } });
       applyVideoSenderParams(pc);
+      applyScreenAudio(pc);
     } else if (data.answer) {
       await pc.setRemoteDescription(withVideoBitrateHints(data.answer));
       await flushCandidates(pc);
       applyVideoSenderParams(pc);
+      applyScreenAudio(pc);
     } else if (data.candidate) {
       if (pc.remoteDescription && pc.remoteDescription.type) {
         await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
@@ -863,6 +925,7 @@ socket.on('room-users', (list) => {
       peers.delete(id);
       peerConn.delete(id);
       remoteStreams.delete(id);
+      removeScreenAudio(id);
       analysers.delete(id);
       removed = true;
     }
@@ -2369,7 +2432,7 @@ btnScreen.addEventListener('click', async () => {
     ensureAudioContext();
     const stream = await navigator.mediaDevices.getDisplayMedia({
       video: currentShareVideoConstraints(),
-      audio: false
+      audio: SHARE_AUDIO_SUPPORTED // o áudio só vem se marcado no seletor (main.js)
     });
     if (leaves !== voiceLeaves || !currentVoiceRoom) {
       stream.getTracks().forEach((t) => t.stop()); // saiu da voz antes de escolher a tela
@@ -2382,6 +2445,7 @@ btnScreen.addEventListener('click', async () => {
     sharingScreen = true;
     sendStatus();
     replaceVideoTrackEverywhere(screenTrack, screenStream);
+    peers.forEach(applyScreenAudio);
     renderTiles();
 
     VoxIcons.setIcon(btnScreen, 'monitor-stop', 'Parar');
@@ -2415,6 +2479,7 @@ function stopScreenShare() {
   }
   sharingScreen = false;
   sendStatus();
+  peers.forEach(applyScreenAudio);
 
   const camTrack = localStream ? localStream.getVideoTracks()[0] : null;
   replaceVideoTrackEverywhere(camTrack || null, localStream);
@@ -2453,13 +2518,18 @@ window.electronAPI.onDisplaySources((sources) => {
 
     item.addEventListener('click', () => {
       sourcePicker.classList.add('hidden');
-      window.electronAPI.selectDisplaySource(src.id);
+      window.electronAPI.selectDisplaySource(src.id, {
+        audio: SHARE_AUDIO_SUPPORTED && shareAudioCheckbox.checked
+      });
     });
 
     sourceList.appendChild(item);
   });
 
   applyShareQualityUI();
+  // Sempre desmarcado: o áudio do PC leva também as vozes da chamada.
+  shareAudioCheckbox.checked = false;
+  shareAudioField.classList.toggle('hidden', !SHARE_AUDIO_SUPPORTED);
   sourcePicker.classList.remove('hidden');
 });
 
