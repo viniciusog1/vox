@@ -83,7 +83,7 @@ Versões até a 1.3.0 não têm atualização automática: quem estiver nelas pr
 - O app instalado grava usuários e mensagens em `%APPDATA%\Vox`.
 - O app se chamava **Concord**. Na primeira vez que o Vox abre, ele copia os dados da pasta antiga (`%APPDATA%\Concord`: contas, mensagens, tema e preferências) para a nova. A pasta antiga não é apagada.
 - A versão de desenvolvimento (`npm start`) continua usando os arquivos da pasta do projeto.
-- O instalador usa o ícone padrão do Electron. Para trocar, adicione um `icon.ico` e ajuste a configuração em `package.json`.
+- Ícone: o desenho fica em `assets/icon.svg` (e `assets/icon-small.svg` para 16–24 px). Depois de mudar, rode `npx electron scripts/gerar-icone.js` para gerar `build/icon.ico` e `assets/icon.png`.
 
 ## Testar com um amigo
 

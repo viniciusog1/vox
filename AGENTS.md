@@ -98,6 +98,10 @@ Saída: `dist\Vox-Setup-<versão>.exe`, `.blockmap` e `latest.yml` (versão de `
 | `room-state.js` | Estado público do usuário na sala de voz (`publicUser`, `applyStatePatch`: `muted`, `status`, `sharing`) e troca de canais (`joinVoiceRoom`, `leaveVoiceRoom`, `canUseTextRoom`, `socketRoomsToLeave`). Usado por `main.js`. |
 | `test/` | Testes `node:test` (`npm test`): paletas e contraste, CSS sem cores fixas, estrutura das configurações, estado da sala, canais, presença, protocolo, detecção de fala, YouTube, fila de música, efeitos sonoros, chat (menções, editar/apagar, não lidas, notificações), sessões e endereço do túnel. Fora do instalador. |
 | `preload.js` | Ponte segura `contextBridge` para o IPC do seletor de tela, do túnel (`tunnelStart`/`tunnelStop`/`tunnelStatus`/`onTunnelStatus`), da atualização (`updateStatus`/`onUpdateStatus`/`installUpdate`) e das notificações (`focusWindow`, `flashFrame`). Ainda expõe `minimize`/`maximize`/`close`, sem uso desde que a janela passou a usar os botões nativos. |
+| `assets/icon.svg`, `assets/icon-small.svg`, `assets/icon.png` | Ícone do Vox: barras de equalizador roxas cujas pontas (rosa nas bordas, ciano no meio) formam um V. `icon-small.svg` é a versão de 3 barras usada até 24 px. `icon.png` (256 px, gerado) é o ícone da janela; `icon.svg` aparece na tela de login. |
+| `build/icon.ico` | Ícone do instalador e do `Vox.exe` (16 a 256 px, entradas BMP 32 bits), gerado por `scripts/gerar-icone.js`. Não editar à mão. |
+| `scripts/gerar-icone.js` | `npx electron scripts/gerar-icone.js`: desenha os SVGs num canvas escondido e grava `build/icon.ico` e `assets/icon.png`. Fora do instalador. |
+| `scripts/after-pack.js` | Hook `afterPack` do electron-builder: grava ícone e versão no `Vox.exe` com `rcedit` (necessário porque `signAndEditExecutable` está desligado). Fora do instalador. |
 | `index.html` | Layout e CSS de toda a interface; também contém os modais e a tela de login. |
 | `package.json` | Scripts, dependências e configuração do electron-builder. |
 | `socket.io.min.js` | Bundle do cliente Socket.io copiado pelo `postinstall`; **não editar à mão**. |
@@ -372,7 +376,7 @@ No Windows sem privilégio de symlink, a extração do `winCodeSign` falha. Por 
 Não remova isso sem testar. Consequências atuais:
 
 - instalador **sem assinatura digital**;
-- ícone padrão do Electron;
+- o electron-builder não grava ícone nem versão no `Vox.exe`: quem faz isso é `scripts/after-pack.js` (hook `afterPack`, com o pacote `rcedit`). **Medido:** `Vox.exe` e `Vox-Setup-*.exe` saem com o ícone do Vox e versão no arquivo;
 - SmartScreen pode avisar.
 
 ### Porta 3000
@@ -464,7 +468,7 @@ Antes de considerar uma alteração concluída:
 - Atualização automática (`setupAutoUpdate` em `main.js`, só no app instalado): procura na release mais recente do GitHub ao abrir e a cada 4 h, baixa sozinha e mostra `#update-banner`; instala em "Reiniciar e atualizar" ou ao fechar. **Medido:** sem `latest.yml` na release (caso da v1.2.0 publicada hoje) só registra erro 404 no log, sem afetar o app. Versões até 1.3.0 não têm o atualizador: instalar a 1.4.0 à mão uma vez.
 - O pacote `electron` 45 não tem script de instalação: o `electron.exe` é baixado na primeira vez que `npm start` roda (ou com `node node_modules/electron/install.js`). Exige Node ≥ 22.12.
 - Instaladores antigos (ainda com o nome Concord) no PC com Windows: `dist\Concord Setup 1.0.0.exe`, `1.0.1.exe` e `1.0.2.exe`. Nenhum instalador foi gerado desde a troca de nome e as mudanças de temas, música, membros e conexão.
-- Instalador NSIS sem assinatura e com ícone padrão do Electron.
+- Instalador NSIS sem assinatura, com o ícone próprio do Vox.
 - No Windows, o app antigo está instalado como Concord (`%LOCALAPPDATA%\Programs\Concord`), com dados em `%APPDATA%\Concord` (conta `vinicius` e histórico de `geral`).
 - Pendências: compartilhamento 1080p60 (captura limitada a ~32 fps com o Vox em segundo plano); servidor TURN; testar a atualização automática com uma release real (1.4.0 → seguinte); conferir as notificações do Windows no app instalado.
 - O app instalado e o de desenvolvimento podem estar em estados diferentes; sempre confirme qual está rodando.
