@@ -14,6 +14,7 @@ App desktop para Windows 11 de chat, voz, vídeo e compartilhamento de tela, fei
 - Áudio do PC no compartilhamento (Windows, opcional): vai todo o som do computador, inclusive as vozes da chamada
 - Visualização do compartilhamento em tela cheia (botão de tela cheia no bloco ou duplo clique)
 - Redução de ruído do microfone (gate + filtro + compressor), com níveis de intensidade
+- Efeitos sonoros curtos quando alguém entra ou sai da sua voz (inclusive você) e quando você muta ou desmuta o microfone, gerados no próprio app e tocados no dispositivo de saída escolhido. Podem ser desligados em Configurações → aba Áudio
 - Coluna **Membros** com todas as contas do servidor, separadas em Online e Offline, com bolinha de status sobre o avatar e, para quem está na sua chamada, o estado da conexão e o ping ("Conectando…", "Conectado · 32 ms", "Reconectando…", "Falhou")
 - Canal de voz mostrando quem está conectado, com avatar, bolinha de status, anel de quem está falando, ícone de microfone desligado e selo "AO VIVO" para quem compartilha a tela
 - Painel compacto da voz conectada (nome do canal + botão de desligar) logo acima do seu perfil

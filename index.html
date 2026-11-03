@@ -1090,6 +1090,12 @@
       <span>Ouvir meu microfone (teste)</span>
     </label>
     <p class="settings-hint">Ao ativar, você ouvirá sua própria voz. Use fones de ouvido para evitar microfonia.</p>
+
+    <label class="toggle-row">
+      <input type="checkbox" id="sound-effects-toggle" checked>
+      <span>Efeitos sonoros</span>
+    </label>
+    <p class="settings-hint">Toca um som curto quando alguém entra ou sai da sua voz e quando você muta ou desmuta o microfone.</p>
     </div>
 
     <p class="settings-hint">As mensagens ficam salvas por 7 dias e depois são apagadas automaticamente.</p>
@@ -1118,6 +1124,7 @@
 </div>
 
 <audio id="monitor-audio" autoplay></audio>
+<audio id="sound-effects-audio" autoplay></audio>
 <div id="toast" class="hidden" role="status" aria-live="polite"></div>
 
 <script src="./socket.io.min.js"></script>
@@ -1133,6 +1140,7 @@
 <script src="protocol.js"></script>
 <script src="youtube.js"></script>
 <script src="music-state.js"></script>
+<script src="sounds.js"></script>
 <script src="renderer.js"></script>
 </body>
 </html>

@@ -86,13 +86,14 @@ Saída: `dist\Vox Setup <versão>.exe` (versão de `package.json`).
 | `themes.js` | Os 18 temas (paletas, id padrão `escuro`) e os grupos do seletor (`THEME_GROUPS`: Escuros, Neon, Anime, Claros; cada tema tem `group`), leitura/gravação em `localStorage['vox-theme']`, `applyTheme`, opção "Reduzir animações" (`vox-reduce-motion`, `data-reduce-motion` no `<html>`) e `migrateLegacyStorage` (copia `concord-*` → `vox-*`). Carregado no `<head>` antes do CSS para aplicar o tema antes da primeira pintura. Também é módulo Node (testes). |
 | `icons.js` | Ícones SVG do Lucide (lucide-static 0.460.0, licença ISC) usados na interface: `icon(name, size)`, `setIcon(el, name, text, size)` e `hydrate(root)`, que troca `<i data-icon="…">` pelo SVG. Só os ícones usados estão no arquivo; para um novo, copie de `lucide-static/icons/*.svg`. Também é módulo Node (testes). |
 | `speaking.js` | Detecção de "falando" com histerese (liga ≥ 0.12, desliga após 250 ms abaixo) para o anel do avatar. |
+| `sounds.js` | Efeitos sonoros gerados com Web Audio (sem arquivos): `SOUNDS` (`join`, `leave`, `mute`, `unmute`), `playSound`, `rosterSound` (decide o som pela diferença entre a lista anterior e a nova da voz) e `isEnabled` (`vox-sound-effects`). Usado por `renderer.js`. Também é módulo Node (testes). |
 | `channels.js` | Lista fixa de canais: `TEXT_CHANNELS` (`geral`, `jogos`, `musica`) e `VOICE_CHANNELS` (`voz-sala`, `voz-jogos`, `voz-musica`); padrões `geral` e `voz-sala`. Usado por `main.js` e `renderer.js`. Também é módulo Node (testes). |
 | `protocol.js` | `PROTOCOL_VERSION` (hoje `4`), mensagem de versão incompatível e `isCompatible`. Usado por `main.js` e `renderer.js`. Também é módulo Node (testes). |
 | `youtube.js` | `parseYouTubeId` (aceita links `youtu.be`, `watch?v=`, `shorts`, `embed`), `thumbnailUrl` e `lookupVideo` (oEmbed público, sem chave, timeout de 4 s). Usado por `main.js`. Também é módulo Node (testes). |
 | `music-state.js` | Regras puras da fila de música: `MAX_QUEUE` (50), `SYNC_TOLERANCE_MS` (2000), `RESYNC_INTERVAL_MS` (15000), `SEEK_COOLDOWN_MS` (5000), `shouldCorrectSeek`, adicionar/remover, pular ou terminar só se o item ainda é o atual, alternar pausa e posição atual. Usado por `main.js` e `renderer.js`. Também é módulo Node (testes). |
 | `presence.js` | Regras de status: modo escolhido (`online`, `away`, `busy`, `invisible`), ausente automático só a partir de Online e atividade que desfaz só o automático. Também é módulo Node (testes). |
 | `room-state.js` | Estado público do usuário na sala de voz (`publicUser`, `applyStatePatch`: `muted`, `status`, `sharing`) e troca de canais (`joinVoiceRoom`, `leaveVoiceRoom`, `canUseTextRoom`, `socketRoomsToLeave`). Usado por `main.js`. |
-| `test/` | Testes `node:test` (`npm test`): paletas e contraste, CSS sem cores fixas, estrutura das configurações, estado da sala, canais, presença, protocolo, detecção de fala, YouTube e fila de música. Fora do instalador. |
+| `test/` | Testes `node:test` (`npm test`): paletas e contraste, CSS sem cores fixas, estrutura das configurações, estado da sala, canais, presença, protocolo, detecção de fala, YouTube, fila de música e efeitos sonoros. Fora do instalador. |
 | `preload.js` | Ponte segura `contextBridge` para o IPC do seletor de tela. Ainda expõe `minimize`/`maximize`/`close`, sem uso desde que a janela passou a usar os botões nativos. |
 | `index.html` | Layout e CSS de toda a interface; também contém os modais e a tela de login. |
 | `package.json` | Scripts, dependências e configuração do electron-builder. |
@@ -166,6 +167,11 @@ Saída: `dist\Vox Setup <versão>.exe` (versão de `package.json`).
   - Modos em `vox-noise-suppression`: `off`, `browser`, `strong`. Intensidade em `vox-noise-gate-level`.
   - O monitor do próprio microfone toca a faixa processada.
 - Quem está falando aparece pelo anel no avatar da lista da voz (`speaking.js`), inclusive você. A antiga barra "Ninguém falando" foi removida.
+- Efeitos sonoros (`sounds.js` + `playSoundEffect`):
+  - Tocam ao entrar/sair alguém da sua voz (inclusive você) e ao mutar/desmutar. Sem evento novo: a entrada e a saída saem da diferença entre listas de `room-users` (`soundRoster`). A primeira lista depois de `join-voice` toca só a sua entrada, não a de quem já estava; a sua saída toca em `leaveVoice`.
+  - Invisíveis não vêm na lista, então não tocam ao entrar; quem fica invisível some da lista e soa como saída para os outros (igual a sair de verdade, sem denunciar a invisibilidade).
+  - Contexto de áudio próprio (`soundContext`, nunca fechado; o da chamada fecha ao sair da voz) → `MediaStreamDestination` → `<audio id="sound-effects-audio">`, que entra em `applyOutputDevice` para seguir `audioOutputId`.
+  - Opção "Efeitos sonoros" na aba Áudio, em `vox-sound-effects` (padrão ligado; `0` desliga).
 
 ### Eventos Socket.io principais
 
@@ -284,6 +290,7 @@ const DATA_DIR = app.isPackaged ? app.getPath('userData') : __dirname;
 - `vox-theme` (id do tema; inválido ou ausente → `escuro`)
 - `vox-reduce-motion` (`1` desliga as animações dos temas)
 - `vox-music-volume` (volume local do player de música, 0–100, padrão 50; só neste computador)
+- `vox-sound-effects` (`0` desliga os efeitos sonoros; ausente ou `1` = ligados)
 
 Ficam no perfil do Electron em `%APPDATA%\Vox` (no macOS em desenvolvimento: `~/Library/Application Support/vox`). Antes do Vox as chaves começavam com `concord-`; `migrateLegacyStorage` copia para `vox-*` sem sobrescrever.
 
