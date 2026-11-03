@@ -54,6 +54,9 @@
   }
   .rail-btn:hover { border-radius: 12px; background: var(--accent); }
   .rail-btn.active { border-radius: 12px; background: var(--accent); box-shadow: var(--glow); }
+  /* Servidor com o ícone do Vox: a imagem já tem fundo e cantos próprios */
+  .rail-btn.rail-server { padding: 0; overflow: hidden; background: transparent; }
+  .rail-server img { width: 100%; height: 100%; display: block; }
   .rail-sep { width: 32px; height: 2px; background: var(--border); border-radius: 1px; margin: 2px 0; }
 
   /* ================= COLUNA DE CANAIS ================= */
@@ -529,9 +532,9 @@
     border-radius: 16px; padding: 34px 38px;
     box-shadow: 0 24px 60px rgba(0,0,0,.55);
   }
-  .brand { display: flex; align-items: center; gap: 10px; margin-bottom: 22px; }
-  .brand-logo { width: 40px; height: 40px; display: block; }
-  .brand h1 { font-size: 20px; letter-spacing: .2px; }
+  .brand { display: flex; flex-direction: column; align-items: center; gap: 8px; margin-bottom: 22px; }
+  .brand-logo { width: 72px; height: 72px; display: block; }
+  .brand h1 { font-size: 22px; letter-spacing: .4px; }
   .overlay-card h2 { font-size: 22px; margin-bottom: 6px; }
   .overlay-card .sub { color: var(--muted); font-size: 13px; margin-bottom: 20px; }
   .tabs { display: flex; gap: 6px; margin-bottom: 18px; border-bottom: 1px solid var(--border); }
@@ -934,7 +937,7 @@
 <div id="app">
   <!-- Rail de servidores -->
   <nav id="server-rail">
-    <div class="rail-btn active" title="Casa dos Amigos"><i data-icon="house" data-size="22"></i></div>
+    <div class="rail-btn rail-server active" title="Casa dos Amigos"><img src="assets/icon.svg" alt="Casa dos Amigos"></div>
     <div class="rail-sep"></div>
     <div class="rail-btn" title="Jogos"><i data-icon="gamepad-2" data-size="22"></i></div>
     <div class="rail-btn" title="Música"><i data-icon="music" data-size="22"></i></div>
