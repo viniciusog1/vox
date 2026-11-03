@@ -3,7 +3,8 @@
 // roda no Node (testes).
 (function () {
   const STORAGE_KEY = 'vox-sound-effects';
-  const SOUND_VOLUME = 0.12;
+  // 0.12 ficou baixo demais na prática; acima de ~0.6 as notas sobrepostas estouram.
+  const SOUND_VOLUME = 0.55;
 
   // Notas curtas: { freq (Hz), start (s), dur (s) }. Entrar/sair em senoide,
   // mudo em triângulo e mais rápido, para não confundir os dois pares.
