@@ -68,6 +68,7 @@ const settingsClose = document.getElementById('settings-close');
 const inputDeviceSelect = document.getElementById('input-device');
 const outputDeviceSelect = document.getElementById('output-device');
 const monitorToggle = document.getElementById('monitor-toggle');
+const soundEffectsToggle = document.getElementById('sound-effects-toggle');
 const monitorAudio = document.getElementById('monitor-audio');
 const clearMyMessages = document.getElementById('clear-my-messages');
 const settingsError = document.getElementById('settings-error');
@@ -831,6 +832,7 @@ async function joinVoice(room) {
     return; // outra troca de canal começou
   }
 
+  soundRoster = null; // a próxima lista é a do canal novo: toca só a minha entrada
   socket.emit('join-voice', room);
   sendStatus();
   updateMonitor();
@@ -915,6 +917,13 @@ socket.on('signal', async ({ from, data }) => {
 socket.on('room-users', (list) => {
   userMap.clear();
   list.forEach((u) => userMap.set(u.id, u));
+
+  if (currentVoiceRoom) {
+    const listIds = list.map((u) => u.id);
+    const sound = VoxSounds.rosterSound(soundRoster, listIds, socket.id);
+    soundRoster = listIds;
+    if (sound) playSoundEffect(sound);
+  }
 
   // Remove conexões de pessoas que saíram da sala
   let removed = false;
@@ -1782,6 +1791,32 @@ function ensureAudioContext() {
   return audioContext;
 }
 
+/* ================= EFEITOS SONOROS ================= */
+// Contexto próprio (o audioContext da chamada é fechado ao sair da voz) tocando
+// num <audio>, para seguir a saída escolhida via setSinkId.
+let soundEffectsEnabled = VoxSounds.isEnabled(localStorage.getItem(VoxSounds.STORAGE_KEY));
+let soundContext = null;
+let soundDestination = null;
+let soundRoster = null; // ids da última lista da voz; null até a primeira depois de entrar
+const soundAudio = document.getElementById('sound-effects-audio');
+
+function playSoundEffect(name) {
+  if (!soundEffectsEnabled) return;
+  try {
+    if (!soundContext) {
+      soundContext = new (window.AudioContext || window.webkitAudioContext)();
+      soundDestination = soundContext.createMediaStreamDestination();
+      soundAudio.srcObject = soundDestination.stream;
+      if (typeof soundAudio.setSinkId === 'function') soundAudio.setSinkId(audioOutputId || '').catch(() => {});
+    }
+    if (soundContext.state === 'suspended') soundContext.resume();
+    soundAudio.play().catch(() => {});
+    VoxSounds.playSound(soundContext, soundDestination, name);
+  } catch (e) {
+    console.error('Erro ao tocar efeito sonoro:', e);
+  }
+}
+
 /* ================= REDUÇÃO DE RUÍDO DO MICROFONE ================= */
 const NOISE_GATE_WORKLET = `
 class VoxNoiseGate extends AudioWorkletProcessor {
@@ -2176,6 +2211,7 @@ async function changeInputDevice(id) {
 async function applyOutputDevice() {
   const targets = [...document.querySelectorAll('.remote-video, .remote-audio')];
   if (monitorAudio) targets.push(monitorAudio);
+  targets.push(soundAudio);
 
   for (const el of targets) {
     if (typeof el.setSinkId !== 'function') continue;
@@ -2210,6 +2246,7 @@ btnSettings.addEventListener('click', async () => {
   showSettingsTab('audio');
   settingsModal.classList.remove('hidden');
   monitorToggle.checked = monitorEnabled;
+  soundEffectsToggle.checked = soundEffectsEnabled;
   applyNoiseSuppressionUI();
   await refreshDevices();
 });
@@ -2236,6 +2273,11 @@ monitorToggle.addEventListener('change', () => {
   monitorEnabled = monitorToggle.checked;
   localStorage.setItem('monitorEnabled', monitorEnabled ? '1' : '0');
   updateMonitor();
+});
+
+soundEffectsToggle.addEventListener('change', () => {
+  soundEffectsEnabled = soundEffectsToggle.checked;
+  localStorage.setItem(VoxSounds.STORAGE_KEY, soundEffectsEnabled ? '1' : '0');
 });
 
 if (noiseSuppressionSelect) {
@@ -2283,6 +2325,7 @@ function toggleMic() {
     localStream.getAudioTracks().forEach((t) => { t.enabled = micEnabled; });
   }
   if (micProcessedTrack) micProcessedTrack.enabled = micEnabled;
+  playSoundEffect(VoxSounds.soundFor(!micEnabled));
   updateControlButtons();
   sendStatus();
   renderMembers();
@@ -2632,7 +2675,11 @@ function leaveVoice() {
     sourcePicker.classList.add('hidden');
     window.electronAPI.cancelDisplaySource();
   }
-  if (currentVoiceRoom) socket.emit('leave-voice');
+  if (currentVoiceRoom) {
+    socket.emit('leave-voice');
+    playSoundEffect('leave');
+  }
+  soundRoster = null;
   closeAllPeers();
 
   if (screenStream) {
