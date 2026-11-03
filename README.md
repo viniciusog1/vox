@@ -1,57 +1,168 @@
+<div align="center">
+
+<img src="assets/icon.png" alt="Ícone do Vox" width="112">
+
 # Vox
 
-App desktop para Windows 11 de chat, voz, vídeo e compartilhamento de tela, feito com Electron, WebRTC e Socket.io.
+**Chat, voz, vídeo e tela compartilhada para jogar e conversar com os amigos — rodando no seu próprio PC.**
 
-## Recursos
+![Versão](https://img.shields.io/badge/vers%C3%A3o-1.5.0-7c4dff)
+![Windows 11](https://img.shields.io/badge/Windows-11-0078D4?logo=windows11&logoColor=white)
+![Electron](https://img.shields.io/badge/Electron-45-47848F?logo=electron&logoColor=white)
+![Node.js](https://img.shields.io/badge/Node.js-%E2%89%A5%2022.12-339933?logo=nodedotjs&logoColor=white)
+![Testes](https://img.shields.io/badge/testes-143%20passando-3ba55d)
+![Sem nuvem](https://img.shields.io/badge/servidor-no%20seu%20PC-ff6bcb)
 
-- Login e cadastro com senha (hash PBKDF2)
-- Servidores: crie o seu (você vira o dono) e convide pessoas com um código (`VOX-XXXXXXXX`, gerado no menu do servidor → Convidar pessoas). Cada servidor tem seus canais de texto e de voz, que dono e administradores criam, renomeiam e apagam. Cargos: dono (pode tudo, inclusive apagar o servidor, promover administradores e passar a posse) e administrador (canais, convites e expulsar membros comuns). Quem sai ou é expulso perde o acesso aos canais
-- Amigos: envie e aceite pedidos pelo Início (abas Online, Todos, Pendentes e Adicionar), converse por mensagens diretas e ligue para um amigo (a outra pessoa recebe um aviso de chamada para atender ou recusar; se um lado desliga, a chamada acaba para os dois). Escrever e ligar exigem amizade
-- Chat de texto com histórico por canal e por conversa direta
-- Editar e apagar as próprias mensagens (passe o mouse sobre a mensagem); mensagem editada mostra "(editada)"
-- Imagens no chat: botão de imagem, colar com Ctrl+V ou arrastar para o chat. O Vox reduz a imagem (até 1920 px, máximo 2 MB) antes de enviar; GIF vai como está
-- Menções com `@nome` (com sugestões ao digitar), destacadas na mensagem
-- Contador de não lidas em cada canal de texto (`@` vermelho quando mencionaram você) e no título da janela
-- Notificações do Windows para mensagens novas, com som nas menções. Configurações → aba Notificações: todas, só menções ou nunca. No status Ocupado nada avisa
-- Reconexão automática: se a conexão com o servidor cair, o Vox avisa no topo, volta sozinho para o mesmo canal de texto e para a mesma voz, sem pedir a senha de novo
-- Atualização automática pelas releases do GitHub (no app instalado): baixa sozinho e avisa no topo para reiniciar
-- Botão "Abrir para amigos" (Configurações → aba Servidor): abre um túnel gratuito da Cloudflare e mostra o endereço para copiar
-- Canais de voz independentes do chat: você fica sempre em um canal de texto e, ao mesmo tempo, em no máximo um canal de voz. Trocar de canal de texto não derruba a chamada
-- Ao entrar, o Vox abre o último servidor que você usou e conecta no primeiro canal de voz dele, com o microfone aberto. Sem servidores, abre o Início
-- Chamada de voz e vídeo P2P (WebRTC); câmera e compartilhamento de tela só com a voz conectada
-- Compartilhamento de tela com seletor de janela/tela
-- Qualidade do compartilhamento: 480p, 720p ou 1080p e 30 ou 60 FPS (padrão 1080p 30 FPS)
-- Áudio do PC no compartilhamento (Windows, opcional): vai o som do computador, sem o que o próprio Vox toca (vozes da chamada, música e efeitos sonoros)
-- Visualização do compartilhamento em tela cheia (botão de tela cheia no bloco ou duplo clique)
-- Redução de ruído do microfone (Desligada, Padrão ou Forte), volume do microfone (0–200%) e sensibilidade do microfone com medidor ao vivo: automática (acompanha o ruído do ambiente) ou manual. Configurações → aba Áudio
-- Efeitos sonoros curtos quando alguém entra ou sai da sua voz (inclusive você) e quando você muta ou desmuta o microfone, gerados no próprio app e tocados no dispositivo de saída escolhido. Podem ser desligados em Configurações → aba Áudio
-- Coluna **Membros** com todas as contas do servidor, separadas em Online e Offline, com bolinha de status sobre o avatar e, para quem está na sua chamada, o estado da conexão e o ping ("Conectando…", "Conectado · 32 ms", "Reconectando…", "Falhou")
-- Canal de voz mostrando quem está conectado, com avatar, bolinha de status, anel de quem está falando, ícone de microfone desligado e selo "AO VIVO" para quem compartilha a tela
-- Painel compacto da voz conectada (nome do canal + botão de desligar) logo acima do seu perfil
-- A grade da chamada ajusta o tamanho dos blocos ao espaço disponível, inclusive em monitores grandes
-- Música do YouTube na chamada: cole um link do YouTube no painel de música (botão do YouTube na barra superior) e ele entra na fila do canal de voz. Todos na chamada ouvem a mesma música, sincronizada, e qualquer pessoa da chamada pode pausar, pular ou remover músicas da fila. A fila aparece como o primeiro bloco da grade de participantes; clique nele ou no botão do YouTube da barra superior para abrir o painel, onde também ficam o volume (só no seu computador) e a capa e o título de cada música
-- O vídeo do YouTube aparece no próprio Vox; nada é baixado. Cada pessoa usa o player oficial do YouTube. Ao sair da voz, a música para para você. Em tela cheia, o player vai para um canto da própria visualização, e o vídeo da música também pode ser aberto sozinho em tela cheia. O canal de voz com música mostra o ícone do YouTube ao lado do nome
-- 18 temas (Configurações → aba Aparência), salvos no próprio computador e organizados em quatro grupos — Escuros: Escuro, Grafite, Drácula, Nord, Aquático, Natureza, Pôr do sol; Neon: Cyberpunk, Neon Verde, Neon Vermelho, Neon Azul; Anime: Bizarro, Mangá, Ninja; Claros: Claro, Sépia, Lavanda / Sakura, Algodão-doce
-- Os temas Anime têm efeitos além das cores (fundos com degradês e padrões, animações e efeitos em quem está falando), sempre atrás dos vídeos. A opção "Reduzir animações dos temas" desliga as animações; a preferência do sistema por menos movimento também é respeitada
-- Foto de perfil: Configurações → aba Conta → Trocar foto (o Vox recorta o centro e reduz para 256 px). Aparece para todos no chat, na lista de membros, na voz e na chamada
-- Configurações em abas: Áudio, Conta (nome da conta e botão Sair da conta), Aparência, Notificações e Servidor
-- Ícones SVG próprios, iguais em qualquer sistema (sem depender de emojis)
-- Layout com rail de servidores, canais, chat e membros; a janela usa os botões nativos do sistema
-- Status Online, Ausente, Ocupado e Invisível. Ausente pode ser escolhido no menu e também é automático após 5 minutos sem atividade (a partir de Online)
-- Configuração do microfone e do dispositivo de saída de áudio
-- Opção de ouvir o próprio microfone para testar (use fones)
-- Histórico mantido por 7 dias e apagado automaticamente depois
-- Botão para apagar as próprias mensagens do canal atual (Configurações → aba Áudio, no fim)
+[✨ Recursos](#-recursos) · [📥 Instalar](#-instalar) · [🤝 Jogar com amigos](#-jogar-com-amigos) · [⚙️ Configurações](#️-configurações) · [🛠️ Desenvolvimento](#️-desenvolvimento) · [❓ Problemas comuns](#-problemas-comuns)
 
-Os temas Drácula e Nord usam as paletas dos projetos [Dracula](https://draculatheme.com) e [Nord](https://www.nordtheme.com), ambos com licença MIT. Os ícones são do [Lucide](https://lucide.dev) (licença ISC). Os temas Anime são apenas inspirados em estilos de anime: não usam imagens, logos nem nomes oficiais das obras.
+</div>
 
-## Pré-requisitos
+---
 
-Para usar o instalador, não é necessário instalar nada além do próprio Vox. Para desenvolver ou gerar o instalador, instale o [Node.js](https://nodejs.org/) (versão LTS).
+## 💡 Como funciona
 
-## Rodar
+| | |
+| --- | --- |
+| 🖥️ **Sem nuvem** | O PC de quem hospeda é o servidor. Contas, mensagens e servidores ficam nele. |
+| 🔗 **Conexão direta** | Voz, vídeo e tela vão de um PC para o outro (WebRTC), sem passar por servidor. |
+| 🌍 **Pela internet** | Um clique abre um túnel gratuito da Cloudflare para os amigos entrarem. |
+| 💸 **Grátis** | Nenhum serviço pago, nenhuma assinatura. |
 
-Clone o repositório e rode na pasta do projeto (PowerShell no Windows ou terminal no macOS):
+---
+
+## ✨ Recursos
+
+### 🏠 Servidores e canais
+- ➕ Crie quantos servidores quiser — você vira o dono
+- 🎟️ Convide com um código (`VOX-XXXXXXXX`)
+- 🏡 **Casa dos Amigos**: o servidor de todo mundo — toda conta nova já entra nele
+- `#` Canais de texto e 🔊 canais de voz: criar, renomear e apagar
+- 👑 **Dono** pode tudo · 🛡️ **Administrador** cuida de canais, convites e expulsões
+- 🔁 Passar a posse, promover, expulsar, sair e apagar o servidor
+
+### 👥 Amigos e mensagens diretas
+- 🙋 Pedidos de amizade: enviar, aceitar, recusar e cancelar
+- ✉️ Mensagens diretas com tudo que o chat tem
+- 📞 **Ligar** para um amigo: voz, câmera e tela, com aviso tocando para atender ou recusar
+- 🔒 Mensagem e chamada só entre amigos
+
+### 💬 Chat
+- ✏️ Editar e 🗑️ apagar as próprias mensagens
+- 🖼️ Imagens: botão, **Ctrl+V** ou arrastar (reduzidas sozinhas, até 2 MB)
+- 📣 Menções com `@nome`, com sugestões ao digitar
+- 🔴 Contador de não lidas por canal, por servidor e no título da janela
+- 🧹 Mensagens apagadas depois de 7 dias (máx. 200 por canal)
+
+### 🎙️ Voz, vídeo e tela
+- 🎧 Canais de voz independentes do chat — trocar de canal de texto não derruba a chamada
+- 📷 Câmera e 🖥️ tela compartilhada (480p a 1080p, 30 ou 60 fps)
+- 🔈 Áudio do PC na transmissão — **sem** o som do próprio Vox (nada de eco)
+- 🔇 Redução de ruído (Desligada, Padrão ou Forte)
+- 🎚️ Volume e **sensibilidade do microfone**, com medidor ao vivo e ajuste automático
+- 🟢 Anel em quem está falando, ping de cada pessoa e selo **AO VIVO**
+- 🔔 Sons ao entrar, sair, mutar e desmutar
+
+### 🎵 Música do YouTube
+- 🔗 Cole um link e todos na chamada ouvem juntos, sincronizado
+- ⏯️ Qualquer um pausa, pula ou tira da fila (até 50 músicas)
+- 🔊 Volume da música só no seu PC
+- ▶️ Player oficial do YouTube: nada é baixado
+
+### 🎨 Aparência e perfil
+- 🌈 **18 temas** em 4 grupos: Escuros, Neon, Anime e Claros
+- ✨ Temas Anime com efeitos animados (dá para reduzir as animações)
+- 🧑‍🎤 Foto de perfil, visível para todos
+- 🟢 Status: Online, Ausente (automático após 5 min), Ocupado e Invisível
+
+### 🔌 Conexão
+- 🔄 **Reconecta sozinho** se a conexão cair — volta para o mesmo canal e a mesma voz
+- ⬆️ **Atualização automática** pelas releases do GitHub
+- 🌍 Botão **Abrir para amigos**: túnel da Cloudflare com o endereço para copiar
+- 🔔 Notificações do Windows (todas, só menções ou nunca)
+
+---
+
+## 📥 Instalar
+
+1. ⬇️ Baixe o `Vox-Setup-<versão>.exe` na página de [Releases](https://github.com/viniciusog1/vox/releases).
+2. 🛡️ O Windows pode mostrar o aviso do **SmartScreen** (o instalador não tem assinatura paga): clique em **Mais informações → Executar assim mesmo**.
+3. 🚀 Abra o Vox, crie sua conta e pronto.
+
+> [!TIP]
+> Depois de instalado, o Vox se atualiza sozinho. Quando sair uma versão nova, aparece um aviso no topo para reiniciar.
+
+> [!NOTE]
+> Quem está na **1.3.0 ou anterior** precisa instalar a versão nova à mão uma vez — essas versões ainda não tinham o atualizador.
+
+---
+
+## 🤝 Jogar com amigos
+
+Uma pessoa **hospeda** (deixa o Vox aberto no PC dela). Os outros se conectam a ela.
+
+### 🏠 Mesma rede (Wi-Fi ou cabo)
+
+1. 🖥️ **Host:** abra o Vox e entre normalmente.
+2. 🔍 Descubra o IP do PC com `ipconfig` (ex.: `192.168.1.15`).
+3. 🧑‍🤝‍🧑 **Amigo:** na tela de login, campo **Servidor**, digite `http://192.168.1.15:3000` e clique em **Aplicar**.
+4. ✅ O amigo cria a conta e já cai na **Casa dos Amigos**.
+
+<details>
+<summary>🧱 A conexão não funciona? Libere a porta 3000 no firewall</summary>
+
+Se o Windows perguntar, permita o Vox em **Redes privadas**. Se a rede estiver como **Pública**, rode no PowerShell como administrador:
+
+```powershell
+New-NetFirewallRule -DisplayName "Vox 3000" -Direction Inbound -Protocol TCP -LocalPort 3000 -Action Allow -Profile Private,Public
+```
+
+Use o perfil `Public` só durante o teste e numa rede confiável.
+
+</details>
+
+### 🌍 Casas diferentes (internet)
+
+1. ⚙️ **Host:** Configurações → aba **Servidor** → **Abrir para amigos**.
+2. 📋 Clique em **Copiar** e mande o endereço (`https://algo.trycloudflare.com`).
+3. 🧑‍🤝‍🧑 **Amigo:** cola o endereço no campo **Servidor** e clica em **Aplicar**.
+
+> [!NOTE]
+> - ⏳ Um endereço novo leva cerca de **1 minuto** para começar a funcionar.
+> - 🔁 O endereço muda toda vez que o túnel abre — mande o novo para os amigos.
+> - 📦 Na primeira vez, o Vox baixa o `cloudflared` oficial (~60 MB).
+> - 🖥️ O host continua usando `http://127.0.0.1:3000`.
+
+### 🎟️ Convidar para outros servidores
+
+1. 👑 Dono ou admin: clique no **nome do servidor** (topo da coluna de canais) → **Convidar pessoas**.
+2. 📋 Mande o código `VOX-XXXXXXXX`.
+3. ➕ O amigo clica em **+** na barra da esquerda e cola o código.
+
+---
+
+## ⚙️ Configurações
+
+Engrenagem ao lado do seu nome, no canto inferior esquerdo.
+
+| Aba | O que tem |
+| --- | --- |
+| 🎙️ **Áudio** | Microfone e saída, redução de ruído, volume e sensibilidade do microfone, ouvir o próprio microfone, sons |
+| 👤 **Conta** | Foto de perfil e sair da conta |
+| 🎨 **Aparência** | 18 temas e reduzir animações |
+| 🔔 **Notificações** | Avisar de todas as mensagens, só de menções ou nunca |
+| 🌍 **Servidor** | Abrir o túnel para os amigos e copiar o endereço |
+
+🗑️ No rodapé: **Apagar minhas mensagens deste canal**.
+
+---
+
+## 🛠️ Desenvolvimento
+
+### 📋 Requisitos
+- 🟩 [Node.js](https://nodejs.org/) **22.12 ou mais novo** (o Electron 45 exige)
+- 🪟 Windows 11 para gerar o instalador (desenvolver também funciona no macOS)
+
+### ▶️ Rodar
 
 ```powershell
 git clone https://github.com/viniciusog1/vox
@@ -60,69 +171,102 @@ npm install
 npm start
 ```
 
-Testes: `npm test`.
+- 🧪 Testes: `npm test`
+- ⬇️ Na primeira vez, o `npm start` baixa o Electron sozinho
 
-A primeira tela é o login. Crie uma conta ou entre com uma existente.
-
-## Gerar instalador .exe
+### 📦 Gerar o instalador
 
 ```powershell
 npm run dist
 ```
 
-O instalador fica em `dist/Vox-Setup-<versão>.exe` (a versão vem de `package.json`, hoje `1.5.0`).
+Sai em `dist/`: `Vox-Setup-<versão>.exe`, `.blockmap` e `latest.yml`.
 
-### Publicar uma versão (atualização automática)
+### 🚀 Publicar uma versão
 
-O Vox instalado procura versões novas na release mais recente de https://github.com/viniciusog1/vox/releases. Para publicar:
+1. 🔢 Suba `version` em `package.json` e rode `npm run dist`.
+2. 🏷️ Crie uma release no GitHub com a tag `v<versão>` (ex.: `v1.5.0`).
+3. 📎 Anexe **os três arquivos** de `dist/`.
+4. ✅ Publique (rascunho não vale) — os Vox instalados avisam para atualizar.
 
-1. Suba `version` em `package.json` e rode `npm run dist`.
-2. No GitHub, crie uma release com a tag `v<versão>` (ex.: `v1.4.0`) e anexe **os três arquivos** de `dist/`: `Vox-Setup-<versão>.exe`, `Vox-Setup-<versão>.exe.blockmap` e `latest.yml`.
-3. Publique a release (rascunho não vale). Quem estiver com o Vox aberto recebe o aviso para reiniciar; quem abrir depois, também.
+### 🎨 Trocar o ícone
+- ✏️ Edite `assets/icon.svg` (e `assets/icon-small.svg`, usado até 24 px)
+- ⚙️ Rode `npx electron scripts/gerar-icone.js` para gerar `build/icon.ico` e `assets/icon.png`
 
-Versões até a 1.3.0 não têm atualização automática: quem estiver nelas precisa instalar a 1.4.0 uma vez à mão.
+> [!IMPORTANT]
+> Cliente e servidor precisam da **mesma versão do protocolo**. Quando mudar algum evento, todo mundo precisa atualizar — o login avisa quem estiver numa versão diferente.
 
-- O instalador é **sem assinatura digital** (para não exigir certificado pago). O Windows pode mostrar o aviso do SmartScreen: clique em **Mais informações → Executar assim mesmo**.
-- O app instalado grava usuários e mensagens em `%APPDATA%\Vox`.
-- O app se chamava **Concord**. Na primeira vez que o Vox abre, ele copia os dados da pasta antiga (`%APPDATA%\Concord`: contas, mensagens, tema e preferências) para a nova. A pasta antiga não é apagada.
-- A versão de desenvolvimento (`npm start`) continua usando os arquivos da pasta do projeto.
-- Ícone: o desenho fica em `assets/icon.svg` (e `assets/icon-small.svg` para 16–24 px). Depois de mudar, rode `npx electron scripts/gerar-icone.js` para gerar `build/icon.ico` e `assets/icon.png`.
+---
 
-## Testar com um amigo
+## 📁 Onde ficam os dados
 
-O servidor já escuta na rede local (`0.0.0.0:3000`). Não é mais preciso editar o código.
+| | Desenvolvimento (`npm start`) | Instalado |
+| --- | --- | --- |
+| 📂 Pasta | pasta do projeto | `%APPDATA%\Vox` |
 
-### Mesma rede (Wi-Fi/cabo)
+| Arquivo | Conteúdo |
+| --- | --- |
+| 👤 `users.json` | Contas (senha só como hash PBKDF2) e foto de perfil |
+| 💬 `messages.json` | Mensagens dos canais e das conversas diretas |
+| 🏠 `servers.json` | Servidores, canais, cargos e convites |
+| 👥 `friends.json` | Amizades e pedidos |
+| 🔑 `sessions.json` | Sessões para reconectar sem senha |
+| 🖼️ `uploads/` · `avatars/` | Imagens do chat e fotos de perfil |
 
-1. **Você (host)**: abra o Vox, deixe o servidor em `http://127.0.0.1:3000` e entre/crie sua conta.
-2. Descubra seu IPv4 com `ipconfig` (ex.: `192.168.1.15`).
-3. **Seu amigo**: instale o Vox, abra e, no campo **Servidor** da tela de login, digite `http://192.168.1.15:3000` e clique em **Aplicar**.
-4. Seu amigo cria a conta dele (a conta fica no seu servidor) e já entra na **Casa dos Amigos**, o servidor de todo mundo. Para outros servidores ele precisa de um **código de convite**: quem é dono ou administrador gera em menu do servidor → **Convidar pessoas** e manda para ele; ele clica em `+` na barra da esquerda e cola o código.
-5. Se o Windows perguntar, permita o Vox em **Redes privadas**. Se a rede estiver marcada como **Pública** ou a conexão não funcionar, libere a porta 3000 no PowerShell como administrador:
-   ```powershell
-   New-NetFirewallRule -DisplayName "Vox 3000" -Direction Inbound -Protocol TCP -LocalPort 3000 -Action Allow -Profile Private,Public
-   ```
-   Use o perfil `Public` apenas durante o teste e em uma rede confiável.
+- 🧹 Imagens somem junto com a mensagem (7 dias, limite de 200, ou quando o autor apaga)
+- 🔐 Fechar o Vox pede login de novo na próxima abertura
+- 📦 O app se chamava **Concord**: na primeira abertura, o Vox copia os dados de `%APPDATA%\Concord`
 
-### Casas diferentes (internet)
+---
 
-1. No seu PC, com o Vox aberto, vá em **Configurações → aba Servidor** e clique em **Abrir para amigos**. Na primeira vez o Vox baixa o `cloudflared` (programa oficial da Cloudflare, cerca de 60 MB) para `%APPDATA%\Vox\tools`.
-2. Clique em **Copiar** e mande o endereço (ex.: `https://algo.trycloudflare.com`) para seu amigo. Um endereço novo pode levar cerca de 1 minuto para começar a funcionar.
-3. Seu amigo cola essa URL no campo **Servidor** e clica em **Aplicar**.
-4. Você continua usando `http://127.0.0.1:3000`.
+## ❓ Problemas comuns
 
-O túnel fecha junto com o Vox. Se ele cair sozinho, o Vox reabre com um endereço novo: mande o novo para o seu amigo. Alternativas manuais: `IniciarTunelVox.bat` na pasta do projeto, `cloudflared tunnel --url http://127.0.0.1:3000` ou `ngrok http 3000`.
+<details>
+<summary>⚠️ "Seu Vox está em uma versão diferente da do servidor"</summary>
 
-> Chamadas de voz/vídeo entre redes diferentes podem precisar de um servidor TURN (ex.: Coturn). Sem TURN, algumas conexões podem falhar (a coluna Membros mostra "Falhou" para essa pessoa). Na mesma rede, não é necessário.
+O seu Vox e o do host estão em versões diferentes. Instale a versão mais nova das [Releases](https://github.com/viniciusog1/vox/releases) nos dois PCs.
 
-## Observações
+</details>
 
-- Desenvolvimento: `users.json`, `messages.json`, `servers.json`, `friends.json`, `sessions.json` e a pasta `uploads/` (imagens do chat) ficam na pasta do projeto.
-- Instalado: ficam em `%APPDATA%\Vox`.
-- As imagens do chat seguem as regras das mensagens: somem junto com elas (7 dias, limite de 200 por canal, ou quando o autor apaga). Quem tem o endereço do servidor e o nome aleatório do arquivo consegue abrir a imagem.
-- Ao fechar o Vox, a próxima abertura pede login de novo: a sessão de reconexão fica só na memória.
-- O campo **Servidor** fica na tela de login e é salvo no computador.
-- Versão: o app e o servidor precisam ser da mesma versão. Se forem diferentes, o login mostra um aviso para atualizar o Vox, e o amigo precisa instalar a versão nova.
-- Na mesma rede, a conexão usa HTTP (sem TLS). Use em uma rede confiável; para internet, prefira o túnel HTTPS.
-- O compartilhamento de tela usa o seletor nativo do Electron (janela ou tela inteira).
-- A qualidade real do vídeo depende da internet de quem envia e de quem recebe.
+<details>
+<summary>🔌 O Vox não abre o servidor (porta 3000 em uso)</summary>
+
+Só um Vox pode usar a porta 3000 por PC. Feche o outro (por exemplo, o de desenvolvimento) antes de abrir o instalado.
+
+</details>
+
+<details>
+<summary>📵 O chat funciona, mas a voz do amigo não conecta ("Falhou")</summary>
+
+Voz e vídeo vão direto entre os PCs. Algumas redes bloqueiam isso e precisariam de um servidor TURN, que o Vox ainda não tem. Na mesma rede, sempre funciona.
+
+</details>
+
+<details>
+<summary>🎤 Minha voz corta ou o ruído vaza</summary>
+
+Em Configurações → Áudio, olhe o medidor da **Sensibilidade do microfone**: a barra fica verde quando os outros te ouvem. Desmarque o automático e arraste para a esquerda (voz cortando) ou para a direita (ruído vazando).
+
+</details>
+
+<details>
+<summary>🌍 O endereço do túnel não abre</summary>
+
+Espere cerca de 1 minuto: o endereço novo leva esse tempo para funcionar. Se o túnel cair, o Vox abre outro com um endereço diferente — confira em Configurações → Servidor.
+
+</details>
+
+---
+
+## 📜 Créditos
+
+- 🎨 Ícones: [Lucide](https://lucide.dev) (licença ISC)
+- 🧛 Temas Drácula e Nord: paletas de [Dracula](https://draculatheme.com) e [Nord](https://www.nordtheme.com) (licença MIT)
+- 🍥 Temas Anime: só inspirados em estilos de anime — sem imagens, logos ou nomes oficiais
+- ⚡ Feito com [Electron](https://www.electronjs.org), [Socket.io](https://socket.io) e WebRTC
+
+<div align="center">
+
+Feito para jogar com os amigos 💜
+
+</div>
