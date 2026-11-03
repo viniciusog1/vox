@@ -7,5 +7,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   onDisplaySources: (cb) => ipcRenderer.on('display-sources', (event, list) => cb(list)),
   selectDisplaySource: (id, opts) => ipcRenderer.send('display-source-selected', id, { audio: !!(opts && opts.audio) }),
-  cancelDisplaySource: () => ipcRenderer.send('display-source-cancelled')
+  cancelDisplaySource: () => ipcRenderer.send('display-source-cancelled'),
+
+  focusWindow: () => ipcRenderer.send('focus-window'),
+  flashFrame: (on) => ipcRenderer.send('flash-frame', !!on),
+
+  tunnelStart: () => ipcRenderer.invoke('tunnel-start'),
+  tunnelStop: () => ipcRenderer.invoke('tunnel-stop'),
+  tunnelStatus: () => ipcRenderer.invoke('tunnel-status'),
+  onTunnelStatus: (cb) => ipcRenderer.on('tunnel-status', (event, s) => cb(s)),
+
+  updateStatus: () => ipcRenderer.invoke('update-status'),
+  onUpdateStatus: (cb) => ipcRenderer.on('update-status', (event, s) => cb(s)),
+  installUpdate: () => ipcRenderer.send('update-install')
 });

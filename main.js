@@ -10,6 +10,9 @@ const { isTextChannel, isVoiceChannel } = require('./channels');
 const { parseYouTubeId, lookupVideo } = require('./youtube');
 const { RESYNC_INTERVAL_MS, createMusicState, addTrack, removeTrack, advanceIfCurrent, endedIfCurrent, togglePause, toPublic } = require('./music-state');
 const { PROTOCOL_VERSION, VERSION_MISMATCH_MESSAGE, isCompatible } = require('./protocol');
+const chat = require('./chat-state');
+const { createSessionStore } = require('./sessions');
+const { createTunnel } = require('./tunnel');
 
 // ---------- Dados do antigo Concord ----------
 // O app se chamava Concord. Na primeira execução como Vox, copia a pasta de dados
@@ -46,6 +49,9 @@ const DATA_DIR = app.isPackaged ? app.getPath('userData') : __dirname;
 fs.mkdirSync(DATA_DIR, { recursive: true });
 const DB_PATH = path.join(DATA_DIR, 'messages.json');
 const USERS_PATH = path.join(DATA_DIR, 'users.json');
+const SESSIONS_PATH = path.join(DATA_DIR, 'sessions.json');
+const UPLOADS_DIR = path.join(DATA_DIR, 'uploads');
+fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 
 function readJsonFile(file) {
   try {
@@ -71,6 +77,47 @@ function saveUsers(data) {
 
 let messages = loadMessages();
 let users = loadUsers();
+if (chat.ensureIds(messages, () => crypto.randomUUID())) saveMessages(messages);
+
+const sessions = createSessionStore({
+  load: () => readJsonFile(SESSIONS_PATH),
+  save: (data) => fs.writeFileSync(SESSIONS_PATH, JSON.stringify(data, null, 2))
+});
+
+// Imagens do chat ficam em uploads/ e somem junto com a mensagem.
+function removeUpload(msg) {
+  if (!msg || !msg.image || !chat.isUploadName(msg.image.file)) return;
+  fs.rm(path.join(UPLOADS_DIR, msg.image.file), { force: true }, () => {});
+}
+
+// Apaga arquivos de uploads/ que nenhuma mensagem usa mais.
+function pruneUploads() {
+  const used = new Set();
+  for (const list of Object.values(messages)) for (const m of list) if (m.image) used.add(m.image.file);
+  for (const name of fs.readdirSync(UPLOADS_DIR)) {
+    if (!used.has(name)) fs.rm(path.join(UPLOADS_DIR, name), { force: true }, () => {});
+  }
+}
+
+const UPLOAD_TYPES = { jpg: 'image/jpeg', png: 'image/png', webp: 'image/webp', gif: 'image/gif' };
+
+// GET /uploads/<uuid>.<ext>: nomes aleatórios, só leitura, sem listar a pasta.
+function handleHttp(req, res) {
+  const m = /^\/uploads\/([^/?#]+)$/.exec(req.url || '');
+  if (req.method !== 'GET' || !m || !chat.isUploadName(m[1])) return false;
+  const file = path.join(UPLOADS_DIR, m[1]);
+  fs.readFile(file, (err, data) => {
+    if (err) { res.writeHead(404); return res.end(); }
+    res.writeHead(200, {
+      'Content-Type': UPLOAD_TYPES[path.extname(file).slice(1)],
+      'Cache-Control': 'private, max-age=604800, immutable',
+      'Access-Control-Allow-Origin': '*',
+      'X-Content-Type-Options': 'nosniff'
+    });
+    res.end(data);
+  });
+  return true;
+}
 
 const authenticated = new Map(); // socket.id -> username
 const roomUsers = new Map();     // room -> Map(socket.id -> { username, muted })
@@ -187,7 +234,9 @@ function purgeOldMessages() {
     const before = messages[room].length;
     messages[room] = messages[room].filter((m) => {
       const t = Date.parse(m.created_at);
-      return Number.isNaN(t) ? true : t >= cutoff;
+      const keep = Number.isNaN(t) ? true : t >= cutoff;
+      if (!keep) removeUpload(m);
+      return keep;
     });
     if (messages[room].length !== before) changed = true;
     if (messages[room].length === 0) {
@@ -203,7 +252,9 @@ function purgeOldMessages() {
 }
 
 purgeOldMessages();
-setInterval(purgeOldMessages, 60 * 60 * 1000);
+pruneUploads();
+sessions.prune();
+setInterval(() => { purgeOldMessages(); sessions.prune(); }, 60 * 60 * 1000);
 
 // ---------- Música ----------
 function emptyMusicState() {
@@ -262,6 +313,33 @@ function removeSocketFromRooms(socketId) {
   }
   broadcastVoiceRooms();
 }
+
+function sendToWindow(channel, payload) {
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload);
+}
+
+// Procura versão nova nas releases do GitHub (só no app instalado). Baixa sozinho
+// e avisa a interface; instala ao clicar em "Reiniciar" ou ao fechar o Vox.
+let updateStatus = { state: 'idle' };
+function setupAutoUpdate() {
+  ipcMain.handle('update-status', () => updateStatus);
+  if (!app.isPackaged) return;
+  const { autoUpdater } = require('electron-updater');
+  const set = (s) => { updateStatus = s; sendToWindow('update-status', s); };
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.on('update-available', (info) => set({ state: 'downloading', version: info.version, percent: 0 }));
+  autoUpdater.on('download-progress', (p) => set({ ...updateStatus, state: 'downloading', percent: Math.round(p.percent) }));
+  autoUpdater.on('update-downloaded', (info) => set({ state: 'ready', version: info.version }));
+  autoUpdater.on('error', (e) => console.error('[UPDATE]', e.message));
+  ipcMain.on('update-install', () => autoUpdater.quitAndInstall());
+  const check = () => autoUpdater.checkForUpdates().catch((e) => console.error('[UPDATE]', e.message));
+  check();
+  setInterval(check, 4 * 60 * 60 * 1000);
+}
+
+// Sem isso o Windows não mostra as notificações (o id é o mesmo do instalador).
+if (process.platform === 'win32') app.setAppUserModelId(app.isPackaged ? 'com.seunome.concord' : process.execPath);
 
 // ---------- App ----------
 app.whenReady().then(() => {
@@ -329,42 +407,67 @@ app.whenReady().then(() => {
   });
 
   // ---------- Servidor HTTP + Socket.io ----------
-  const server = http.createServer();
-  io = new Server(server, { cors: { origin: '*' } });
+  const server = http.createServer((req, res) => {
+    if (!handleHttp(req, res)) { res.writeHead(404); res.end(); }
+  });
+  // 3 MB: cabe uma imagem de até 2 MB (chat-state.MAX_IMAGE_BYTES) com folga.
+  io = new Server(server, { cors: { origin: '*' }, maxHttpBufferSize: 3 * 1024 * 1024 });
 
   io.on('connection', (socket) => {
     console.log('[SOCKET] Conectado:', socket.id);
 
+    // Login, cadastro ou retomada aceitos: o token permite reconectar sem senha.
+    function signIn(username, callback, token = sessions.issue(username)) {
+      authenticated.set(socket.id, username);
+      socket.data.token = token;
+      callback({ success: true, username, token, protocol: PROTOCOL_VERSION });
+      socket.emit('music-rooms', musicRoomsList());
+      broadcastServerMembers();
+    }
+
     socket.on('register', ({ username, password, protocol } = {}, callback) => {
+      if (typeof callback !== 'function') return;
       if (!isCompatible(protocol)) return callback({ success: false, message: VERSION_MISMATCH_MESSAGE });
-      if (!username || !password) return callback({ success: false, message: 'Preencha usuário e senha' });
-      if (users[username]) return callback({ success: false, message: 'Usuário já existe' });
+      if (typeof username !== 'string' || typeof password !== 'string' || !username || !password) {
+        return callback({ success: false, message: 'Preencha usuário e senha' });
+      }
+      if (!/^[\p{L}\p{N}_.-]{2,24}$/u.test(username) || ['__proto__', 'constructor', 'prototype'].includes(username)) {
+        return callback({ success: false, message: 'O usuário deve ter de 2 a 24 letras, números, ponto, hífen ou _' });
+      }
+      if (Object.keys(users).some((u) => u.toLowerCase() === username.toLowerCase())) {
+        return callback({ success: false, message: 'Usuário já existe' });
+      }
 
       const salt = crypto.randomBytes(16).toString('hex');
       const hash = crypto.pbkdf2Sync(password, salt, 100000, 64, 'sha512').toString('hex');
       users[username] = { salt, hash, created_at: new Date().toISOString() };
       saveUsers(users);
-      authenticated.set(socket.id, username);
-      callback({ success: true, username, protocol: PROTOCOL_VERSION });
-      socket.emit('music-rooms', musicRoomsList());
-      broadcastServerMembers();
+      signIn(username, callback);
     });
 
     socket.on('login', ({ username, password, protocol } = {}, callback) => {
+      if (typeof callback !== 'function') return;
       if (!isCompatible(protocol)) return callback({ success: false, message: VERSION_MISMATCH_MESSAGE });
-      const user = users[username];
+      const user = typeof username === 'string' && Object.hasOwn(users, username) ? users[username] : null;
       if (!user) return callback({ success: false, message: 'Usuário não encontrado' });
 
-      const hash = crypto.pbkdf2Sync(password, user.salt, 100000, 64, 'sha512').toString('hex');
+      const hash = crypto.pbkdf2Sync(String(password || ''), user.salt, 100000, 64, 'sha512').toString('hex');
       if (hash !== user.hash) return callback({ success: false, message: 'Senha incorreta' });
 
-      authenticated.set(socket.id, username);
-      callback({ success: true, username, protocol: PROTOCOL_VERSION });
-      socket.emit('music-rooms', musicRoomsList());
-      broadcastServerMembers();
+      signIn(username, callback);
+    });
+
+    // Reconexão: o cliente manda o token recebido no login.
+    socket.on('resume', ({ token, protocol } = {}, callback) => {
+      if (typeof callback !== 'function') return;
+      if (!isCompatible(protocol)) return callback({ success: false, message: VERSION_MISMATCH_MESSAGE });
+      const username = sessions.resolve(token, (u) => Object.hasOwn(users, u));
+      if (!username) return callback({ success: false, message: 'Sua sessão expirou. Entre de novo.' });
+      signIn(username, callback, token);
     });
 
     socket.on('logout', (callback) => {
+      if (socket.data.token) { sessions.revoke(socket.data.token); socket.data.token = null; }
       const username = authenticated.get(socket.id);
       if (username) {
         // Sai das salas do Socket.io antes dos broadcasts, para não receber mais eventos
@@ -375,7 +478,7 @@ app.whenReady().then(() => {
         socket.data.textRoom = null;
         broadcastServerMembers();
       }
-      if (callback) callback({ success: true });
+      if (typeof callback === 'function') callback({ success: true });
     });
 
     function requireAuth(callback) {
@@ -533,50 +636,105 @@ app.whenReady().then(() => {
       broadcastVoiceRooms();
     });
 
-    socket.on('signal', ({ to, data }) => {
+    socket.on('signal', ({ to, data } = {}) => {
       if (!requireAuth()) return;
+      // Só entre pessoas logadas: um socket anônimo não recebe nem manda sinalização.
+      if (!authenticated.has(to)) return;
       io.to(to).emit('signal', { from: socket.id, data });
     });
 
-    socket.on('save-message', ({ room, user, text }) => {
-      if (!requireAuth()) return;
-      if (!canUseTextRoom(socket.data.textRoom, room)) return;
+    // Eventos de chat vão para todas as pessoas logadas (com o canal), para os
+    // contadores de não lidas e as menções em outros canais.
+    function broadcastChat(event, payload) {
+      for (const socketId of authenticated.keys()) io.to(socketId).emit(event, payload);
+    }
+
+    // O autor é sempre o usuário logado neste socket, nunca um campo do cliente.
+    socket.on('save-message', ({ room, text, image } = {}, callback) => {
+      const reply = typeof callback === 'function' ? callback : () => {};
+      if (!requireAuth(reply)) return;
+      if (!canUseTextRoom(socket.data.textRoom, room)) return reply({ success: false, message: 'Canal inválido' });
+      const clean = chat.cleanText(text);
+      if (clean === null) return reply({ success: false, message: `A mensagem passa de ${chat.MAX_TEXT} caracteres.` });
+
+      let imageInfo = null;
+      if (image) {
+        const ext = chat.imageExtension(image.type);
+        const data = Buffer.isBuffer(image.data) ? image.data : null;
+        if (!ext || !data || !data.length) return reply({ success: false, message: 'Imagem inválida.' });
+        if (data.length > chat.MAX_IMAGE_BYTES) return reply({ success: false, message: 'A imagem passa de 2 MB.' });
+        const file = `${crypto.randomUUID()}.${ext}`;
+        fs.writeFileSync(path.join(UPLOADS_DIR, file), data);
+        imageInfo = {
+          file,
+          width: Math.max(0, Math.min(10000, Number(image.width) || 0)),
+          height: Math.max(0, Math.min(10000, Number(image.height) || 0))
+        };
+      }
+      if (!clean && !imageInfo) return reply({ success: false, message: 'Mensagem vazia.' });
+
       purgeOldMessages();
       if (!messages[room]) messages[room] = [];
-      const msg = { user, text, created_at: new Date().toISOString() };
+      const msg = { id: crypto.randomUUID(), user: authenticated.get(socket.id), text: clean, created_at: new Date().toISOString() };
+      if (imageInfo) msg.image = imageInfo;
       messages[room].push(msg);
-      if (messages[room].length > 200) messages[room] = messages[room].slice(-200);
+      if (messages[room].length > 200) messages[room].splice(0, messages[room].length - 200).forEach(removeUpload);
       saveMessages(messages);
-      // Envia para todos da sala, menos para quem enviou (o cliente já exibe localmente)
-      socket.to(room).emit('new-message', msg);
+      reply({ success: true, id: msg.id });
+      broadcastChat('new-message', { room, ...msg, mentions: chat.mentionsOf(clean, Object.keys(users)) });
+    });
+
+    socket.on('edit-message', ({ room, id, text } = {}, callback) => {
+      const reply = typeof callback === 'function' ? callback : () => {};
+      if (!requireAuth(reply) || !canUseTextRoom(socket.data.textRoom, room)) return reply({ success: false });
+      const msg = chat.editMessage(messages[room], id, authenticated.get(socket.id), text, new Date().toISOString());
+      if (!msg) return reply({ success: false, message: 'Não foi possível editar.' });
+      saveMessages(messages);
+      reply({ success: true });
+      broadcastChat('message-updated', { room, id: msg.id, text: msg.text, edited_at: msg.edited_at });
+    });
+
+    socket.on('delete-message', ({ room, id } = {}, callback) => {
+      const reply = typeof callback === 'function' ? callback : () => {};
+      if (!requireAuth(reply) || !canUseTextRoom(socket.data.textRoom, room)) return reply({ success: false });
+      const removed = chat.deleteMessage(messages[room], id, authenticated.get(socket.id));
+      if (!removed) return reply({ success: false, message: 'Não foi possível apagar.' });
+      if (messages[room].length === 0) delete messages[room];
+      removeUpload(removed);
+      saveMessages(messages);
+      reply({ success: true });
+      broadcastChat('message-deleted', { room, id });
     });
 
     socket.on('get-messages', (room, callback) => {
+      if (typeof callback !== 'function') return;
       if (!requireAuth() || !canUseTextRoom(socket.data.textRoom, room)) { callback([]); return; }
       purgeOldMessages();
       callback(messages[room] || []);
     });
 
     // Apaga apenas as mensagens do próprio usuário em um canal
-    socket.on('delete-my-messages', ({ room }, callback) => {
-      if (!requireAuth(callback)) return;
-      if (!canUseTextRoom(socket.data.textRoom, room)) {
-        if (callback) callback({ success: false });
-        return;
-      }
+    socket.on('delete-my-messages', ({ room } = {}, callback) => {
+      const reply = typeof callback === 'function' ? callback : () => {};
+      if (!requireAuth(reply)) return;
+      if (!canUseTextRoom(socket.data.textRoom, room)) return reply({ success: false });
       const username = authenticated.get(socket.id);
       let removed = 0;
 
       if (messages[room]) {
         const before = messages[room].length;
-        messages[room] = messages[room].filter((m) => m.user !== username);
+        messages[room] = messages[room].filter((m) => {
+          if (m.user !== username) return true;
+          removeUpload(m);
+          return false;
+        });
         removed = before - messages[room].length;
         if (messages[room].length === 0) delete messages[room];
         saveMessages(messages);
       }
 
       io.to(room).emit('messages-cleared', { user: username });
-      if (callback) callback({ success: true, count: removed });
+      reply({ success: true, count: removed });
     });
 
     socket.on('disconnect', () => {
@@ -607,6 +765,32 @@ app.whenReady().then(() => {
       console.log('[SERVER] Na rede local: ' + ips.map((ip) => `http://${ip}:3000`).join(', '));
     }
   });
+
+  // ---------- Túnel (abrir para amigos) ----------
+  const tunnel = createTunnel({
+    binDirs: [path.join(__dirname, 'tools'), path.join(app.getPath('userData'), 'tools')],
+    downloadDir: path.join(app.getPath('userData'), 'tools'),
+    onStatus: (s) => sendToWindow('tunnel-status', s)
+  });
+  ipcMain.handle('tunnel-start', () => tunnel.start());
+  ipcMain.handle('tunnel-stop', () => { tunnel.stop(); return tunnel.status(); });
+  ipcMain.handle('tunnel-status', () => tunnel.status());
+  app.on('before-quit', () => tunnel.stop());
+
+  // ---------- Notificações ----------
+  ipcMain.on('focus-window', () => {
+    if (!mainWindow) return;
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+  });
+  ipcMain.on('flash-frame', (event, on) => {
+    if (mainWindow && !mainWindow.isFocused()) mainWindow.flashFrame(!!on);
+  });
+  mainWindow.on('focus', () => mainWindow.flashFrame(false));
+
+  // ---------- Atualização automática ----------
+  setupAutoUpdate();
 
   // ---------- Controles de janela ----------
   ipcMain.on('window-minimize', () => mainWindow.minimize());

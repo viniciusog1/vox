@@ -398,6 +398,88 @@
     background: var(--accent); color: var(--on-accent); font-weight: 700; cursor: pointer;
   }
   #send-btn:hover { background: var(--accent-2); }
+  .msg-icon-btn {
+    width: 42px; height: 42px; flex-shrink: 0; border: none; border-radius: 10px;
+    background: var(--control); color: var(--text); cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .msg-icon-btn:hover { background: var(--control-hover); }
+
+  /* Mensagens: editar/apagar, menções, imagens */
+  .msg-row { position: relative; }
+  .msg-head { display: flex; align-items: baseline; gap: 8px; }
+  .msg-edited { font-size: 10px; color: var(--muted); }
+  .msg-actions {
+    position: absolute; top: -12px; right: 0; display: none; gap: 2px; padding: 2px;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 8px; z-index: 2;
+  }
+  .msg-row.own .msg-actions { right: auto; left: 0; }
+  .msg-row:hover .msg-actions, .msg-row:focus-within .msg-actions { display: flex; }
+  .msg-action {
+    width: 26px; height: 26px; border: none; border-radius: 6px; background: transparent;
+    color: var(--muted); cursor: pointer; display: flex; align-items: center; justify-content: center;
+  }
+  .msg-action:hover { color: var(--text); background: color-mix(in srgb, var(--text) 8%, transparent); }
+  .msg-action.danger:hover { color: var(--danger-text); }
+  .msg-mention { color: var(--link); font-weight: 600; background: color-mix(in srgb, var(--link) 14%, transparent); border-radius: 4px; padding: 0 2px; }
+  .msg-row.mentions-me .msg-body { box-shadow: inset 3px 0 0 var(--link); }
+  .msg-image {
+    display: block; margin: 4px 0; max-width: min(360px, 100%); max-height: 280px;
+    border-radius: 8px; cursor: zoom-in; background: var(--bg); object-fit: contain;
+  }
+  .msg-edit-input {
+    width: min(420px, 60vw); min-height: 34px; padding: 6px 10px; border-radius: 8px;
+    border: 1px solid var(--accent); background: var(--bg); color: var(--text); font: inherit; font-size: 14px; outline: none;
+  }
+  .msg-edit-hint { font-size: 11px; color: var(--muted); margin-top: 4px; }
+  #attach-preview {
+    flex-shrink: 0; display: flex; align-items: center; gap: 10px;
+    padding: 8px 20px; border-top: 1px solid var(--border); background: var(--bg-2); font-size: 12px; color: var(--muted);
+  }
+  #attach-thumb { width: 48px; height: 48px; object-fit: cover; border-radius: 6px; background: var(--bg); }
+  #attach-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #mention-popup { left: 20px; right: auto; bottom: calc(var(--bottom-bar-h) + 6px); min-width: 200px; }
+  #mention-popup button.active { background: var(--accent-soft); color: var(--text); }
+  #messages.drag-over { outline: 2px dashed var(--accent); outline-offset: -8px; }
+  #image-viewer {
+    position: fixed; inset: 0; z-index: 330; background: rgba(0,0,0,.85);
+    display: flex; align-items: center; justify-content: center; cursor: zoom-out;
+  }
+  #image-viewer-img { max-width: 92vw; max-height: 90vh; object-fit: contain; border-radius: 6px; }
+  #image-viewer-close {
+    position: absolute; top: 14px; right: 14px; width: 36px; height: 36px; border: none; border-radius: 8px;
+    background: color-mix(in srgb, #fff 14%, transparent); color: #fff; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+  }
+
+  /* Não lidas na lista de canais */
+  .unread-badge {
+    margin-left: auto; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px;
+    background: var(--control); color: var(--text); font-size: 11px; font-weight: 700;
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  .unread-badge.mention { background: var(--danger-bg); color: #fff; }
+  .channel.has-unread { color: var(--text); font-weight: 600; }
+
+  /* Faixas de aviso (conexão, atualização): ficam no fluxo, sem cobrir vídeos */
+  .app-banner {
+    flex-shrink: 0; display: flex; align-items: center; gap: 8px; padding: 8px 16px;
+    font-size: 13px; color: var(--text); background: var(--accent-soft); border-bottom: 1px solid var(--border);
+  }
+  .app-banner.warn { background: color-mix(in srgb, var(--yellow) 18%, var(--bg-2)); }
+  .app-banner button {
+    margin-left: auto; height: 28px; padding: 0 12px; border: none; border-radius: 6px;
+    background: var(--accent); color: var(--on-accent); font-weight: 700; font-size: 12px; cursor: pointer;
+  }
+  .tunnel-row { display: flex; align-items: center; gap: 10px; margin: 10px 0; }
+  .tunnel-row .btn-secondary { height: 38px; padding: 0 14px; border-radius: 8px; border: none; cursor: pointer; font-weight: 700; font-size: 12px; display: inline-flex; align-items: center; gap: 6px; }
+  .tunnel-state { font-size: 12px; color: var(--muted); }
+  .tunnel-state[data-state="on"] { color: var(--ok-text); }
+  .tunnel-state[data-state="error"] { color: var(--danger-text); }
+  #tunnel-url {
+    flex: 1; min-width: 0; height: 38px; padding: 0 10px; border-radius: 8px;
+    border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 13px;
+  }
 
   /* ================= PARTICIPANTES ================= */
   #members {
@@ -917,6 +999,14 @@
       </div>
     </header>
 
+    <div id="conn-banner" class="app-banner warn hidden" role="status" aria-live="polite">
+      <i data-icon="refresh-cw" data-size="16"></i><span>Conexão com o servidor perdida. Reconectando…</span>
+    </div>
+    <div id="update-banner" class="app-banner hidden" role="status" aria-live="polite">
+      <i data-icon="download" data-size="16"></i><span id="update-text"></span>
+      <button type="button" id="update-install" class="hidden">Reiniciar e atualizar</button>
+    </div>
+
     <section id="call-area">
       <div id="video-grid"></div>
       <div id="call-empty">
@@ -948,8 +1038,16 @@
         <p id="music-empty">Nenhuma música na fila. Cole um link acima para começar.</p>
       </div>
       <div id="messages"></div>
+      <div id="mention-popup" class="popover hidden" role="listbox" aria-label="Mencionar"></div>
+      <div id="attach-preview" class="hidden">
+        <img id="attach-thumb" alt="">
+        <span id="attach-name"></span>
+        <button type="button" id="attach-remove" class="msg-action" title="Remover imagem" aria-label="Remover imagem"><i data-icon="x" data-size="16"></i></button>
+      </div>
       <div class="chat-input-row">
-        <input type="text" id="msg-input" placeholder="Enviar mensagem em #geral">
+        <button type="button" id="attach-btn" class="msg-icon-btn" title="Enviar imagem (ou cole com Ctrl+V)" aria-label="Enviar imagem"><i data-icon="image-plus"></i></button>
+        <input type="file" id="attach-input" accept="image/png,image/jpeg,image/webp,image/gif" hidden>
+        <input type="text" id="msg-input" placeholder="Enviar mensagem em #geral" maxlength="2000" autocomplete="off">
         <button id="send-btn">Enviar</button>
       </div>
     </div>
@@ -1046,6 +1144,33 @@
       <button type="button" class="settings-tab active" role="tab" id="settings-tabbtn-audio" aria-selected="true" aria-controls="settings-tab-audio" data-tab="audio">Áudio</button>
       <button type="button" class="settings-tab" role="tab" id="settings-tabbtn-conta" aria-selected="false" aria-controls="settings-tab-conta" data-tab="conta">Conta</button>
       <button type="button" class="settings-tab" role="tab" id="settings-tabbtn-aparencia" aria-selected="false" aria-controls="settings-tab-aparencia" data-tab="aparencia">Aparência</button>
+      <button type="button" class="settings-tab" role="tab" id="settings-tabbtn-notificacoes" aria-selected="false" aria-controls="settings-tab-notificacoes" data-tab="notificacoes">Notificações</button>
+      <button type="button" class="settings-tab" role="tab" id="settings-tabbtn-servidor" aria-selected="false" aria-controls="settings-tab-servidor" data-tab="servidor">Servidor</button>
+    </div>
+
+    <div class="settings-panel hidden" id="settings-tab-notificacoes" role="tabpanel" aria-labelledby="settings-tabbtn-notificacoes">
+      <div class="field">
+        <label for="notify-mode">Avisar no Windows quando chegar mensagem</label>
+        <select id="notify-mode">
+          <option value="all">Todas as mensagens</option>
+          <option value="mentions">Só quando me mencionarem (@)</option>
+          <option value="off">Nunca</option>
+        </select>
+      </div>
+      <p class="settings-hint">Mensagens do canal aberto só avisam com o Vox minimizado ou em segundo plano. Menções (@seu nome) sempre avisam e tocam um som. No status Ocupado nada avisa.</p>
+    </div>
+
+    <div class="settings-panel hidden" id="settings-tab-servidor" role="tabpanel" aria-labelledby="settings-tabbtn-servidor">
+      <p class="settings-hint">Abre um túnel gratuito da Cloudflare para seus amigos entrarem neste servidor pela internet. Só funciona no PC que hospeda o Vox. O endereço muda toda vez que o túnel é aberto.</p>
+      <div class="tunnel-row">
+        <button type="button" id="tunnel-toggle" class="btn-secondary"><i data-icon="globe" data-size="16"></i> <span>Abrir para amigos</span></button>
+        <span id="tunnel-state" class="tunnel-state">Fechado</span>
+      </div>
+      <div id="tunnel-url-row" class="tunnel-row hidden">
+        <input type="text" id="tunnel-url" readonly aria-label="Endereço para os amigos">
+        <button type="button" id="tunnel-copy" class="btn-secondary" title="Copiar endereço"><i data-icon="copy" data-size="16"></i> Copiar</button>
+      </div>
+      <p class="settings-hint">Seu amigo cola esse endereço no campo Servidor da tela de login e clica em Aplicar. Um endereço novo pode levar cerca de 1 minuto para começar a funcionar. O túnel fecha junto com o Vox; se cair sozinho, reabre com outro endereço.</p>
     </div>
 
     <div class="settings-panel hidden" id="settings-tab-aparencia" role="tabpanel" aria-labelledby="settings-tabbtn-aparencia">
@@ -1123,6 +1248,12 @@
   </div>
 </div>
 
+<!-- Imagem do chat em tamanho grande -->
+<div id="image-viewer" class="hidden" role="dialog" aria-label="Imagem">
+  <img id="image-viewer-img" alt="">
+  <button type="button" id="image-viewer-close" title="Fechar (Esc)" aria-label="Fechar"><i data-icon="x"></i></button>
+</div>
+
 <audio id="monitor-audio" autoplay></audio>
 <audio id="sound-effects-audio" autoplay></audio>
 <div id="toast" class="hidden" role="status" aria-live="polite"></div>
@@ -1141,6 +1272,7 @@
 <script src="youtube.js"></script>
 <script src="music-state.js"></script>
 <script src="sounds.js"></script>
+<script src="chat-state.js"></script>
 <script src="renderer.js"></script>
 </body>
 </html>

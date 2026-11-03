@@ -34,6 +34,25 @@ const callEmpty = document.getElementById('call-empty');
 const messagesEl = document.getElementById('messages');
 const msgInput = document.getElementById('msg-input');
 const sendBtn = document.getElementById('send-btn');
+const attachBtn = document.getElementById('attach-btn');
+const attachInput = document.getElementById('attach-input');
+const attachPreview = document.getElementById('attach-preview');
+const attachThumb = document.getElementById('attach-thumb');
+const attachName = document.getElementById('attach-name');
+const attachRemove = document.getElementById('attach-remove');
+const mentionPopup = document.getElementById('mention-popup');
+const imageViewer = document.getElementById('image-viewer');
+const imageViewerImg = document.getElementById('image-viewer-img');
+const connBanner = document.getElementById('conn-banner');
+const updateBanner = document.getElementById('update-banner');
+const updateText = document.getElementById('update-text');
+const updateInstall = document.getElementById('update-install');
+const notifyModeSelect = document.getElementById('notify-mode');
+const tunnelToggle = document.getElementById('tunnel-toggle');
+const tunnelStateEl = document.getElementById('tunnel-state');
+const tunnelUrlRow = document.getElementById('tunnel-url-row');
+const tunnelUrlInput = document.getElementById('tunnel-url');
+const tunnelCopy = document.getElementById('tunnel-copy');
 
 const memberList = document.getElementById('member-list');
 const memberCount = document.getElementById('member-count');
@@ -101,6 +120,7 @@ const { PROTOCOL_VERSION, VERSION_MISMATCH_MESSAGE, isCompatible } = window.VoxP
 const { targetPositionMs, shouldCorrectSeek } = window.VoxMusic;
 
 let currentUser = '';
+let sessionToken = null;   // só na memória: reconecta sem senha, mas fechar o app pede login de novo
 let currentTextRoom = '';  // sempre preenchido depois do login
 let currentVoiceRoom = ''; // '' = fora de canal de voz
 let voiceLeaves = 0;       // conta as saídas da voz; pedidos de mídia comparam para saber se a voz caiu
@@ -323,7 +343,10 @@ function hideOverlays() {
 }
 
 // Login ou cadastro concluído: entra direto em #geral e na Sala Principal, com microfone aberto.
-function enterApp(username) {
+function enterApp(username, token) {
+  sessionToken = token || null;
+  unread = {};
+  renderUnread();
   setMyIdentity(username);
   micEnabled = true;
   updateControlButtons();
@@ -381,6 +404,7 @@ serverUrlInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') apply
 socket.on('connect', () => {
   serverStatus.textContent = `Conectado: ${SERVER_URL}`;
   serverStatus.style.color = 'var(--ok-text)';
+  if (currentUser && sessionToken) resumeSession();
 });
 socket.on('connect_error', () => {
   serverStatus.textContent = 'Sem conexão. Confira o endereço do servidor.';
@@ -391,7 +415,36 @@ socket.on('disconnect', () => {
   serverStatus.style.color = 'var(--danger-text)';
   // Sem servidor não há como controlar a música: para o player e some com o tile.
   resetMusic();
+  // Logado: o Socket.io tenta reconectar sozinho; a chamada P2P segue enquanto der.
+  if (currentUser) connBanner.classList.remove('hidden');
 });
+
+/* ================= RECONEXÃO ================= */
+// O socket novo tem outro id: entra de novo no texto e na voz com o mesmo estado.
+function resumeSession() {
+  socket.emit('resume', { token: sessionToken, protocol: PROTOCOL_VERSION }, (res) => {
+    if (!res || !res.success) {
+      connBanner.classList.add('hidden');
+      endSession((res && res.message) || 'Sua sessão expirou. Entre de novo.');
+      return;
+    }
+    connBanner.classList.add('hidden');
+    sendStatus(); // antes do join-voice: invisível continua invisível
+    if (currentTextRoom) {
+      socket.emit('join-text', currentTextRoom);
+      reloadMessages();
+    }
+    if (currentVoiceRoom) {
+      closeAllPeers();
+      userMap.clear();
+      lastUsersSignature = '';
+      soundRoster = undefined; // a primeira lista depois de voltar não toca som
+      socket.emit('join-voice', currentVoiceRoom);
+      sendStatus();
+    }
+    renderMembers();
+  });
+}
 
 if (socket.connected) {
   serverStatus.textContent = `Conectado: ${SERVER_URL}`;
@@ -415,7 +468,7 @@ btnRegister.addEventListener('click', () => {
     btnRegister.disabled = false;
     if (!res.success) { errorRegister.textContent = res.message; return; }
     if (rejectIfIncompatible(res, errorRegister)) return;
-    enterApp(res.username);
+    enterApp(res.username, res.token);
   });
 });
 
@@ -431,7 +484,7 @@ function doLogin() {
     btnLogin.disabled = false;
     if (!res.success) { errorLogin.textContent = res.message; return; }
     if (rejectIfIncompatible(res, errorLogin)) return;
-    enterApp(res.username);
+    enterApp(res.username, res.token);
   });
 }
 
@@ -799,6 +852,9 @@ function joinText(room) {
   channelIcon.textContent = '#';
   msgInput.placeholder = `Enviar mensagem em ${roomDisplayName(room)}`;
   messagesEl.innerHTML = '';
+  messageRows.clear();
+  unread = VoxChatRules.clearUnread(unread, room);
+  renderUnread();
   reloadMessages();
   updateActiveChannel();
 }
@@ -920,7 +976,8 @@ socket.on('room-users', (list) => {
 
   if (currentVoiceRoom) {
     const listIds = list.map((u) => u.id);
-    const sound = VoxSounds.rosterSound(soundRoster, listIds, socket.id);
+    // undefined = primeira lista depois de reconectar: só guarda, sem som
+    const sound = soundRoster === undefined ? null : VoxSounds.rosterSound(soundRoster, listIds, socket.id);
     soundRoster = listIds;
     if (sound) playSoundEffect(sound);
   }
@@ -2127,6 +2184,66 @@ document.querySelectorAll('.settings-tab').forEach((btn) => {
   btn.addEventListener('click', () => showSettingsTab(btn.dataset.tab));
 });
 
+/* ================= TÚNEL (ABRIR PARA AMIGOS) ================= */
+// Só faz sentido no PC que hospeda: o túnel aponta para o servidor deste processo.
+const IS_LOCAL_SERVER = /^https?:\/\/(127\.0\.0\.1|localhost)(:3000)?$/i.test(SERVER_URL);
+let tunnelState = { state: 'off', url: null };
+
+function renderTunnel(s) {
+  tunnelState = s || { state: 'off', url: null };
+  const labels = {
+    off: 'Fechado',
+    downloading: `Baixando o cloudflared… ${Math.round((tunnelState.progress || 0) * 100)}%`,
+    starting: tunnelState.message || 'Abrindo…',
+    on: 'Aberto',
+    error: tunnelState.message || 'Falhou'
+  };
+  tunnelStateEl.textContent = IS_LOCAL_SERVER ? (labels[tunnelState.state] || '') : 'Disponível só no PC que hospeda o servidor (endereço 127.0.0.1).';
+  tunnelStateEl.dataset.state = tunnelState.state;
+  const active = ['downloading', 'starting', 'on'].includes(tunnelState.state);
+  tunnelToggle.querySelector('span').textContent = active ? 'Fechar túnel' : 'Abrir para amigos';
+  tunnelToggle.disabled = !IS_LOCAL_SERVER;
+  tunnelUrlRow.classList.toggle('hidden', !tunnelState.url);
+  tunnelUrlInput.value = tunnelState.url || '';
+}
+
+tunnelToggle.addEventListener('click', async () => {
+  const active = ['downloading', 'starting', 'on'].includes(tunnelState.state);
+  renderTunnel(active ? await window.electronAPI.tunnelStop() : { state: 'starting', url: null });
+  if (!active) window.electronAPI.tunnelStart();
+});
+tunnelCopy.addEventListener('click', async () => {
+  if (!tunnelState.url) return;
+  try {
+    await navigator.clipboard.writeText(tunnelState.url);
+    showToast('Endereço copiado. Mande para o seu amigo.');
+  } catch (e) {
+    tunnelUrlInput.select();
+  }
+});
+window.electronAPI.onTunnelStatus(renderTunnel);
+window.electronAPI.tunnelStatus().then(renderTunnel);
+
+/* ================= ATUALIZAÇÃO AUTOMÁTICA ================= */
+function renderUpdate(s) {
+  if (!s || (s.state !== 'downloading' && s.state !== 'ready')) { updateBanner.classList.add('hidden'); return; }
+  updateBanner.classList.remove('hidden');
+  if (s.state === 'downloading') {
+    updateText.textContent = `Baixando o Vox ${s.version || ''}… ${s.percent || 0}%`;
+    updateInstall.classList.add('hidden');
+  } else {
+    updateText.textContent = `O Vox ${s.version || ''} está pronto. Ele instala ao reiniciar (ou quando você fechar o app).`;
+    updateInstall.classList.remove('hidden');
+  }
+}
+updateInstall.addEventListener('click', () => {
+  const hosting = IS_LOCAL_SERVER && serverMembers.some((m) => m.online && m.username !== currentUser);
+  if (hosting && !window.confirm('Você hospeda o servidor: reiniciar desconecta todo mundo por alguns segundos. Continuar?')) return;
+  window.electronAPI.installUpdate();
+});
+window.electronAPI.onUpdateStatus(renderUpdate);
+window.electronAPI.updateStatus().then(renderUpdate);
+
 /* ================= DISPOSITIVOS DE ÁUDIO ================= */
 function fillDeviceSelect(select, devices, savedId, defaultLabel) {
   select.innerHTML = '';
@@ -2591,59 +2708,469 @@ document.addEventListener('keydown', (e) => {
 });
 
 /* ================= CHAT ================= */
+const VoxChatRules = window.VoxChat;
+const messageRows = new Map(); // id -> { row, msg }
+
+function memberNames() {
+  const names = serverMembers.map((m) => m.username);
+  if (currentUser && !names.includes(currentUser)) names.push(currentUser);
+  return names;
+}
+
+const sameName = (a, b) => String(a || '').toLowerCase() === String(b || '').toLowerCase();
+
+function showEmptyChat() {
+  const empty = document.createElement('div');
+  empty.className = 'msg-user';
+  empty.id = 'chat-empty';
+  empty.textContent = 'Nenhuma mensagem ainda. Diga olá!';
+  messagesEl.appendChild(empty);
+}
+
 function reloadMessages() {
   if (!currentTextRoom) return;
-  socket.emit('get-messages', currentTextRoom, (rows) => {
+  const room = currentTextRoom;
+  socket.emit('get-messages', room, (rows) => {
+    if (room !== currentTextRoom) return;
     messagesEl.innerHTML = '';
-    if (!rows || rows.length === 0) {
-      const empty = document.createElement('div');
-      empty.className = 'msg-user';
-      empty.textContent = 'Nenhuma mensagem ainda. Diga olá!';
-      messagesEl.appendChild(empty);
-      return;
-    }
-    rows.forEach((m) => appendMessage(m.user, m.text, m.user === currentUser));
+    messageRows.clear();
+    if (!rows || rows.length === 0) { showEmptyChat(); return; }
+    rows.forEach((m) => appendMessage(m, { scroll: false }));
+    messagesEl.scrollTop = messagesEl.scrollHeight;
   });
 }
 
 socket.on('messages-cleared', () => reloadMessages());
 
-function appendMessage(user, text, own) {
+// Texto com as menções (@nome) destacadas, sem innerHTML.
+function fillMessageText(el, text) {
+  el.textContent = '';
+  for (const part of VoxChatRules.splitMentions(text, memberNames())) {
+    if (part.mention) {
+      const span = document.createElement('span');
+      span.className = 'msg-mention';
+      span.textContent = part.text;
+      el.appendChild(span);
+    } else {
+      el.appendChild(document.createTextNode(part.text));
+    }
+  }
+}
+
+function uploadUrl(file) {
+  return `${SERVER_URL}/uploads/${encodeURIComponent(file)}`;
+}
+
+function buildMessageRow(m) {
+  const own = m.user === currentUser;
+  const mentionsMe = !own && VoxChatRules.mentionsOf(m.text, memberNames()).some((n) => sameName(n, currentUser));
   const row = document.createElement('div');
-  row.className = 'msg-row' + (own ? ' own' : '');
-  row.appendChild(makeAvatar(user));
+  row.className = 'msg-row' + (own ? ' own' : '') + (mentionsMe ? ' mentions-me' : '');
+  row.dataset.id = m.id || '';
+  row.appendChild(makeAvatar(m.user));
 
   const body = document.createElement('div');
   body.className = 'msg-body';
 
+  const head = document.createElement('div');
+  head.className = 'msg-head';
   const name = document.createElement('div');
   name.className = 'msg-user';
-  name.textContent = user;
+  name.textContent = m.user;
+  head.appendChild(name);
+  if (m.edited_at) {
+    const edited = document.createElement('span');
+    edited.className = 'msg-edited';
+    edited.textContent = '(editada)';
+    head.appendChild(edited);
+  }
+  body.appendChild(head);
 
-  const content = document.createElement('div');
-  content.className = 'msg-text';
-  content.textContent = text;
+  if (m.image && VoxChatRules.isUploadName(m.image.file)) {
+    const img = document.createElement('img');
+    img.className = 'msg-image';
+    img.alt = 'Imagem enviada por ' + m.user;
+    img.loading = 'lazy';
+    if (m.image.width && m.image.height) { img.width = m.image.width; img.height = m.image.height; }
+    img.src = uploadUrl(m.image.file);
+    img.addEventListener('click', () => openImageViewer(img.src, img.alt));
+    img.addEventListener('load', () => { if (nearBottom(200)) messagesEl.scrollTop = messagesEl.scrollHeight; });
+    body.appendChild(img);
+  }
 
-  body.appendChild(name);
-  body.appendChild(content);
+  if (m.text) {
+    const content = document.createElement('div');
+    content.className = 'msg-text';
+    fillMessageText(content, m.text);
+    body.appendChild(content);
+  }
   row.appendChild(body);
-  messagesEl.appendChild(row);
-  messagesEl.scrollTop = messagesEl.scrollHeight;
+
+  if (own && m.id) {
+    const actions = document.createElement('div');
+    actions.className = 'msg-actions';
+    const edit = document.createElement('button');
+    edit.type = 'button';
+    edit.className = 'msg-action';
+    edit.title = 'Editar';
+    edit.setAttribute('aria-label', 'Editar mensagem');
+    VoxIcons.setIcon(edit, 'pencil', '', 16);
+    edit.addEventListener('click', () => startEditMessage(m.id));
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'msg-action danger';
+    del.title = 'Apagar';
+    del.setAttribute('aria-label', 'Apagar mensagem');
+    VoxIcons.setIcon(del, 'trash-2', '', 16);
+    del.addEventListener('click', () => deleteOwnMessage(m.id));
+    actions.append(edit, del);
+    row.appendChild(actions);
+  }
+  return row;
 }
+
+function nearBottom(px = 80) {
+  return messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < px;
+}
+
+function appendMessage(m, { scroll = true } = {}) {
+  const empty = document.getElementById('chat-empty');
+  if (empty) empty.remove();
+  const stick = nearBottom();
+  const row = buildMessageRow(m);
+  messagesEl.appendChild(row);
+  if (m.id) messageRows.set(m.id, { row, msg: m });
+  if (scroll && (stick || m.user === currentUser)) messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+function replaceMessageRow(id) {
+  const entry = messageRows.get(id);
+  if (!entry) return;
+  const row = buildMessageRow(entry.msg);
+  entry.row.replaceWith(row);
+  entry.row = row;
+}
+
+// Edição no lugar: Enter salva, Esc cancela.
+function startEditMessage(id) {
+  const entry = messageRows.get(id);
+  if (!entry) return;
+  const body = entry.row.querySelector('.msg-body');
+  const textEl = body.querySelector('.msg-text');
+  const input = document.createElement('textarea');
+  input.className = 'msg-edit-input';
+  input.maxLength = VoxChatRules.MAX_TEXT;
+  input.value = entry.msg.text || '';
+  const hint = document.createElement('div');
+  hint.className = 'msg-edit-hint';
+  hint.textContent = 'Enter salva · Esc cancela';
+  if (textEl) textEl.replaceWith(input); else body.appendChild(input);
+  body.appendChild(hint);
+  input.focus();
+  input.setSelectionRange(input.value.length, input.value.length);
+
+  let done = false;
+  const finish = (save) => {
+    if (done) return;
+    done = true;
+    const text = input.value.trim();
+    const previous = entry.msg.text || '';
+    if (!save || text === previous || (!text && !entry.msg.image)) { replaceMessageRow(id); return; }
+    entry.msg = { ...entry.msg, text };
+    replaceMessageRow(id);
+    socket.emit('edit-message', { room: currentTextRoom, id, text }, (res) => {
+      if (res && res.success) return;
+      showToast((res && res.message) || 'Não foi possível editar.');
+      const cur = messageRows.get(id);
+      if (cur) { cur.msg = { ...cur.msg, text: previous }; replaceMessageRow(id); }
+    });
+  };
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); finish(true); }
+    if (e.key === 'Escape') { e.stopPropagation(); finish(false); }
+  });
+  input.addEventListener('blur', () => finish(false));
+}
+
+function deleteOwnMessage(id) {
+  if (!window.confirm('Apagar esta mensagem?')) return;
+  socket.emit('delete-message', { room: currentTextRoom, id }, (res) => {
+    if (!res || !res.success) showToast((res && res.message) || 'Não foi possível apagar.');
+  });
+}
+
+socket.on('message-updated', (u) => {
+  if (!u || u.room !== currentTextRoom) return;
+  const entry = messageRows.get(u.id);
+  if (!entry) return;
+  entry.msg = { ...entry.msg, text: u.text, edited_at: u.edited_at };
+  // Não atrapalha quem está editando esta mesma mensagem agora
+  if (!entry.row.querySelector('.msg-edit-input')) replaceMessageRow(u.id);
+});
+
+socket.on('message-deleted', (d) => {
+  if (!d || d.room !== currentTextRoom) return;
+  const entry = messageRows.get(d.id);
+  if (!entry) return;
+  entry.row.remove();
+  messageRows.delete(d.id);
+  if (!messageRows.size) showEmptyChat();
+});
+
+/* ---------- Envio, com imagem opcional ---------- */
+let pendingAttachment = null; // { data: ArrayBuffer, type, width, height, previewUrl, name }
+let sending = false;
 
 function sendMessage() {
   const text = msgInput.value.trim();
-  if (!text || !currentTextRoom) return;
-  socket.emit('save-message', { room: currentTextRoom, user: currentUser, text });
-  appendMessage(currentUser, text, true);
-  msgInput.value = '';
+  if ((!text && !pendingAttachment) || !currentTextRoom || sending) return;
+  if (!socket.connected) { showToast('Sem conexão com o servidor. Tente de novo quando reconectar.'); return; }
+  const payload = { room: currentTextRoom, text };
+  if (pendingAttachment) {
+    const { data, type, width, height } = pendingAttachment;
+    payload.image = { data, type, width, height };
+  }
+  sending = true;
+  sendBtn.disabled = true;
+  socket.timeout(20000).emit('save-message', payload, (err, res) => {
+    sending = false;
+    sendBtn.disabled = false;
+    if (err || !res || !res.success) {
+      showToast((res && res.message) || 'A mensagem não foi enviada.');
+      return;
+    }
+    // A mensagem aparece pelo 'new-message', como para todo mundo.
+    if (msgInput.value.trim() === text) msgInput.value = '';
+    clearAttachment();
+    hideMentionPopup();
+  });
 }
 
 sendBtn.addEventListener('click', sendMessage);
-msgInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendMessage(); });
+msgInput.addEventListener('keydown', (e) => {
+  if (handleMentionKey(e)) return;
+  if (e.key === 'Enter') sendMessage();
+});
+
+// Reduz e recomprime no próprio PC (lado maior até 1920 px), para caber em 2 MB.
+// GIF vai como está para não perder a animação.
+async function prepareImage(file) {
+  if (!VoxChatRules.imageExtension(file.type)) throw new Error('Formato não suportado. Use PNG, JPG, WebP ou GIF.');
+  const bitmap = await createImageBitmap(file);
+  const { width, height } = bitmap;
+  if (file.type === 'image/gif') {
+    bitmap.close();
+    if (file.size > VoxChatRules.MAX_IMAGE_BYTES) throw new Error('O GIF passa de 2 MB.');
+    return { data: await file.arrayBuffer(), type: file.type, width, height };
+  }
+  const scale = Math.min(1, 1920 / Math.max(width, height));
+  const w = Math.max(1, Math.round(width * scale));
+  const h = Math.max(1, Math.round(height * scale));
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  canvas.getContext('2d').drawImage(bitmap, 0, 0, w, h);
+  bitmap.close();
+  for (const quality of [0.86, 0.75, 0.6, 0.45]) {
+    const blob = await new Promise((r) => canvas.toBlob(r, 'image/webp', quality));
+    if (blob && blob.size <= VoxChatRules.MAX_IMAGE_BYTES) {
+      return { data: await blob.arrayBuffer(), type: 'image/webp', width: w, height: h };
+    }
+  }
+  throw new Error('A imagem ficou grande demais mesmo depois de reduzida.');
+}
+
+async function attachImage(file) {
+  if (!file) return;
+  if (!currentTextRoom) return;
+  try {
+    const prepared = await prepareImage(file);
+    clearAttachment();
+    pendingAttachment = { ...prepared, previewUrl: URL.createObjectURL(new Blob([prepared.data], { type: prepared.type })), name: file.name || 'Imagem colada' };
+    attachThumb.src = pendingAttachment.previewUrl;
+    attachName.textContent = `${pendingAttachment.name} · ${(prepared.data.byteLength / 1024).toFixed(0)} KB`;
+    attachPreview.classList.remove('hidden');
+    msgInput.focus();
+  } catch (e) {
+    showToast(e.message || 'Não foi possível usar essa imagem.');
+  }
+}
+
+function clearAttachment() {
+  if (pendingAttachment && pendingAttachment.previewUrl) URL.revokeObjectURL(pendingAttachment.previewUrl);
+  pendingAttachment = null;
+  attachPreview.classList.add('hidden');
+  attachThumb.removeAttribute('src');
+  attachInput.value = '';
+}
+
+attachBtn.addEventListener('click', () => attachInput.click());
+attachInput.addEventListener('change', () => attachImage(attachInput.files && attachInput.files[0]));
+attachRemove.addEventListener('click', clearAttachment);
+msgInput.addEventListener('paste', (e) => {
+  const item = [...(e.clipboardData ? e.clipboardData.items : [])].find((i) => i.kind === 'file' && i.type.startsWith('image/'));
+  if (!item) return;
+  e.preventDefault();
+  attachImage(item.getAsFile());
+});
+messagesEl.addEventListener('dragover', (e) => {
+  if ([...e.dataTransfer.types].includes('Files')) { e.preventDefault(); messagesEl.classList.add('drag-over'); }
+});
+messagesEl.addEventListener('dragleave', () => messagesEl.classList.remove('drag-over'));
+messagesEl.addEventListener('drop', (e) => {
+  messagesEl.classList.remove('drag-over');
+  const file = [...(e.dataTransfer.files || [])].find((f) => f.type.startsWith('image/'));
+  if (!file) return;
+  e.preventDefault();
+  attachImage(file);
+});
+
+function openImageViewer(src, alt) {
+  imageViewerImg.src = src;
+  imageViewerImg.alt = alt || '';
+  imageViewer.classList.remove('hidden');
+}
+function closeImageViewer() {
+  imageViewer.classList.add('hidden');
+  imageViewerImg.removeAttribute('src');
+}
+imageViewer.addEventListener('click', closeImageViewer);
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !imageViewer.classList.contains('hidden')) closeImageViewer();
+});
+
+/* ---------- Menções: sugestões ao digitar @ ---------- */
+let mentionMatches = [];
+let mentionIndex = 0;
+
+function mentionQuery() {
+  const pos = msgInput.selectionStart || 0;
+  const m = /(^|\s)@([\p{L}\p{N}_.-]*)$/u.exec(msgInput.value.slice(0, pos));
+  return m ? { query: m[2], start: pos - m[2].length - 1, end: pos } : null;
+}
+
+function hideMentionPopup() {
+  mentionMatches = [];
+  mentionPopup.classList.add('hidden');
+}
+
+function updateMentionPopup() {
+  const q = mentionQuery();
+  if (!q) return hideMentionPopup();
+  mentionMatches = memberNames()
+    .filter((n) => n !== currentUser && n.toLowerCase().startsWith(q.query.toLowerCase()))
+    .slice(0, 6);
+  if (!mentionMatches.length) return hideMentionPopup();
+  mentionIndex = Math.min(mentionIndex, mentionMatches.length - 1);
+  mentionPopup.innerHTML = '';
+  mentionMatches.forEach((name, i) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = i === mentionIndex ? 'active' : '';
+    btn.setAttribute('role', 'option');
+    btn.textContent = '@' + name;
+    btn.addEventListener('mousedown', (e) => { e.preventDefault(); insertMention(name); });
+    mentionPopup.appendChild(btn);
+  });
+  mentionPopup.classList.remove('hidden');
+}
+
+function insertMention(name) {
+  const q = mentionQuery();
+  if (!q) return;
+  const v = msgInput.value;
+  msgInput.value = v.slice(0, q.start) + '@' + name + ' ' + v.slice(q.end);
+  const caret = q.start + name.length + 2;
+  msgInput.setSelectionRange(caret, caret);
+  hideMentionPopup();
+}
+
+// Setas escolhem, Tab/Enter inserem, Esc fecha. Devolve true se tratou a tecla.
+function handleMentionKey(e) {
+  if (!mentionMatches.length) return false;
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    mentionIndex = (mentionIndex + (e.key === 'ArrowDown' ? 1 : -1) + mentionMatches.length) % mentionMatches.length;
+    updateMentionPopup();
+    return true;
+  }
+  if (e.key === 'Tab' || e.key === 'Enter') {
+    e.preventDefault();
+    insertMention(mentionMatches[mentionIndex]);
+    return true;
+  }
+  if (e.key === 'Escape') { hideMentionPopup(); return true; }
+  return false;
+}
+
+msgInput.addEventListener('input', () => { mentionIndex = 0; updateMentionPopup(); });
+msgInput.addEventListener('blur', () => setTimeout(hideMentionPopup, 100));
+
+/* ---------- Não lidas e notificações ---------- */
+let unread = {}; // room -> { count, mention }
+let notifyMode = localStorage.getItem('vox-notify-mode') || 'all';
+if (!['all', 'mentions', 'off'].includes(notifyMode)) notifyMode = 'all';
+notifyModeSelect.value = notifyMode;
+notifyModeSelect.addEventListener('change', () => {
+  notifyMode = notifyModeSelect.value;
+  localStorage.setItem('vox-notify-mode', notifyMode);
+});
+
+function renderUnread() {
+  let total = 0;
+  document.querySelectorAll('.channel:not(.voice)').forEach((el) => {
+    const u = unread[el.dataset.room];
+    let badge = el.querySelector('.unread-badge');
+    el.classList.toggle('has-unread', !!u);
+    if (!u) { if (badge) badge.remove(); return; }
+    total += u.count;
+    if (!badge) {
+      badge = document.createElement('span');
+      badge.className = 'unread-badge';
+      el.appendChild(badge);
+    }
+    badge.classList.toggle('mention', u.mention);
+    badge.textContent = u.mention ? '@' : (u.count > 99 ? '99+' : String(u.count));
+    badge.title = u.mention ? 'Você foi mencionado' : `${u.count} mensagem(ns) não lida(s)`;
+  });
+  document.title = total ? `(${total}) Vox` : 'Vox';
+}
+
+function notifyMessage(m, mention) {
+  const status = effectiveStatus();
+  const focused = document.hasFocus();
+  if (mention && status !== 'busy' && !(focused && m.room === currentTextRoom)) playSoundEffect('mention');
+  if (!VoxChatRules.shouldNotify({ mode: notifyMode, status, mention, focused, sameRoom: m.room === currentTextRoom })) return;
+  if (!focused) window.electronAPI.flashFrame(true);
+  if (typeof Notification === 'undefined') return;
+  const body = m.text ? m.text.slice(0, 140) : 'Enviou uma imagem';
+  const n = new Notification(`${m.user} em #${m.room}`, { body, silent: true });
+  n.onclick = () => {
+    window.electronAPI.focusWindow();
+    joinText(m.room);
+  };
+}
 
 socket.on('new-message', (m) => {
-  appendMessage(m.user, m.text, m.user === currentUser);
+  if (!m || !currentUser) return;
+  const own = m.user === currentUser;
+  const mention = !own && Array.isArray(m.mentions) && m.mentions.some((n) => sameName(n, currentUser));
+  if (m.room === currentTextRoom) {
+    appendMessage(m);
+    if (!own && !document.hasFocus()) { unread = VoxChatRules.addUnread(unread, m.room, mention); renderUnread(); }
+  } else if (!own) {
+    unread = VoxChatRules.addUnread(unread, m.room, mention);
+    renderUnread();
+  }
+  if (!own) notifyMessage(m, mention);
+});
+
+// Voltar para a janela marca o canal aberto como lido.
+window.addEventListener('focus', () => {
+  if (currentTextRoom && unread[currentTextRoom]) {
+    unread = VoxChatRules.clearUnread(unread, currentTextRoom);
+    renderUnread();
+  }
 });
 
 /* ================= SAIR DA VOZ ================= */
@@ -2716,12 +3243,23 @@ btnLeaveVoice.addEventListener('click', leaveVoice);
 
 function logout() {
   if (!window.confirm('Sair da conta?')) return;
+  socket.emit('logout');
+  endSession('');
+}
+
+// Volta para a tela de login (saída da conta ou sessão que não pôde ser retomada).
+function endSession(message) {
+  sessionToken = null;
+  unread = {};
+  renderUnread();
+  clearAttachment();
+  errorLogin.textContent = message || '';
   serverMembers = [];
   settingsModal.classList.add('hidden');
-  socket.emit('logout');
   leaveVoice();
   currentTextRoom = '';
   messagesEl.innerHTML = '';
+  messageRows.clear();
   updateActiveChannel();
   currentUser = '';
   voiceRooms = {};
