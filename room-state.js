@@ -1,6 +1,5 @@
 // Estado de cada usuário numa sala (mudo, status, compartilhando tela) e o
 // que dele é enviado aos outros clientes.
-const { isTextChannel } = require('./channels');
 const ALLOWED_STATUS = ['online', 'busy', 'away', 'invisible'];
 
 function publicUser(id, entry) {
@@ -42,9 +41,9 @@ function joinVoiceRoom(roomUsers, socketId, room, entry) {
   return previous;
 }
 
-// O socket só usa o canal de texto em que está de fato.
+// O socket só usa o canal de texto em que está de fato (o acesso é conferido no join-text).
 function canUseTextRoom(textRoom, room) {
-  return isTextChannel(room) && room === textRoom;
+  return typeof room === 'string' && !!room && room === textRoom;
 }
 
 // Salas do Socket.io (voz e texto) das quais o socket deve sair ao deslogar.

@@ -14,7 +14,9 @@
     mute: { type: 'triangle', notes: [{ freq: 392, start: 0, dur: 0.06 }, { freq: 293.66, start: 0.06, dur: 0.09 }] },
     unmute: { type: 'triangle', notes: [{ freq: 440, start: 0, dur: 0.06 }, { freq: 587.33, start: 0.06, dur: 0.09 }] },
     // Menção no chat: duas notas agudas, bem diferentes das da voz.
-    mention: { type: 'sine', notes: [{ freq: 1046.5, start: 0, dur: 0.1 }, { freq: 1318.5, start: 0.08, dur: 0.18 }] }
+    mention: { type: 'sine', notes: [{ freq: 1046.5, start: 0, dur: 0.1 }, { freq: 1318.5, start: 0.08, dur: 0.18 }] },
+    // Chamada direta tocando: repetido (renderer.js) enquanto ninguém atende.
+    ring: { type: 'sine', notes: [{ freq: 784, start: 0, dur: 0.17 }, { freq: 988, start: 0.2, dur: 0.18 }] }
   };
 
   // Padrão ligado: só '0' desliga.

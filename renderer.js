@@ -56,6 +56,7 @@ const tunnelCopy = document.getElementById('tunnel-copy');
 
 const memberList = document.getElementById('member-list');
 const memberCount = document.getElementById('member-count');
+const memberHeading = document.getElementById('member-heading');
 const voiceConnection = document.getElementById('voice-connection');
 const voiceConnName = document.getElementById('voice-conn-name');
 const btnLeaveVoice = document.getElementById('btn-leave-voice');
@@ -119,7 +120,7 @@ const musicQueueEl = document.getElementById('music-queue');
 const musicEmptyEl = document.getElementById('music-empty');
 
 /* ================= ESTADO ================= */
-const { DEFAULT_TEXT_CHANNEL, DEFAULT_VOICE_CHANNEL, isTextChannel, isVoiceChannel } = window.VoxChannels;
+const VoxFriendsRules = window.VoxFriends;
 const { PROTOCOL_VERSION, VERSION_MISMATCH_MESSAGE, isCompatible } = window.VoxProtocol;
 const { targetPositionMs, shouldCorrectSeek } = window.VoxMusic;
 
@@ -244,6 +245,10 @@ function avatarColor(name) {
   return AVATAR_COLORS[sum % AVATAR_COLORS.length];
 }
 
+function escapeHtml(text) {
+  return String(text).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
 function initials(name) {
   return (name || '?').trim().slice(0, 2).toUpperCase();
 }
@@ -291,15 +296,39 @@ function setMyIdentity(name) {
   applyAvatar(document.getElementById('empty-avatar'), name);
 }
 
-const VOICE_NAMES = {
-  'voz-sala': 'Sala Principal',
-  'voz-jogos': 'Jogos',
-  'voz-musica': 'Música'
-};
+/* ================= SERVIDORES (ESTADO) ================= */
+let servers = [];             // servidores de que faço parte (evento 'servers')
+let currentServerId = null;   // null = Início (amigos e diretas)
+let friendsState = { friends: [], incoming: [], outgoing: [], dms: [] };
+
+const serverById = (id) => servers.find((s) => s.id === id) || null;
+
+// Canal (e servidor) de um id, ou null.
+function channelInfo(room) {
+  for (const server of servers) {
+    const channel = server.channels.find((c) => c.id === room);
+    if (channel) return { server, channel };
+  }
+  return null;
+}
+
+const isTextRoom = (room) => { const i = channelInfo(room); return (i && i.channel.type === 'text') || VoxFriendsRules.isDmKey(room); };
+const isVoiceRoom = (room) => { const i = channelInfo(room); return (i && i.channel.type === 'voice') || VoxFriendsRules.isCallKey(room); };
 
 function roomDisplayName(room) {
-  return VOICE_NAMES[room] || '#' + room;
+  const info = channelInfo(room);
+  if (info) return info.channel.type === 'text' ? '#' + info.channel.name : info.channel.name;
+  const other = currentUser ? VoxFriendsRules.otherOf(room, currentUser) : null;
+  if (VoxFriendsRules.isDmKey(room)) return '@' + (other || '?');
+  if (VoxFriendsRules.isCallKey(room)) return 'Chamada com ' + (other || '?');
+  return room || '';
 }
+
+// Último servidor e último canal de cada servidor, para voltar onde parou.
+function readJsonStorage(key, fallback) {
+  try { return JSON.parse(localStorage.getItem(key) || '') || fallback; } catch (e) { return fallback; }
+}
+let lastChannels = readJsonStorage('vox-last-channels', {});
 
 /* ================= STATUS ================= */
 const STATUS_LABELS = { online: 'Online', busy: 'Ocupado', away: 'Ausente', invisible: 'Invisível' };
@@ -378,7 +407,10 @@ function hideOverlays() {
   authScreen.style.display = 'none';
 }
 
-// Login ou cadastro concluído: entra direto em #geral e na Sala Principal, com microfone aberto.
+// Login ou cadastro concluído. O servidor manda 'servers' logo em seguida; ao chegar a
+// primeira lista, abre o último servidor usado (ou o primeiro) e entra no primeiro
+// canal de voz dele com o microfone aberto. Sem servidores, abre o Início.
+let pendingAutoJoin = false;
 function enterApp(username, token) {
   sessionToken = token || null;
   unread = {};
@@ -387,8 +419,17 @@ function enterApp(username, token) {
   micEnabled = true;
   updateControlButtons();
   hideOverlays();
-  joinText(DEFAULT_TEXT_CHANNEL);
-  joinVoice(DEFAULT_VOICE_CHANNEL);
+  pendingAutoJoin = true;
+}
+
+function autoJoinAfterLogin() {
+  pendingAutoJoin = false;
+  const last = localStorage.getItem('vox-last-server');
+  const server = serverById(last) || servers[0];
+  if (!server) { openHome(); return; }
+  selectServer(server.id);
+  const voice = server.channels.find((c) => c.type === 'voice');
+  if (voice) joinVoice(voice.id);
 }
 
 // Servidor em outra versão: a resposta de sucesso não traz a mesma versão do protocolo.
@@ -886,12 +927,15 @@ function closeAllPeers() {
 /* ================= CANAL DE TEXTO ================= */
 // Troca só o chat: não mexe em microfone nem na chamada.
 function joinText(room) {
-  if (!isTextChannel(room) || room === currentTextRoom) return;
+  if (!isTextRoom(room) || room === currentTextRoom) return;
   currentTextRoom = room;
   socket.emit('join-text', room);
-  channelName.textContent = room;
-  channelIcon.textContent = '#';
-  msgInput.placeholder = `Enviar mensagem em ${roomDisplayName(room)}`;
+  const info = channelInfo(room);
+  if (info) {
+    lastChannels[info.server.id] = room;
+    try { localStorage.setItem('vox-last-channels', JSON.stringify(lastChannels)); } catch (e) {}
+  }
+  showChatView(room);
   messagesEl.innerHTML = '';
   messageRows.clear();
   unread = VoxChatRules.clearUnread(unread, room);
@@ -904,7 +948,7 @@ function joinText(room) {
 let joinToken = 0;
 
 async function joinVoice(room) {
-  if (!isVoiceChannel(room) || room === currentVoiceRoom) return;
+  if (!isVoiceRoom(room) || room === currentVoiceRoom) return;
 
   const token = ++joinToken;
   ensureAudioContext();
@@ -946,13 +990,6 @@ function updateActiveChannel() {
   });
 }
 
-/* ================= CANAIS ================= */
-document.querySelectorAll('.channel').forEach((el) => {
-  el.addEventListener('click', () => {
-    if (el.classList.contains('voice')) joinVoice(el.dataset.room);
-    else joinText(el.dataset.room);
-  });
-});
 
 /* ================= SINALIZAÇÃO ================= */
 socket.on('user-joined', async (id) => {
@@ -1021,6 +1058,14 @@ socket.on('room-users', (list) => {
     const sound = soundRoster === undefined ? null : VoxSounds.rosterSound(soundRoster, listIds, socket.id);
     soundRoster = listIds;
     if (sound) playSoundEffect(sound);
+    // Chamada direta: quando a outra pessoa desliga, a chamada acaba para mim também
+    if (VoxFriendsRules.isCallKey(currentVoiceRoom)) {
+      if (list.length > 1) callPeerSeen = true;
+      else if (callPeerSeen) {
+        callPeerSeen = false;
+        setTimeout(() => { leaveVoice(); showToast('Chamada encerrada.'); }, 0);
+      }
+    }
   }
 
   // Remove conexões de pessoas que saíram da sala
@@ -1122,6 +1167,11 @@ socket.on('server-members', (list) => {
   }
   renderMembers();
   if (changed) { refreshAvatars(); renderAccountAvatar(); }
+  // Presença dos amigos no Início (bolinhas das conversas e lista de amigos)
+  if (!currentServerId && currentUser) {
+    renderSidebar();
+    if (chatWrap.classList.contains('friends-mode')) renderFriendsPanel();
+  }
 });
 
 function appendMemberRow(u) {
@@ -1176,10 +1226,19 @@ function appendMemberRow(u) {
   memberList.appendChild(row);
 }
 
+// Pessoas da coluna da direita: membros do servidor aberto, ou os amigos no Início.
+function visibleMembers() {
+  const server = serverById(currentServerId);
+  const names = new Set(server ? server.members : [...friendsState.friends, currentUser]);
+  return serverMembers.filter((m) => names.has(m.username));
+}
+
 function renderMembers() {
   memberList.innerHTML = '';
-  memberCount.textContent = serverMembers.length;
-  const groups = [['Online', serverMembers.filter((m) => m.online)], ['Offline', serverMembers.filter((m) => !m.online)]];
+  const members = visibleMembers();
+  memberHeading.textContent = currentServerId ? 'Membros' : 'Amigos';
+  memberCount.textContent = members.length;
+  const groups = [['Online', members.filter((m) => m.online)], ['Offline', members.filter((m) => !m.online)]];
   groups.forEach(([label, list]) => {
     if (!list.length) return;
     const title = document.createElement('div');
@@ -1297,7 +1356,9 @@ function renderTiles() {
       <div style="display:flex;flex-direction:column;align-items:center;gap:10px;color:var(--muted);padding:20px;text-align:center;">
         <i data-icon="hand" data-size="28"></i>
         <div style="font-weight:600;color:var(--text);">Aguardando alguém entrar...</div>
-        <div style="font-size:12px;">Compartilhe o canal ${roomDisplayName(currentVoiceRoom)} com seus amigos.</div>
+        <div style="font-size:12px;">${VoxFriendsRules.isCallKey(currentVoiceRoom)
+          ? 'Chamando ' + escapeHtml(VoxFriendsRules.otherOf(currentVoiceRoom, currentUser) || '') + '…'
+          : 'Chame seus amigos para o canal ' + escapeHtml(roomDisplayName(currentVoiceRoom)) + '.'}</div>
       </div>`;
     VoxIcons.hydrate(empty);
     videoGrid.appendChild(empty);
@@ -2851,8 +2912,10 @@ document.addEventListener('keydown', (e) => {
 const VoxChatRules = window.VoxChat;
 const messageRows = new Map(); // id -> { row, msg }
 
+// Nomes que podem ser mencionados: membros do servidor aberto (ou os dois da conversa direta).
 function memberNames() {
-  const names = serverMembers.map((m) => m.username);
+  const info = channelInfo(currentTextRoom);
+  const names = info ? info.server.members.slice() : [VoxFriendsRules.otherOf(currentTextRoom, currentUser)].filter(Boolean);
   if (currentUser && !names.includes(currentUser)) names.push(currentUser);
   return names;
 }
@@ -3273,7 +3336,10 @@ function renderUnread() {
     badge.textContent = u.mention ? '@' : (u.count > 99 ? '99+' : String(u.count));
     badge.title = u.mention ? 'Você foi mencionado' : `${u.count} mensagem(ns) não lida(s)`;
   });
-  document.title = total ? `(${total}) Vox` : 'Vox';
+  // Total de todas as salas (não só as da coluna visível) no título
+  const all = Object.values(unread).reduce((n, u) => n + u.count, 0);
+  document.title = all ? `(${all}) Vox` : 'Vox';
+  renderRail();
 }
 
 function notifyMessage(m, mention) {
@@ -3284,10 +3350,12 @@ function notifyMessage(m, mention) {
   if (!focused) window.electronAPI.flashFrame(true);
   if (typeof Notification === 'undefined') return;
   const body = m.text ? m.text.slice(0, 140) : 'Enviou uma imagem';
-  const n = new Notification(`${m.user} em #${m.room}`, { body, silent: true });
+  const info = channelInfo(m.room);
+  const title = info ? `${m.user} em ${roomDisplayName(m.room)} (${info.server.name})` : m.user;
+  const n = new Notification(title, { body, silent: true });
   n.onclick = () => {
     window.electronAPI.focusWindow();
-    joinText(m.room);
+    openRoom(m.room);
   };
 }
 
@@ -3295,6 +3363,12 @@ socket.on('new-message', (m) => {
   if (!m || !currentUser) return;
   const own = m.user === currentUser;
   const mention = !own && Array.isArray(m.mentions) && m.mentions.some((n) => sameName(n, currentUser));
+  // Conversa direta: sobe para o topo da lista do Início
+  if (VoxFriendsRules.isDmKey(m.room)) {
+    const other = VoxFriendsRules.otherOf(m.room, currentUser);
+    friendsState.dms = [{ user: other, lastAt: m.created_at }, ...friendsState.dms.filter((d) => d.user !== other)];
+    if (!currentServerId) renderSidebar();
+  }
   if (m.room === currentTextRoom) {
     appendMessage(m);
     if (!own && !document.hasFocus()) { unread = VoxChatRules.addUnread(unread, m.room, mention); renderUnread(); }
@@ -3391,6 +3465,16 @@ function logout() {
 function endSession(message) {
   sessionToken = null;
   unread = {};
+  pendingAutoJoin = false;
+  servers = [];
+  currentServerId = null;
+  friendsState = { friends: [], incoming: [], outgoing: [], dms: [] };
+  dmUsers.clear();
+  stopRinging();
+  serverModal.classList.add('hidden');
+  closeFormModal();
+  channelScroll.innerHTML = '';
+  guildName.textContent = 'Início';
   renderUnread();
   clearAttachment();
   errorLogin.textContent = message || '';
@@ -3422,6 +3506,834 @@ function endSession(message) {
 }
 
 if (btnLogout) btnLogout.addEventListener('click', logout);
+
+/* ================= NAVEGAÇÃO: SERVIDORES E INÍCIO ================= */
+const serverListEl = document.getElementById('server-list');
+const railHome = document.getElementById('rail-home');
+const railAdd = document.getElementById('rail-add');
+const guildHeader = document.getElementById('guild-header');
+const guildName = document.getElementById('guild-name');
+const serverMenu = document.getElementById('server-menu');
+const channelScroll = document.getElementById('channel-scroll');
+const chatWrap = document.getElementById('chat-wrap');
+const btnDmCall = document.getElementById('btn-dm-call');
+const dmUsers = new Set(); // conversas abertas nesta sessão (ainda sem mensagens)
+
+function serverInitials(name) {
+  const words = String(name || '?').trim().split(/\s+/).filter(Boolean);
+  return (words.length > 1 ? words[0][0] + words[1][0] : (words[0] || '?').slice(0, 2)).toUpperCase();
+}
+
+const serverHasUnread = (s) => s.channels.some((c) => unread[c.id]);
+
+function renderRail() {
+  serverListEl.innerHTML = '';
+  for (const s of servers) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'rail-btn rail-guild' + (s.id === currentServerId ? ' active' : '') + (serverHasUnread(s) ? ' has-unread' : '');
+    b.title = s.name;
+    b.setAttribute('aria-label', s.name);
+    b.textContent = serverInitials(s.name);
+    b.addEventListener('click', () => selectServer(s.id));
+    serverListEl.appendChild(b);
+  }
+  railHome.classList.toggle('active', !currentServerId);
+  // Início: conversas diretas não lidas e pedidos de amizade recebidos
+  const dmCount = Object.entries(unread).filter(([room]) => VoxFriendsRules.isDmKey(room)).reduce((n, [, u]) => n + u.count, 0);
+  const total = dmCount + friendsState.incoming.length;
+  let badge = railHome.querySelector('.rail-badge');
+  if (!total) { if (badge) badge.remove(); return; }
+  if (!badge) {
+    badge = document.createElement('span');
+    badge.className = 'unread-badge mention rail-badge';
+    railHome.appendChild(badge);
+  }
+  badge.textContent = total > 99 ? '99+' : String(total);
+}
+
+function selectServer(id) {
+  const server = serverById(id);
+  if (!server) { openHome(); return; }
+  const changed = currentServerId !== id;
+  currentServerId = id;
+  try { localStorage.setItem('vox-last-server', id); } catch (e) {}
+  if (changed || !currentTextRoom || !channelInfo(currentTextRoom)) {
+    const last = server.channels.find((c) => c.id === lastChannels[id] && c.type === 'text');
+    const text = last || server.channels.find((c) => c.type === 'text');
+    if (text && text.id !== currentTextRoom) joinText(text.id);
+  }
+  renderSidebar();
+  renderRail();
+  renderMembers();
+}
+
+// Início sem conversa aberta: painel de amigos.
+function openHome() {
+  currentServerId = null;
+  currentTextRoom = '';
+  messagesEl.innerHTML = '';
+  messageRows.clear();
+  chatWrap.classList.add('friends-mode');
+  channelIcon.textContent = '';
+  VoxIcons.setIcon(channelIcon, 'users', '', 18);
+  channelName.textContent = 'Amigos';
+  btnDmCall.classList.add('hidden');
+  renderSidebar();
+  renderRail();
+  renderMembers();
+  renderFriendsPanel();
+}
+
+function openDm(user) {
+  if (!currentUser || !user) return;
+  dmUsers.add(user);
+  currentServerId = null;
+  joinText(VoxFriendsRules.dmKey(currentUser, user));
+  renderSidebar();
+  renderRail();
+  renderMembers();
+}
+
+// Abre a sala de uma notificação ou link: canal de algum servidor ou conversa direta.
+function openRoom(room) {
+  if (VoxFriendsRules.isDmKey(room)) { openDm(VoxFriendsRules.otherOf(room, currentUser)); return; }
+  const info = channelInfo(room);
+  if (!info) return;
+  if (currentServerId !== info.server.id) selectServer(info.server.id);
+  joinText(room);
+}
+
+// Cabeçalho e área do chat do canal/conversa aberto.
+function showChatView(room) {
+  chatWrap.classList.remove('friends-mode');
+  const dmOther = VoxFriendsRules.isDmKey(room) ? VoxFriendsRules.otherOf(room, currentUser) : null;
+  channelIcon.textContent = dmOther ? '@' : '#';
+  channelName.textContent = dmOther || (channelInfo(room) ? channelInfo(room).channel.name : room);
+  msgInput.placeholder = `Enviar mensagem em ${roomDisplayName(room)}`;
+  btnDmCall.classList.toggle('hidden', !(dmOther && friendsState.friends.includes(dmOther)));
+}
+
+function makeChannelItem({ room, label, icon, voice, editable, onClick }) {
+  const el = document.createElement('div');
+  el.className = 'channel' + (voice ? ' voice' : '');
+  if (room) el.dataset.room = room;
+  const ic = document.createElement('span');
+  ic.className = voice ? 'voice-icon' : 'hash';
+  if (icon === '#') ic.textContent = '#'; else ic.appendChild(VoxIcons.icon(icon, 16));
+  const name = document.createElement('span');
+  name.className = 'channel-name';
+  name.textContent = label;
+  el.append(ic, name);
+  if (editable) {
+    const edit = document.createElement('button');
+    edit.type = 'button';
+    edit.className = 'channel-edit';
+    edit.title = 'Editar canal';
+    edit.setAttribute('aria-label', 'Editar canal ' + label);
+    edit.appendChild(VoxIcons.icon('settings', 14));
+    edit.addEventListener('click', (e) => { e.stopPropagation(); editChannel(room); });
+    el.appendChild(edit);
+  }
+  el.addEventListener('click', onClick);
+  return el;
+}
+
+function sectionTitle(text, onAdd) {
+  const head = document.createElement('div');
+  head.className = 'section-title section-head';
+  const span = document.createElement('span');
+  span.textContent = text;
+  head.appendChild(span);
+  if (onAdd) {
+    const add = document.createElement('button');
+    add.type = 'button';
+    add.className = 'section-add';
+    add.title = 'Criar canal';
+    add.setAttribute('aria-label', 'Criar canal');
+    add.appendChild(VoxIcons.icon('plus', 14));
+    add.addEventListener('click', onAdd);
+    head.appendChild(add);
+  }
+  return head;
+}
+
+// Coluna de canais: do servidor aberto, ou amigos e conversas diretas no Início.
+function renderSidebar() {
+  channelScroll.innerHTML = '';
+  const server = serverById(currentServerId);
+  serverMenu.classList.add('hidden');
+  if (server) {
+    guildName.textContent = server.name;
+    guildHeader.classList.remove('no-menu');
+    const manager = ['owner', 'admin'].includes(server.role);
+    for (const [type, title] of [['text', 'Canais de texto'], ['voice', 'Canais de voz']]) {
+      channelScroll.appendChild(sectionTitle(title, manager ? () => createChannelDialog(type) : null));
+      server.channels.filter((c) => c.type === type).forEach((c) => {
+        channelScroll.appendChild(makeChannelItem({
+          room: c.id, label: c.name, icon: type === 'text' ? '#' : 'volume-2', voice: type === 'voice', editable: manager,
+          onClick: () => (type === 'voice' ? joinVoice(c.id) : joinText(c.id))
+        }));
+      });
+    }
+  } else {
+    guildName.textContent = 'Início';
+    guildHeader.classList.add('no-menu');
+    const friendsItem = makeChannelItem({ label: 'Amigos', icon: 'users', onClick: openHome });
+    friendsItem.classList.toggle('active', !currentTextRoom);
+    if (friendsState.incoming.length) {
+      const b = document.createElement('span');
+      b.className = 'unread-badge mention';
+      b.textContent = String(friendsState.incoming.length);
+      friendsItem.appendChild(b);
+    }
+    channelScroll.appendChild(friendsItem);
+    channelScroll.appendChild(sectionTitle('Mensagens diretas'));
+    const people = new Map(friendsState.dms.map((d) => [d.user, d.lastAt]));
+    dmUsers.forEach((u) => { if (!people.has(u)) people.set(u, ''); });
+    const list = [...people.entries()].sort((a, b) => String(b[1]).localeCompare(String(a[1])));
+    if (!list.length) {
+      const empty = document.createElement('div');
+      empty.className = 'channel-empty';
+      empty.textContent = 'Nenhuma conversa ainda. Abra uma pela lista de amigos.';
+      channelScroll.appendChild(empty);
+    }
+    for (const [user] of list) {
+      const room = VoxFriendsRules.dmKey(currentUser, user);
+      const el = makeChannelItem({ room, label: user, icon: 'message-circle', onClick: () => openDm(user) });
+      el.classList.add('dm');
+      const presence = serverMembers.find((m) => m.username === user);
+      const wrap = document.createElement('span');
+      wrap.className = 'avatar-wrap';
+      wrap.appendChild(makeAvatar(user));
+      if (presence && presence.online) {
+        const dot = document.createElement('span');
+        dot.className = 'status-dot member-status-dot ' + (presence.status || 'online');
+        wrap.appendChild(dot);
+      }
+      el.firstChild.replaceWith(wrap);
+      channelScroll.appendChild(el);
+    }
+  }
+  updateActiveChannel();
+  renderMembers();
+  renderUnread();
+}
+
+railHome.addEventListener('click', openHome);
+
+/* ---------- Eventos do servidor ---------- */
+socket.on('servers', (list) => {
+  servers = Array.isArray(list) ? list : [];
+  if (pendingAutoJoin) { renderRail(); autoJoinAfterLogin(); return; }
+  if (currentServerId && !serverById(currentServerId)) {
+    openHome();
+  } else if (currentServerId && currentTextRoom && !VoxFriendsRules.isDmKey(currentTextRoom) && !channelInfo(currentTextRoom)) {
+    currentTextRoom = '';
+    selectServer(currentServerId); // canal aberto foi apagado: vai para o primeiro
+  } else {
+    renderSidebar();
+    if (currentTextRoom) showChatView(currentTextRoom); // nomes podem ter mudado
+  }
+  if (currentVoiceRoom) voiceConnName.textContent = roomDisplayName(currentVoiceRoom);
+  renderRail();
+  if (!serverModal.classList.contains('hidden')) renderServerModal();
+});
+
+socket.on('voice-removed', ({ room } = {}) => {
+  if (room && room === currentVoiceRoom) {
+    leaveVoice();
+    showToast('Você saiu do canal de voz: ele foi apagado ou você perdeu o acesso.');
+  }
+});
+
+socket.on('server-kicked', ({ name } = {}) => showToast(`Você foi removido do servidor ${name || ''}.`));
+
+/* ---------- Formulário curto ---------- */
+const formModal = document.getElementById('form-modal');
+const formCard = document.getElementById('form-card');
+const formTitle = document.getElementById('form-title');
+const formHint = document.getElementById('form-hint');
+const formFields = document.getElementById('form-fields');
+const formError = document.getElementById('form-error');
+const formSubmit = document.getElementById('form-submit');
+const formCancel = document.getElementById('form-cancel');
+let formState = null;
+
+// fields: [{ name, label, value, placeholder, readonly, maxlength }]; extra: { label, danger, onClick }.
+// onSubmit(values) devolve uma mensagem de erro (mantém aberto) ou nada (fecha).
+function openFormModal({ title, hint = '', fields = [], submit = 'Salvar', extra = null, onSubmit }) {
+  formTitle.textContent = title;
+  formHint.textContent = hint;
+  formHint.classList.toggle('hidden', !hint);
+  formError.textContent = '';
+  formFields.innerHTML = '';
+  for (const f of fields) {
+    const wrap = document.createElement('div');
+    wrap.className = 'field';
+    const label = document.createElement('label');
+    label.textContent = f.label;
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.name = f.name;
+    input.value = f.value || '';
+    input.placeholder = f.placeholder || '';
+    input.readOnly = !!f.readonly;
+    if (f.maxlength) input.maxLength = f.maxlength;
+    input.autocomplete = 'off';
+    input.spellcheck = false;
+    label.htmlFor = input.id = 'form-field-' + f.name;
+    wrap.append(label, input);
+    formFields.appendChild(wrap);
+  }
+  formSubmit.textContent = submit;
+  const actions = formCancel.parentElement;
+  actions.querySelectorAll('.form-extra').forEach((b) => b.remove());
+  if (extra) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'form-extra ' + (extra.danger ? 'btn-danger-outline' : 'btn-secondary');
+    b.textContent = extra.label;
+    b.addEventListener('click', async () => { if (await extra.onClick()) closeFormModal(); });
+    actions.insertBefore(b, formCancel);
+  }
+  formState = { onSubmit };
+  formModal.classList.remove('hidden');
+  const first = formFields.querySelector('input:not([readonly])') || formFields.querySelector('input');
+  if (first) { first.focus(); first.select(); }
+}
+
+function closeFormModal() {
+  formModal.classList.add('hidden');
+  formState = null;
+}
+
+formCard.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  if (!formState) return;
+  const values = Object.fromEntries([...formFields.querySelectorAll('input')].map((i) => [i.name, i.value]));
+  formSubmit.disabled = true;
+  try {
+    const error = await formState.onSubmit(values);
+    if (error) formError.textContent = error; else closeFormModal();
+  } finally {
+    formSubmit.disabled = false;
+  }
+});
+formCancel.addEventListener('click', closeFormModal);
+formModal.addEventListener('click', (e) => { if (e.target === formModal) closeFormModal(); });
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !formModal.classList.contains('hidden')) closeFormModal();
+});
+
+// Emite e espera a resposta; devolve a mensagem de erro (string) ou o objeto de sucesso.
+function request(event, payload) {
+  return new Promise((resolve) => {
+    if (!socket.connected) { resolve({ success: false, message: 'Sem conexão com o servidor.' }); return; }
+    socket.timeout(15000).emit(event, payload, (err, res) => {
+      resolve(err ? { success: false, message: 'O servidor não respondeu.' } : (res || { success: false }));
+    });
+  });
+}
+
+/* ---------- Criar ou entrar em servidor ---------- */
+railAdd.addEventListener('click', () => {
+  openFormModal({
+    title: 'Adicionar servidor',
+    hint: 'Crie um servidor novo ou cole o código de convite que alguém te mandou (ex.: VOX-AB12CD34). Use só um dos campos.',
+    fields: [
+      { name: 'name', label: 'Nome do servidor novo', placeholder: 'Ex.: Turma do jogo', maxlength: 40 },
+      { name: 'code', label: 'Ou código de convite', placeholder: 'Ex.: VOX-AB12CD34', maxlength: 16 }
+    ],
+    submit: 'Continuar',
+    onSubmit: async ({ name, code }) => {
+      if (code.trim()) {
+        const res = await request('invite-join', { code });
+        if (!res.success) return res.message || 'Convite inválido.';
+        if (res.already) showToast('Você já está nesse servidor.');
+        openServerWhenReady(res.serverId);
+        return null;
+      }
+      if (!name.trim()) return 'Escreva o nome do servidor ou o código de convite.';
+      const res = await request('server-create', { name });
+      if (!res.success) return res.message;
+      openServerWhenReady(res.serverId);
+      return null;
+    }
+  });
+});
+
+// Servidor recém-criado/entrado: o servidor manda a lista nova antes da resposta,
+// então em geral já dá para abrir; senão, abre quando a lista chegar.
+let pendingServerSelect = null;
+function openServerWhenReady(id) {
+  if (serverById(id)) selectServer(id); else pendingServerSelect = id;
+}
+socket.on('servers', () => {
+  if (pendingServerSelect && serverById(pendingServerSelect)) {
+    const id = pendingServerSelect;
+    pendingServerSelect = null;
+    selectServer(id);
+  }
+});
+
+/* ---------- Menu do servidor ---------- */
+guildHeader.addEventListener('click', (e) => {
+  e.stopPropagation();
+  const server = serverById(currentServerId);
+  if (!server) return;
+  const manager = ['owner', 'admin'].includes(server.role);
+  serverMenu.querySelectorAll('[data-manage]').forEach((b) => b.classList.toggle('hidden', !manager));
+  serverMenu.querySelector('[data-action="invite"]').classList.toggle('hidden', !manager);
+  serverMenu.querySelector('[data-action="leave"]').classList.toggle('hidden', server.role === 'owner');
+  serverMenu.classList.toggle('hidden');
+  guildHeader.setAttribute('aria-expanded', String(!serverMenu.classList.contains('hidden')));
+});
+document.addEventListener('click', (e) => {
+  if (!serverMenu.classList.contains('hidden') && !serverMenu.contains(e.target)) serverMenu.classList.add('hidden');
+});
+
+serverMenu.addEventListener('click', async (e) => {
+  const btn = e.target.closest('button[data-action]');
+  if (!btn) return;
+  serverMenu.classList.add('hidden');
+  const server = serverById(currentServerId);
+  if (!server) return;
+  const action = btn.dataset.action;
+  if (action === 'invite') inviteDialog(server);
+  else if (action === 'settings') openServerModal();
+  else if (action === 'new-text') createChannelDialog('text');
+  else if (action === 'new-voice') createChannelDialog('voice');
+  else if (action === 'leave') {
+    if (!window.confirm(`Sair do servidor ${server.name}?`)) return;
+    const res = await request('server-leave', { serverId: server.id });
+    if (!res.success) showToast(res.message || 'Não foi possível sair.');
+  }
+});
+
+async function inviteDialog(server) {
+  const existing = server.invites[0];
+  let code = existing && existing.code;
+  if (!code) {
+    const res = await request('invite-create', { serverId: server.id });
+    if (!res.success) { showToast(res.message || 'Não foi possível criar o convite.'); return; }
+    code = res.code;
+  }
+  openFormModal({
+    title: `Convidar para ${server.name}`,
+    hint: 'Mande este código para a pessoa. Ela clica em + na barra da esquerda e cola o código. Os códigos ficam em Configurações do servidor → Convites.',
+    fields: [{ name: 'code', label: 'Código de convite', value: 'VOX-' + code, readonly: true }],
+    submit: 'Copiar e fechar',
+    onSubmit: async () => {
+      try { await navigator.clipboard.writeText('VOX-' + code); showToast('Código copiado.'); } catch (err) {}
+      return null;
+    }
+  });
+}
+
+function createChannelDialog(type) {
+  const server = serverById(currentServerId);
+  if (!server) return;
+  openFormModal({
+    title: type === 'text' ? 'Criar canal de texto' : 'Criar canal de voz',
+    fields: [{ name: 'name', label: 'Nome do canal', placeholder: type === 'text' ? 'ex.: avisos' : 'ex.: Sala de jogos', maxlength: 32 }],
+    submit: 'Criar',
+    onSubmit: async ({ name }) => {
+      const res = await request('channel-create', { serverId: server.id, type, name });
+      if (!res.success) return res.message;
+      if (type === 'text') openChannelWhenReady(res.channelId);
+      return null;
+    }
+  });
+}
+
+let pendingChannelOpen = null;
+function openChannelWhenReady(id) {
+  if (channelInfo(id)) joinText(id); else pendingChannelOpen = id;
+}
+socket.on('servers', () => {
+  if (pendingChannelOpen && channelInfo(pendingChannelOpen)) {
+    const id = pendingChannelOpen;
+    pendingChannelOpen = null;
+    joinText(id);
+  }
+});
+
+function editChannel(room) {
+  const info = channelInfo(room);
+  if (!info) return;
+  const { channel } = info;
+  openFormModal({
+    title: 'Editar canal',
+    fields: [{ name: 'name', label: 'Nome do canal', value: channel.name, maxlength: 32 }],
+    submit: 'Salvar',
+    extra: {
+      label: 'Apagar canal',
+      danger: true,
+      onClick: async () => {
+        const kind = channel.type === 'text' ? 'as mensagens dele somem para todo mundo' : 'quem estiver nele sai da voz';
+        if (!window.confirm(`Apagar o canal ${roomDisplayName(room)}? ${kind[0].toUpperCase() + kind.slice(1)}.`)) return false;
+        const res = await request('channel-delete', { channelId: room });
+        if (!res.success) { formError.textContent = res.message || 'Não foi possível apagar.'; return false; }
+        return true;
+      }
+    },
+    onSubmit: async ({ name }) => {
+      const res = await request('channel-update', { channelId: room, name });
+      return res.success ? null : res.message;
+    }
+  });
+}
+
+/* ---------- Configurações do servidor ---------- */
+const serverModal = document.getElementById('server-modal');
+const serverModalError = document.getElementById('server-modal-error');
+const serverNameInput = document.getElementById('server-name-input');
+const serverMemberList = document.getElementById('server-member-list');
+const inviteList = document.getElementById('invite-list');
+
+function showServerTab(name) {
+  document.querySelectorAll('.server-tab').forEach((b) => b.classList.toggle('active', b.dataset.tab === name));
+  document.querySelectorAll('.server-panel').forEach((p) => p.classList.toggle('hidden', p.id !== 'server-tab-' + name));
+}
+document.querySelectorAll('.server-tab').forEach((b) => b.addEventListener('click', () => showServerTab(b.dataset.tab)));
+
+function openServerModal() {
+  const server = serverById(currentServerId);
+  if (!server) return;
+  serverNameInput.value = server.name;
+  serverModalError.textContent = '';
+  showServerTab('geral');
+  renderServerModal();
+  serverModal.classList.remove('hidden');
+}
+
+function smallButton(label, onClick, danger) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.textContent = label;
+  if (danger) b.className = 'danger';
+  b.addEventListener('click', onClick);
+  return b;
+}
+
+async function serverAction(event, payload, confirmText) {
+  if (confirmText && !window.confirm(confirmText)) return;
+  serverModalError.textContent = '';
+  const res = await request(event, payload);
+  if (!res.success) serverModalError.textContent = res.message || 'Não foi possível.';
+  return res;
+}
+
+function renderServerModal() {
+  const server = serverById(currentServerId);
+  if (!server) { serverModal.classList.add('hidden'); return; }
+  const owner = server.role === 'owner';
+  const manager = owner || server.role === 'admin';
+  document.getElementById('server-modal-title').textContent = server.name;
+  document.getElementById('server-owner-line').textContent = `Dono: ${server.owner}. ${server.admins.length ? 'Administradores: ' + server.admins.join(', ') + '.' : 'Sem administradores.'}`;
+  document.getElementById('server-rename').disabled = !manager;
+  serverNameInput.disabled = !manager;
+  document.getElementById('server-delete').classList.toggle('hidden', !owner);
+
+  serverMemberList.innerHTML = '';
+  const roleOf = (u) => (u === server.owner ? 'owner' : server.admins.includes(u) ? 'admin' : 'member');
+  const sorted = server.members.slice().sort((a, b) => ['owner', 'admin', 'member'].indexOf(roleOf(a)) - ['owner', 'admin', 'member'].indexOf(roleOf(b)) || a.localeCompare(b));
+  for (const u of sorted) {
+    const row = document.createElement('div');
+    row.className = 'server-member';
+    row.appendChild(makeAvatar(u));
+    const info = document.createElement('div');
+    const name = document.createElement('div');
+    name.textContent = u + (u === currentUser ? ' (você)' : '');
+    const role = document.createElement('span');
+    role.className = 'role';
+    const r = roleOf(u);
+    role.appendChild(VoxIcons.icon(r === 'owner' ? 'crown' : r === 'admin' ? 'shield' : 'users', 12));
+    role.appendChild(document.createTextNode(r === 'owner' ? ' Dono' : r === 'admin' ? ' Administrador' : ' Membro'));
+    info.append(name, role);
+    row.appendChild(info);
+    const actions = document.createElement('div');
+    actions.className = 'member-actions';
+    if (u !== currentUser && r !== 'owner') {
+      if (owner) {
+        actions.appendChild(smallButton(r === 'admin' ? 'Tirar admin' : 'Tornar admin',
+          () => serverAction('member-role', { serverId: server.id, user: u, admin: r !== 'admin' })));
+        actions.appendChild(smallButton('Passar posse',
+          () => serverAction('server-transfer', { serverId: server.id, user: u }, `Passar a posse de ${server.name} para ${u}? Você vira administrador.`)));
+      }
+      if (owner || (manager && r === 'member')) {
+        actions.appendChild(smallButton('Expulsar',
+          () => serverAction('member-kick', { serverId: server.id, user: u }, `Expulsar ${u} de ${server.name}?`), true));
+      }
+    }
+    row.appendChild(actions);
+    serverMemberList.appendChild(row);
+  }
+
+  inviteList.innerHTML = '';
+  document.getElementById('invite-new').disabled = !manager;
+  if (!server.invites.length) {
+    const empty = document.createElement('p');
+    empty.className = 'settings-hint';
+    empty.textContent = 'Nenhum código ativo.';
+    inviteList.appendChild(empty);
+  }
+  for (const inv of server.invites) {
+    const row = document.createElement('div');
+    row.className = 'invite-row';
+    const info = document.createElement('div');
+    const code = document.createElement('div');
+    code.className = 'invite-code';
+    code.textContent = 'VOX-' + inv.code;
+    const meta = document.createElement('div');
+    meta.className = 'invite-meta';
+    meta.textContent = `Criado por ${inv.by} em ${new Date(inv.at).toLocaleDateString('pt-BR')}`;
+    info.append(code, meta);
+    const actions = document.createElement('div');
+    actions.className = 'member-actions';
+    actions.appendChild(smallButton('Copiar', async () => {
+      try { await navigator.clipboard.writeText('VOX-' + inv.code); showToast('Código copiado.'); } catch (e) {}
+    }));
+    actions.appendChild(smallButton('Revogar', () => serverAction('invite-revoke', { serverId: server.id, code: inv.code }, 'Revogar este código? Ninguém mais entra com ele.'), true));
+    row.append(info, actions);
+    inviteList.appendChild(row);
+  }
+}
+
+document.getElementById('server-rename').addEventListener('click', () => {
+  serverAction('server-update', { serverId: currentServerId, name: serverNameInput.value }).then((res) => {
+    if (res && res.success) showToast('Nome salvo.');
+  });
+});
+serverNameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') document.getElementById('server-rename').click(); });
+document.getElementById('invite-new').addEventListener('click', () => serverAction('invite-create', { serverId: currentServerId }));
+document.getElementById('server-delete').addEventListener('click', async () => {
+  const server = serverById(currentServerId);
+  if (!server) return;
+  const typed = window.confirm(`Apagar o servidor ${server.name}? Todos os canais e mensagens somem para todo mundo. Não dá para desfazer.`);
+  if (!typed) return;
+  const res = await serverAction('server-delete', { serverId: server.id });
+  if (res && res.success) serverModal.classList.add('hidden');
+});
+document.getElementById('server-modal-close').addEventListener('click', () => serverModal.classList.add('hidden'));
+serverModal.addEventListener('click', (e) => { if (e.target === serverModal) serverModal.classList.add('hidden'); });
+
+/* ================= AMIGOS ================= */
+const friendsList = document.getElementById('friends-list');
+const friendsAdd = document.getElementById('friends-add');
+const friendNameInput = document.getElementById('friend-name');
+const friendAddStatus = document.getElementById('friend-add-status');
+const pendingCountEl = document.getElementById('pending-count');
+let friendsTab = 'online';
+
+document.querySelectorAll('.friends-tab').forEach((b) => b.addEventListener('click', () => {
+  friendsTab = b.dataset.tab;
+  renderFriendsPanel();
+  if (friendsTab === 'add') friendNameInput.focus();
+}));
+
+function roundButton(icon, title, onClick, kind) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'round-btn' + (kind ? ' ' + kind : '');
+  b.title = title;
+  b.setAttribute('aria-label', title);
+  b.appendChild(VoxIcons.icon(icon, 16));
+  b.addEventListener('click', onClick);
+  return b;
+}
+
+async function friendAction(event, user, confirmText) {
+  if (confirmText && !window.confirm(confirmText)) return;
+  const res = await request(event, { user });
+  if (!res.success) showToast(res.message || 'Não foi possível.');
+}
+
+function friendRow(user, sub, actions) {
+  const row = document.createElement('div');
+  row.className = 'friend-row';
+  const wrap = document.createElement('span');
+  wrap.className = 'avatar-wrap';
+  wrap.appendChild(makeAvatar(user));
+  const presence = serverMembers.find((m) => m.username === user);
+  if (presence && presence.online) {
+    const dot = document.createElement('span');
+    dot.className = 'status-dot member-status-dot ' + (presence.status || 'online');
+    wrap.appendChild(dot);
+  }
+  const info = document.createElement('div');
+  info.className = 'friend-info';
+  const name = document.createElement('div');
+  name.className = 'friend-name';
+  name.textContent = user;
+  const s = document.createElement('div');
+  s.className = 'friend-sub';
+  s.textContent = sub;
+  info.append(name, s);
+  const box = document.createElement('div');
+  box.className = 'friend-actions';
+  actions.forEach((a) => box.appendChild(a));
+  row.append(wrap, info, box);
+  return row;
+}
+
+function renderFriendsPanel() {
+  document.querySelectorAll('.friends-tab').forEach((b) => b.classList.toggle('active', b.dataset.tab === friendsTab));
+  pendingCountEl.textContent = String(friendsState.incoming.length);
+  pendingCountEl.classList.toggle('hidden', !friendsState.incoming.length);
+  friendsAdd.classList.toggle('hidden', friendsTab !== 'add');
+  friendsList.innerHTML = '';
+  if (friendsTab === 'add') return;
+
+  const section = (text) => {
+    const t = document.createElement('div');
+    t.className = 'friends-section';
+    t.textContent = text;
+    friendsList.appendChild(t);
+  };
+  const empty = (text) => {
+    const p = document.createElement('div');
+    p.className = 'friends-empty';
+    p.textContent = text;
+    friendsList.appendChild(p);
+  };
+
+  if (friendsTab === 'pending') {
+    if (!friendsState.incoming.length && !friendsState.outgoing.length) return empty('Nenhum pedido de amizade pendente.');
+    if (friendsState.incoming.length) section(`Recebidos — ${friendsState.incoming.length}`);
+    friendsState.incoming.forEach(({ user }) => friendsList.appendChild(friendRow(user, 'Quer ser seu amigo', [
+      roundButton('check', 'Aceitar', () => friendAction('friend-accept', user), 'ok'),
+      roundButton('x', 'Recusar', () => friendAction('friend-drop', user), 'danger')
+    ])));
+    if (friendsState.outgoing.length) section(`Enviados — ${friendsState.outgoing.length}`);
+    friendsState.outgoing.forEach(({ user }) => friendsList.appendChild(friendRow(user, 'Pedido enviado', [
+      roundButton('x', 'Cancelar pedido', () => friendAction('friend-drop', user), 'danger')
+    ])));
+    return;
+  }
+
+  const presenceOf = (u) => serverMembers.find((m) => m.username === u);
+  let list = friendsState.friends.slice().sort((a, b) => a.localeCompare(b));
+  if (friendsTab === 'online') list = list.filter((u) => (presenceOf(u) || {}).online);
+  if (!list.length) {
+    return empty(friendsTab === 'online'
+      ? 'Nenhum amigo online agora.'
+      : 'Você ainda não tem amigos aqui. Use "Adicionar amigo" com o nome de usuário da pessoa.');
+  }
+  section(`${friendsTab === 'online' ? 'Online' : 'Todos os amigos'} — ${list.length}`);
+  for (const u of list) {
+    const p = presenceOf(u);
+    const sub = p && p.online ? (STATUS_LABELS[p.status] || 'Online') : 'Offline';
+    friendsList.appendChild(friendRow(u, sub, [
+      roundButton('message-circle', 'Mensagem', () => openDm(u)),
+      roundButton('phone', 'Ligar', () => startCall(u), 'ok'),
+      roundButton('user-x', 'Desfazer amizade', () => friendAction('friend-remove', u, `Desfazer a amizade com ${u}? A conversa continua guardada, mas vocês não poderão mandar mensagens nem ligar.`), 'danger')
+    ]));
+  }
+}
+
+async function sendFriendRequest() {
+  const user = friendNameInput.value.trim();
+  friendAddStatus.classList.remove('ok');
+  if (!user) { friendAddStatus.textContent = 'Digite um nome de usuário.'; return; }
+  const res = await request('friend-request', { user });
+  if (!res.success) { friendAddStatus.textContent = res.message || 'Não foi possível.'; return; }
+  friendAddStatus.classList.add('ok');
+  friendAddStatus.textContent = `Pedido enviado para ${user}.`;
+  friendNameInput.value = '';
+}
+document.getElementById('friend-send').addEventListener('click', sendFriendRequest);
+friendNameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendFriendRequest(); });
+
+socket.on('friends', (data) => {
+  const before = new Set(friendsState.incoming.map((r) => r.user));
+  friendsState = {
+    friends: Array.isArray(data && data.friends) ? data.friends : [],
+    incoming: Array.isArray(data && data.incoming) ? data.incoming : [],
+    outgoing: Array.isArray(data && data.outgoing) ? data.outgoing : [],
+    dms: Array.isArray(data && data.dms) ? data.dms : []
+  };
+  const fresh = friendsState.incoming.filter((r) => !before.has(r.user));
+  if (fresh.length && before.size + fresh.length > 0 && currentUser) {
+    showToast(`${fresh[0].user} quer ser seu amigo.`);
+    playSoundEffect('mention');
+  }
+  if (!currentServerId) renderSidebar();
+  if (chatWrap.classList.contains('friends-mode')) renderFriendsPanel();
+  if (currentTextRoom) showChatView(currentTextRoom);
+  renderRail();
+  renderMembers();
+});
+
+/* ================= CHAMADA DIRETA ================= */
+const callRing = document.getElementById('call-ring');
+let ringingCall = null; // { room, from } tocando aqui
+let ringTimer = null;
+let callPeerSeen = false; // a outra pessoa chegou a entrar na chamada atual
+
+function stopRinging() {
+  ringingCall = null;
+  clearInterval(ringTimer);
+  ringTimer = null;
+  callRing.classList.add('hidden');
+}
+
+async function startCall(user) {
+  const res = await request('call-start', { user });
+  if (!res.success) { showToast(res.message || 'Não foi possível ligar.'); return; }
+  callPeerSeen = false;
+  joinVoice(res.room);
+}
+
+btnDmCall.addEventListener('click', () => {
+  const other = VoxFriendsRules.isDmKey(currentTextRoom) ? VoxFriendsRules.otherOf(currentTextRoom, currentUser) : null;
+  if (other) startCall(other);
+});
+
+socket.on('call-incoming', ({ from, room } = {}) => {
+  if (!from || !room) return;
+  ringingCall = { room, from };
+  applyAvatar(document.getElementById('call-ring-avatar'), from);
+  document.getElementById('call-ring-name').textContent = from;
+  callRing.classList.remove('hidden');
+  playSoundEffect('ring');
+  clearInterval(ringTimer);
+  let beat = 0; // dois toques seguidos e uma pausa, como um telefone
+  ringTimer = setInterval(() => { if (++beat % 3 !== 0) playSoundEffect('ring'); }, 500);
+  if (effectiveStatus() !== 'busy' && typeof Notification !== 'undefined' && !document.hasFocus()) {
+    const n = new Notification(`${from} está te ligando`, { body: 'Abra o Vox para atender.', silent: true });
+    n.onclick = () => window.electronAPI.focusWindow();
+    window.electronAPI.flashFrame(true);
+  }
+});
+
+document.getElementById('call-accept').addEventListener('click', () => {
+  if (!ringingCall) return;
+  const { room } = ringingCall;
+  stopRinging();
+  callPeerSeen = false;
+  joinVoice(room);
+});
+
+document.getElementById('call-decline').addEventListener('click', () => {
+  if (!ringingCall) return;
+  socket.emit('call-decline', { room: ringingCall.room }, () => {});
+  stopRinging();
+});
+
+const CALL_END_TEXT = { declined: 'recusou a chamada', missed: 'não atendeu', cancelled: 'desistiu da chamada' };
+socket.on('call-ended', ({ room, reason } = {}) => {
+  if (ringingCall && ringingCall.room === room) {
+    if (reason === 'cancelled') showToast(`${ringingCall.from} ${CALL_END_TEXT.cancelled}.`);
+    stopRinging();
+  }
+  // Eu liguei e a outra pessoa recusou ou não atendeu: sai da sala da chamada
+  if (room === currentVoiceRoom && (reason === 'declined' || reason === 'missed')) {
+    showToast(`${VoxFriendsRules.otherOf(room, currentUser)} ${CALL_END_TEXT[reason]}.`);
+    leaveVoice();
+  }
+});
 
 /* ================= DIAGNÓSTICO DE VÍDEO (Ctrl+Shift+D) ================= */
 // Mostra, por participante, o que sai e o que chega: fps, resolução, banda,
