@@ -97,7 +97,7 @@ O servidor já escuta na rede local (`0.0.0.0:3000`). Não é mais preciso edita
 1. **Você (host)**: abra o Vox, deixe o servidor em `http://127.0.0.1:3000` e entre/crie sua conta.
 2. Descubra seu IPv4 com `ipconfig` (ex.: `192.168.1.15`).
 3. **Seu amigo**: instale o Vox, abra e, no campo **Servidor** da tela de login, digite `http://192.168.1.15:3000` e clique em **Aplicar**.
-4. Seu amigo cria a conta dele (a conta fica no seu servidor). Conta nova não entra em nenhum servidor: ele precisa de um **código de convite**. Quem é dono ou administrador gera o código em menu do servidor → **Convidar pessoas** e manda para ele; ele clica em `+` na barra da esquerda e escolhe entrar com código. A Casa dos Amigos que já existia continua para quem já tinha conta.
+4. Seu amigo cria a conta dele (a conta fica no seu servidor) e já entra na **Casa dos Amigos**, o servidor de todo mundo. Para outros servidores ele precisa de um **código de convite**: quem é dono ou administrador gera em menu do servidor → **Convidar pessoas** e manda para ele; ele clica em `+` na barra da esquerda e cola o código.
 5. Se o Windows perguntar, permita o Vox em **Redes privadas**. Se a rede estiver marcada como **Pública** ou a conexão não funcionar, libere a porta 3000 no PowerShell como administrador:
    ```powershell
    New-NetFirewallRule -DisplayName "Vox 3000" -Direction Inbound -Protocol TCP -LocalPort 3000 -Action Allow -Profile Private,Public

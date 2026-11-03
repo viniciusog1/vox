@@ -336,3 +336,27 @@ test('findChannel e serversOf', () => {
   assert.deepEqual(S.serversOf(db, 'ana').map((s) => s.id), [server.id]);
   assert.deepEqual(S.serversOf(db, 'zé'), []);
 });
+
+test('Casa dos Amigos: contas novas entram sozinhas; outros servidores só por convite', () => {
+  const db = S.emptyDb();
+  S.migrateLegacy(db, { ana: { created_at: '2026-01-01' } });
+  assert.equal(db.servers.casa.autoJoin, true);
+  const outro = S.createServer(db, 'ana', 'Outro', makeDeps()).server;
+  const joined = S.joinAutoServers(db, 'novo');
+  assert.deepEqual(joined.map((s) => s.id), ['casa']);
+  assert.ok(db.servers.casa.members.includes('novo'));
+  assert.ok(!outro.members.includes('novo'));
+  assert.deepEqual(S.joinAutoServers(db, 'novo'), []); // não duplica
+});
+
+test('ensureLegacyAutoJoin marca a casa gravada antes da regra, uma vez só', () => {
+  const db = S.emptyDb();
+  S.migrateLegacy(db, { ana: { created_at: '2026-01-01' } });
+  delete db.servers.casa.autoJoin;
+  assert.equal(S.ensureLegacyAutoJoin(db), true);
+  assert.equal(db.servers.casa.autoJoin, true);
+  assert.equal(S.ensureLegacyAutoJoin(db), false);
+  db.servers.casa.autoJoin = false; // dono pode ter desligado no futuro: não religa
+  assert.equal(S.ensureLegacyAutoJoin(db), false);
+  assert.equal(S.ensureLegacyAutoJoin(S.emptyDb()), false);
+});

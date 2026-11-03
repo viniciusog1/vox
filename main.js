@@ -88,7 +88,7 @@ const serversDb = { ...srv.emptyDb(), ...readJsonFile(SERVERS_PATH) };
 const friendsDb = { ...fr.emptyDb(), ...readJsonFile(FRIENDS_PATH) };
 function saveServers() { fs.writeFileSync(SERVERS_PATH, JSON.stringify(serversDb, null, 2)); }
 function saveFriends() { fs.writeFileSync(FRIENDS_PATH, JSON.stringify(friendsDb, null, 2)); }
-if (srv.migrateLegacy(serversDb, users)) saveServers();
+if (srv.migrateLegacy(serversDb, users) | srv.ensureLegacyAutoJoin(serversDb)) saveServers();
 
 const randHex = (n) => crypto.randomBytes(Math.ceil(n / 2)).toString('hex').slice(0, n);
 const randomCode = (n, alphabet) => Array.from(crypto.randomBytes(n), (b) => alphabet[b % alphabet.length]).join('');
@@ -587,6 +587,12 @@ app.whenReady().then(() => {
       const hash = crypto.pbkdf2Sync(password, salt, 100000, 64, 'sha512').toString('hex');
       users[username] = { salt, hash, created_at: new Date().toISOString() };
       saveUsers(users);
+      // Primeira conta da instalação: cria a Casa dos Amigos; as seguintes entram nela sem convite.
+      const joined = srv.migrateLegacy(serversDb, users) ? [serversDb.servers[srv.LEGACY_ID]] : srv.joinAutoServers(serversDb, username);
+      if (joined.length) {
+        saveServers();
+        for (const s of joined) for (const m of s.members) if (m !== username) sendServersTo(m);
+      }
       signIn(username, callback);
     });
 

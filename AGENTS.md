@@ -228,7 +228,7 @@ Saída: `dist\Vox-Setup-<versão>.exe`, `.blockmap` e `latest.yml` (versão de `
 
 ### Servidores, canais e amigos
 
-- Vários servidores na mesma instalação, guardados em `servers.json`. Cada um tem dono, administradores, membros, canais de texto e de voz (ids próprios) e convites por código `VOX-XXXXXXXX`. Contas novas **não** entram em servidor nenhum: precisam de um código (`invite-join`). Quem já tinha conta cai no servidor `casa` (antiga Casa dos Amigos, via `migrateLegacy`).
+- Vários servidores na mesma instalação, guardados em `servers.json`. Cada um tem dono, administradores, membros, canais de texto e de voz (ids próprios) e convites por código `VOX-XXXXXXXX`. O servidor `casa` (antiga Casa dos Amigos, via `migrateLegacy`) tem `autoJoin: true`: toda conta nova entra nele no cadastro (`joinAutoServers`); numa instalação vazia, a primeira conta cria a casa e vira dona. `ensureLegacyAutoJoin` marca a casa gravada antes dessa regra. Os outros servidores só por código (`invite-join`); quem sai ou é expulso da casa não volta sozinho.
 - Permissões: o dono pode tudo (renomear, apagar o servidor, promover/rebaixar administradores, passar a posse); não pode sair sem passar a posse. Administrador cria, renomeia e apaga canais, gera/revoga convites e expulsa membros comuns. O servidor precisa manter ao menos 1 canal de texto.
 - Interface: barra à esquerda com Início (amigos e diretas), servidores (iniciais) e `+` (criar servidor ou entrar com código); menu do servidor no cabeçalho (convidar, configurações, criar canais, sair; gerência só para dono/admin); engrenagem em cada canal (renomear/apagar); janela de configurações do servidor (abas Geral, Membros, Convites); painel de amigos (Online, Todos, Pendentes, Adicionar); conversa direta com botão Ligar; aviso de chamada no canto (atender/recusar, som `ring` em `sounds.js`). A coluna da direita mostra os membros do servidor ou, no Início, os amigos.
 - Formulários usam `#form-modal` (`openFormModal`): o Electron não tem `window.prompt`.
@@ -374,7 +374,7 @@ Manter estas decisões, salvo pedido explícito do usuário:
 - Status Online/Ausente/Ocupado/Invisível; Ausente automático após 5 minutos (só a partir de Online) e manual pelo menu.
 - Sempre exatamente 1 canal de texto ativo (ou conversa direta); no máximo 1 canal de voz.
 - Login abre o último servidor usado e entra no primeiro canal de voz dele com microfone aberto; sem servidores, abre o Início. Sem tela de “Entrar em um canal”.
-- Contas novas não entram em servidor nenhum: precisam de código de convite. Escrever e ligar para alguém exige amizade.
+- Contas novas entram na Casa dos Amigos (`autoJoin`) sem convite; os demais servidores exigem código. Escrever e ligar para alguém exige amizade.
 - Cam e Tela só com voz conectada.
 - Configurações de entrada/saída de áudio e monitoramento do próprio microfone.
 - Compartilhamento de tela com seletor de janela/tela.

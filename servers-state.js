@@ -46,9 +46,31 @@
         { id: 'voz-musica', name: 'Música', type: 'voice' }
       ],
       invites: {},
+      autoJoin: true,
       createdAt: new Date(0).toISOString()
     };
     return true;
+  }
+
+  // A Casa dos Amigos é o lugar de todo mundo: contas novas entram sem convite.
+  // Para servers.json gravado antes dessa regra existir.
+  function ensureLegacyAutoJoin(db) {
+    const casa = db.servers[LEGACY_ID];
+    if (!casa || casa.autoJoin !== undefined) return false;
+    casa.autoJoin = true;
+    return true;
+  }
+
+  // Conta recém-criada entra nos servidores marcados com autoJoin. Devolve os servidores.
+  function joinAutoServers(db, user) {
+    const joined = [];
+    for (const server of Object.values(db.servers)) {
+      if (server.autoJoin && !server.members.includes(user)) {
+        server.members.push(user);
+        joined.push(server);
+      }
+    }
+    return joined;
   }
 
   function roleOf(server, user) {
@@ -247,7 +269,7 @@
 
   const api = {
     MAX_SERVER_NAME, MAX_CHANNEL_NAME, MAX_CHANNELS, MAX_INVITES, INVITE_ALPHABET, LEGACY_ID,
-    cleanName, emptyDb, migrateLegacy, roleOf, isManager, serversOf, findChannel,
+    cleanName, emptyDb, migrateLegacy, ensureLegacyAutoJoin, joinAutoServers, roleOf, isManager, serversOf, findChannel,
     createServer, renameServer, deleteServer, createChannel, renameChannel, deleteChannel,
     createInvite, revokeInvite, normalizeCode, findInvite, joinByInvite, leaveServer,
     kickMember, setAdmin, transferOwnership, publicServer
