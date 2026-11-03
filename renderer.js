@@ -194,6 +194,7 @@ let musicTileEl = null;    // tile persistente com o player: renderTiles nunca o
 let musicPlayerReady = false;
 let musicLoadedItemId = null; // item da fila carregado no player
 let musicLastSeekAt = null;    // último seek corretivo no item carregado (limita a um por SEEK_COOLDOWN_MS)
+let musicCommandUntil = 0;     // até quando mudanças de estado do player vêm de comandos do próprio Vox
 let musicPlayerGen = 0;       // invalida criações de player pendentes (API ainda carregando)
 let musicPlayerHost = null;   // onde o player atual está: host do tile ou o canto da tela cheia
 let youTubeApiPromise = null;
@@ -1523,6 +1524,7 @@ function syncMusicPlayer() {
   const item = musicState.queue[0];
   const targetMs = targetPositionMs(musicState, Date.now(), musicState.receivedAt);
 
+  markMusicCommand();
   if (musicLoadedItemId !== item.id) {
     musicLoadedItemId = item.id;
     musicLastSeekAt = null;
@@ -1555,10 +1557,22 @@ function onMusicPlayerStateChange(state) {
     if (musicLoadedItemId === current.id) socket.emit('music-ended', current.id);
     return;
   }
-  // Pausa por clique no vídeo (ou play com o estado pausado): volta ao estado compartilhado.
-  // Ao começar a tocar também confere o minuto (o carregamento do vídeo atrasa a posição).
-  const contradicts = state === YT_STATE.PAUSED && musicState.playing;
-  if (contradicts || state === YT_STATE.PLAYING) syncMusicPlayer();
+  // Clique no botão central do vídeo (pausar/tocar): vale para todos, como o botão do painel.
+  // Mudanças logo depois de um comando do próprio Vox não contam como clique.
+  const clickedPause = state === YT_STATE.PAUSED && musicState.playing;
+  const clickedPlay = state === YT_STATE.PLAYING && !musicState.playing;
+  if ((clickedPause || clickedPlay) && Date.now() >= musicCommandUntil && musicLoadedItemId === current.id) {
+    markMusicCommand();
+    socket.emit('music-toggle', { playing: clickedPlay });
+    return;
+  }
+  // Ao começar a tocar confere o minuto (o carregamento do vídeo atrasa a posição);
+  // qualquer outra divergência volta ao estado compartilhado.
+  if (clickedPause || clickedPlay || state === YT_STATE.PLAYING) syncMusicPlayer();
+}
+
+function markMusicCommand() {
+  musicCommandUntil = Date.now() + 2500;
 }
 
 function applyMusicState(pub) {

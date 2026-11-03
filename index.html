@@ -571,6 +571,8 @@
   .submit-btn:hover { background: var(--accent-2); }
   .submit-btn:disabled { opacity: .6; cursor: not-allowed; }
   .auth-error { color: var(--red); font-size: 12px; min-height: 16px; margin-bottom: 8px; }
+  /* Sem erro, a linha não ocupa espaço (abria um vão entre as abas e o primeiro campo) */
+  .auth-error:empty { min-height: 0; margin-bottom: 0; }
 
   /* ================= SERVIDOR ================= */
   .server-box { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); }

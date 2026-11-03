@@ -166,6 +166,7 @@ Saída: `dist\Vox-Setup-<versão>.exe`, `.blockmap` e `latest.yml` (versão de `
   - A fila aparece como primeiro tile da grade de chamada enquanto houver música; o botão do YouTube da barra superior (`#btn-music`, desabilitado sem voz) e o tile abrem o painel de música. O tile tem botão para abrir só o vídeo em tela cheia.
   - `music-rooms` diz quais canais de voz têm música; a lista de canais mostra o ícone do YouTube ao lado deles.
   - Quem está na voz controla a fila. Sair da voz interrompe a música só para quem saiu.
+  - O player usa `controls: 0`, mas o YouTube ainda mostra o botão central de pausar/tocar. Clicar nele vale para todos: `onMusicPlayerStateChange` vê PAUSED/PLAYING contrário ao estado compartilhado e manda `music-toggle` com `{ playing }` (o servidor ignora se já estiver assim). Mudanças até 2,5 s depois de um comando do próprio Vox (`markMusicCommand`) não contam como clique.
   - Nada é baixado: o player oficial do YouTube (IFrame API) toca em cada computador. Em tela cheia, o player vai para um canto dentro de `#fullscreen-view`.
   - Volume local em `localStorage['vox-music-volume']` (não é sincronizado).
   - Sincronização: o cliente estima a posição a partir de `positionMs`/`serverNow` e faz `seekTo` só se a diferença passar de `SYNC_TOLERANCE_MS`, respeitando `SEEK_COOLDOWN_MS`.

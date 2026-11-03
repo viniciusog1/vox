@@ -594,8 +594,14 @@ app.whenReady().then(() => {
     socket.on('music-ended', (itemId) => {
       musicMutate((state) => endedIfCurrent(state, itemId, Date.now()));
     });
-    socket.on('music-toggle', () => {
-      musicMutate((state) => { togglePause(state, Date.now()); return true; });
+    // Sem argumento alterna; com { playing } só muda se for diferente (cliques
+    // simultâneos no vídeo de duas pessoas não se anulam).
+    socket.on('music-toggle', (want) => {
+      musicMutate((state) => {
+        if (want && typeof want.playing === 'boolean' && want.playing === state.playing) return false;
+        togglePause(state, Date.now());
+        return true;
+      });
     });
     socket.on('music-error', (payload) => {
       const { itemId } = payload || {};
