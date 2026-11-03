@@ -2475,7 +2475,9 @@ btnScreen.addEventListener('click', async () => {
     ensureAudioContext();
     const stream = await navigator.mediaDevices.getDisplayMedia({
       video: currentShareVideoConstraints(),
-      audio: SHARE_AUDIO_SUPPORTED // o áudio só vem se marcado no seletor (main.js)
+      // O áudio só vem se marcado no seletor (main.js). restrictOwnAudio tira do
+      // loopback tudo que o próprio Vox toca (vozes da chamada, música, sons).
+      audio: SHARE_AUDIO_SUPPORTED ? { restrictOwnAudio: true } : false
     });
     if (leaves !== voiceLeaves || !currentVoiceRoom) {
       stream.getTracks().forEach((t) => t.stop()); // saiu da voz antes de escolher a tela

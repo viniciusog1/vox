@@ -1,6 +1,6 @@
 {
   "name": "vox",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "Vox - chat, voz, vídeo e compartilhamento de tela para Windows 11",
   "author": "Vox",
   "main": "main.js",
@@ -41,13 +41,10 @@
     }
   },
   "devDependencies": {
-    "electron": "^28.0.0",
+    "electron": "^45.2.1",
     "electron-builder": "^24.0.0"
   },
   "dependencies": {
     "socket.io": "^4.7.0"
-  },
-  "allowScripts": {
-    "electron": true
   }
 }

@@ -6,7 +6,7 @@ Guia para agentes de IA que forem alterar este projeto. Leia antes de editar.
 
 - Aplicativo desktop para Windows 11 de chat, voz, vídeo e compartilhamento de tela.
 - Nome do produto: **Vox**. Antes se chamava Concord.
-- Stack: **Electron 28 + Node.js + Socket.io 4 + WebRTC**.
+- Stack: **Electron 45 + Node.js + Socket.io 4 + WebRTC**.
 - Interface em português.
 - Não há banco de dados: usuários e mensagens ficam em arquivos JSON.
 - O servidor Socket.io é embutido no processo principal do Electron e escuta em `0.0.0.0:3000`.
@@ -136,8 +136,8 @@ Saída: `dist\Vox Setup <versão>.exe` (versão de `package.json`).
   - Um transceiver de vídeo é criado mesmo com a câmera desligada, para permitir `replaceTrack` depois sem renegociação.
   - Streams remotos sem vídeo ativo mostram avatar e um `<audio class="remote-audio">` escondido.
 - Compartilhamento de tela:
-  - `getDisplayMedia({ video: currentShareVideoConstraints(), audio: SHARE_AUDIO_SUPPORTED })` (só Windows).
-  - Áudio do PC: caixa `#share-audio` no seletor, sempre desmarcada ao abrir. Marcada, `main.js` responde `audio: 'loopback'`, que pega **todo** o som do PC, inclusive as vozes da chamada (quem fala se ouve com atraso). O Electron 28 não tem como excluir o som do próprio Vox. O aviso fica no seletor.
+  - `getDisplayMedia({ video: currentShareVideoConstraints(), audio: { restrictOwnAudio: true } })` (áudio só no Windows).
+  - Áudio do PC: caixa `#share-audio` no seletor, sempre desmarcada ao abrir. Marcada, `main.js` responde `audio: 'loopback'`, que pega o som do PC. O renderer pede `audio: { restrictOwnAudio: true }`, e o Electron 45 respeita isso com o handler próprio: sai da captura **tudo** que o Vox toca (vozes da chamada, música do YouTube, efeitos sonoros). **Medido** no Windows com duas instâncias: tom do próprio Vox no nível do ruído (−80 a −100 dB), tom de outro programa a −43 dB. No Electron 28 a restrição era ignorada e quem falava se ouvia com atraso.
   - Transporte do áudio da tela: cada peer tem um segundo transceiver de áudio desde `createPeer` (`getScreenAudioTransceiver`: o 2º áudio com mid); `applyScreenAudio` faz `replaceTrack` sem renegociar. Quem recebe toca essa faixa num `<audio>` próprio (`screenAudioEls`): o `<audio>`/`<video>` do tile só toca a primeira faixa de áudio do stream.
   - Qualidade escolhida no seletor: `#share-resolution` (480/720/1080) e `#share-fps` (30/60), padrão 1080p30.
   - Persistência em `vox-share-resolution` e `vox-share-fps`.
@@ -436,11 +436,11 @@ Antes de considerar uma alteração concluída:
 
 ## 9. Estado atual conhecido
 
-- Versão em `package.json`: `1.2.0`. `PROTOCOL_VERSION` `4`.
-- npm 12 bloqueia scripts de instalação: `allowScripts` em `package.json` libera o do `electron` (sem ele o `electron.exe` não é baixado).
+- Versão em `package.json`: `1.3.0` (Electron 45.2.1). `PROTOCOL_VERSION` `4`.
+- O pacote `electron` 45 não tem script de instalação: o `electron.exe` é baixado na primeira vez que `npm start` roda (ou com `node node_modules/electron/install.js`). Exige Node ≥ 22.12.
 - Instaladores antigos (ainda com o nome Concord) no PC com Windows: `dist\Concord Setup 1.0.0.exe`, `1.0.1.exe` e `1.0.2.exe`. Nenhum instalador foi gerado desde a troca de nome e as mudanças de temas, música, membros e conexão.
 - Instalador NSIS sem assinatura e com ícone padrão do Electron.
 - No Windows, o app antigo está instalado como Concord (`%LOCALAPPDATA%\Programs\Concord`), com dados em `%APPDATA%\Concord` (conta `vinicius` e histórico de `geral`).
-- Pendências: testar no Windows o compartilhamento 1080p60 e o player do YouTube; servidor TURN; áudio da tela sem as vozes da chamada (exige Electron mais novo); atualização automática.
+- Pendências: testar no Windows o compartilhamento 1080p60 e o player do YouTube; servidor TURN; atualização automática.
 - O app instalado e o de desenvolvimento podem estar em estados diferentes; sempre confirme qual está rodando.
 - O Cloudflare Tunnel pode estar ativo. A URL é temporária e não deve ser documentada como fixa.
