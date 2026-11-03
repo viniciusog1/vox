@@ -5,7 +5,9 @@ App desktop para Windows 11 de chat, voz, vídeo e compartilhamento de tela, fei
 ## Recursos
 
 - Login e cadastro com senha (hash PBKDF2)
-- Chat de texto com histórico por canal (`#geral`, `#jogos`, `#musica`)
+- Servidores: crie o seu (você vira o dono) e convide pessoas com um código (`VOX-XXXXXXXX`, gerado no menu do servidor → Convidar pessoas). Cada servidor tem seus canais de texto e de voz, que dono e administradores criam, renomeiam e apagam. Cargos: dono (pode tudo, inclusive apagar o servidor, promover administradores e passar a posse) e administrador (canais, convites e expulsar membros comuns). Quem sai ou é expulso perde o acesso aos canais
+- Amigos: envie e aceite pedidos pelo Início (abas Online, Todos, Pendentes e Adicionar), converse por mensagens diretas e ligue para um amigo (a outra pessoa recebe um aviso de chamada para atender ou recusar; se um lado desliga, a chamada acaba para os dois). Escrever e ligar exigem amizade
+- Chat de texto com histórico por canal e por conversa direta
 - Editar e apagar as próprias mensagens (passe o mouse sobre a mensagem); mensagem editada mostra "(editada)"
 - Imagens no chat: botão de imagem, colar com Ctrl+V ou arrastar para o chat. O Vox reduz a imagem (até 1920 px, máximo 2 MB) antes de enviar; GIF vai como está
 - Menções com `@nome` (com sugestões ao digitar), destacadas na mensagem
@@ -14,8 +16,8 @@ App desktop para Windows 11 de chat, voz, vídeo e compartilhamento de tela, fei
 - Reconexão automática: se a conexão com o servidor cair, o Vox avisa no topo, volta sozinho para o mesmo canal de texto e para a mesma voz, sem pedir a senha de novo
 - Atualização automática pelas releases do GitHub (no app instalado): baixa sozinho e avisa no topo para reiniciar
 - Botão "Abrir para amigos" (Configurações → aba Servidor): abre um túnel gratuito da Cloudflare e mostra o endereço para copiar
-- Canais de voz (Sala Principal, jogos e música) independentes do chat: você fica sempre em um canal de texto e, ao mesmo tempo, em no máximo um canal de voz. Trocar de canal de texto não derruba a chamada
-- Ao entrar, você cai automaticamente em `#geral` e na Sala Principal, com o microfone aberto
+- Canais de voz independentes do chat: você fica sempre em um canal de texto e, ao mesmo tempo, em no máximo um canal de voz. Trocar de canal de texto não derruba a chamada
+- Ao entrar, o Vox abre o último servidor que você usou e conecta no primeiro canal de voz dele, com o microfone aberto. Sem servidores, abre o Início
 - Chamada de voz e vídeo P2P (WebRTC); câmera e compartilhamento de tela só com a voz conectada
 - Compartilhamento de tela com seletor de janela/tela
 - Qualidade do compartilhamento: 480p, 720p ou 1080p e 30 ou 60 FPS (padrão 1080p 30 FPS)
@@ -68,7 +70,7 @@ A primeira tela é o login. Crie uma conta ou entre com uma existente.
 npm run dist
 ```
 
-O instalador fica em `dist/Vox-Setup-<versão>.exe` (a versão vem de `package.json`, hoje `1.4.0`).
+O instalador fica em `dist/Vox-Setup-<versão>.exe` (a versão vem de `package.json`, hoje `1.5.0`).
 
 ### Publicar uma versão (atualização automática)
 
@@ -95,7 +97,7 @@ O servidor já escuta na rede local (`0.0.0.0:3000`). Não é mais preciso edita
 1. **Você (host)**: abra o Vox, deixe o servidor em `http://127.0.0.1:3000` e entre/crie sua conta.
 2. Descubra seu IPv4 com `ipconfig` (ex.: `192.168.1.15`).
 3. **Seu amigo**: instale o Vox, abra e, no campo **Servidor** da tela de login, digite `http://192.168.1.15:3000` e clique em **Aplicar**.
-4. Seu amigo cria a conta dele (a conta fica no seu servidor) e, ao entrar, cai em `#geral` e na Sala Principal, como você.
+4. Seu amigo cria a conta dele (a conta fica no seu servidor) e já entra na **Casa dos Amigos**, o servidor de todo mundo. Para outros servidores ele precisa de um **código de convite**: quem é dono ou administrador gera em menu do servidor → **Convidar pessoas** e manda para ele; ele clica em `+` na barra da esquerda e cola o código.
 5. Se o Windows perguntar, permita o Vox em **Redes privadas**. Se a rede estiver marcada como **Pública** ou a conexão não funcionar, libere a porta 3000 no PowerShell como administrador:
    ```powershell
    New-NetFirewallRule -DisplayName "Vox 3000" -Direction Inbound -Protocol TCP -LocalPort 3000 -Action Allow -Profile Private,Public
@@ -115,7 +117,7 @@ O túnel fecha junto com o Vox. Se ele cair sozinho, o Vox reabre com um endere�
 
 ## Observações
 
-- Desenvolvimento: `users.json`, `messages.json`, `sessions.json` e a pasta `uploads/` (imagens do chat) ficam na pasta do projeto.
+- Desenvolvimento: `users.json`, `messages.json`, `servers.json`, `friends.json`, `sessions.json` e a pasta `uploads/` (imagens do chat) ficam na pasta do projeto.
 - Instalado: ficam em `%APPDATA%\Vox`.
 - As imagens do chat seguem as regras das mensagens: somem junto com elas (7 dias, limite de 200 por canal, ou quando o autor apaga). Quem tem o endereço do servidor e o nome aleatório do arquivo consegue abrir a imagem.
 - Ao fechar o Vox, a próxima abertura pede login de novo: a sessão de reconexão fica só na memória.

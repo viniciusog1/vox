@@ -6,7 +6,8 @@ const fs = require('fs');
 const os = require('os');
 const crypto = require('crypto');
 const { publicUser, applyStatePatch, joinVoiceRoom, leaveVoiceRoom, canUseTextRoom, socketRoomsToLeave } = require('./room-state');
-const { isTextChannel, isVoiceChannel } = require('./channels');
+const srv = require('./servers-state');
+const fr = require('./friends-state');
 const { parseYouTubeId, lookupVideo } = require('./youtube');
 const { RESYNC_INTERVAL_MS, createMusicState, addTrack, removeTrack, advanceIfCurrent, endedIfCurrent, togglePause, toPublic } = require('./music-state');
 const { PROTOCOL_VERSION, VERSION_MISMATCH_MESSAGE, isCompatible } = require('./protocol');
@@ -50,6 +51,8 @@ fs.mkdirSync(DATA_DIR, { recursive: true });
 const DB_PATH = path.join(DATA_DIR, 'messages.json');
 const USERS_PATH = path.join(DATA_DIR, 'users.json');
 const SESSIONS_PATH = path.join(DATA_DIR, 'sessions.json');
+const SERVERS_PATH = path.join(DATA_DIR, 'servers.json');
+const FRIENDS_PATH = path.join(DATA_DIR, 'friends.json');
 const UPLOADS_DIR = path.join(DATA_DIR, 'uploads');
 const AVATARS_DIR = path.join(DATA_DIR, 'avatars');
 fs.mkdirSync(UPLOADS_DIR, { recursive: true });
@@ -79,6 +82,38 @@ function saveUsers(data) {
 
 let messages = loadMessages();
 let users = loadUsers();
+
+// Servidores e amizades (servers-state.js / friends-state.js têm as regras).
+const serversDb = { ...srv.emptyDb(), ...readJsonFile(SERVERS_PATH) };
+const friendsDb = { ...fr.emptyDb(), ...readJsonFile(FRIENDS_PATH) };
+function saveServers() { fs.writeFileSync(SERVERS_PATH, JSON.stringify(serversDb, null, 2)); }
+function saveFriends() { fs.writeFileSync(FRIENDS_PATH, JSON.stringify(friendsDb, null, 2)); }
+if (srv.migrateLegacy(serversDb, users) | srv.ensureLegacyAutoJoin(serversDb)) saveServers();
+
+const randHex = (n) => crypto.randomBytes(Math.ceil(n / 2)).toString('hex').slice(0, n);
+const randomCode = (n, alphabet) => Array.from(crypto.randomBytes(n), (b) => alphabet[b % alphabet.length]).join('');
+const ids = () => ({ rand: randHex, randomCode, now: new Date().toISOString() });
+
+// Quem pode ver uma sala: membros do servidor do canal, ou as duas pessoas da conversa/chamada direta.
+function roomAudience(room) {
+  const found = srv.findChannel(serversDb, room);
+  if (found) return found.server.members;
+  return fr.pairOf(room, fr.DM_PREFIX) || fr.pairOf(room, fr.CALL_PREFIX) || [];
+}
+const canSeeRoom = (room, user) => !!room && roomAudience(room).includes(user);
+
+function canUseText(room, user) {
+  const found = srv.findChannel(serversDb, room);
+  if (found) return found.channel.type === 'text' && found.server.members.includes(user);
+  return fr.canReadDm(room, user);
+}
+
+function canUseVoice(room, user) {
+  const found = srv.findChannel(serversDb, room);
+  if (found) return found.channel.type === 'voice' && found.server.members.includes(user);
+  const other = fr.isCallKey(room) ? fr.otherOf(room, user) : null;
+  return !!other && fr.areFriends(friendsDb, user, other);
+}
 if (chat.ensureIds(messages, () => crypto.randomUUID())) saveMessages(messages);
 
 const sessions = createSessionStore({
@@ -186,10 +221,12 @@ function broadcastRoomUsers(room) {
   }
 }
 
+// Salas de voz que quem vê pode enxergar (servidores dele e as próprias chamadas).
 function buildVoiceRooms(viewerId) {
   const result = {};
+  const viewer = authenticated.get(viewerId);
   for (const [room, map] of roomUsers) {
-    if (!room.startsWith('voz-')) continue;
+    if (!canSeeRoom(room, viewer)) continue;
     const list = [];
     for (const [id, u] of map) {
       if (u.status === 'invisible' && id !== viewerId) continue;
@@ -210,7 +247,10 @@ function broadcastVoiceRooms() {
 
 // Membros do servidor (todas as contas, que hoje têm acesso ao servidor global)
 // com presença, do ponto de vista de quem vê: invisível aparece offline para os outros.
+// Presença de todas as contas da instalação (o cliente filtra pelos membros do
+// servidor aberto e pelos amigos). A sala de voz só aparece para quem pode vê-la.
 function buildServerMembers(viewerId) {
+  const viewer = authenticated.get(viewerId);
   const online = new Map(); // username -> { id, status, voiceRoom, muted }
   for (const [socketId, username] of authenticated) {
     const s = io.sockets.sockets.get(socketId);
@@ -218,7 +258,8 @@ function buildServerMembers(viewerId) {
     const status = s.data.status || 'online';
     if (status === 'invisible' && socketId !== viewerId) continue;
     if (!online.has(username) || socketId === viewerId) {
-      online.set(username, { id: socketId, status, voiceRoom: s.data.voiceRoom || null, muted: !!s.data.muted });
+      const voiceRoom = canSeeRoom(s.data.voiceRoom, viewer) ? s.data.voiceRoom : null;
+      online.set(username, { id: socketId, status, voiceRoom, muted: !!s.data.muted });
     }
   }
   return Object.keys(users).sort((a, b) => a.localeCompare(b)).map((username) => {
@@ -284,16 +325,15 @@ function musicStateFor(room) {
 // Canais de voz com música (para o ícone do YouTube na lista de canais).
 // Só difunde quando a lista muda.
 let lastMusicRoomsKey = '';
-function musicRoomsList() {
-  return [...musicByRoom.keys()].sort();
+function musicRoomsList(viewer) {
+  return [...musicByRoom.keys()].filter((room) => canSeeRoom(room, viewer)).sort();
 }
-function broadcastMusicRooms() {
+function broadcastMusicRooms(force = false) {
   if (!io) return;
-  const list = musicRoomsList();
-  const key = list.join('|');
-  if (key === lastMusicRoomsKey) return;
+  const key = [...musicByRoom.keys()].sort().join('|');
+  if (key === lastMusicRoomsKey && !force) return;
   lastMusicRoomsKey = key;
-  for (const socketId of authenticated.keys()) io.to(socketId).emit('music-rooms', list);
+  for (const [socketId, user] of authenticated) io.to(socketId).emit('music-rooms', musicRoomsList(user));
 }
 
 // Difunde o estado da sala; fila vazia apaga o estado.
@@ -320,11 +360,99 @@ setInterval(() => {
   }
 }, RESYNC_INTERVAL_MS);
 
+function emitToUser(username, event, payload) {
+  if (!io) return;
+  for (const [socketId, u] of authenticated) if (u === username) io.to(socketId).emit(event, payload);
+}
+
+// Lista de servidores de cada pessoa (com canais, cargos e, para quem administra, convites).
+function sendServersTo(username) {
+  emitToUser(username, 'servers', srv.serversOf(serversDb, username).map((s) => srv.publicServer(s, username)));
+}
+
+// Conversas diretas com mensagens guardadas, para a lista do Início.
+function dmListFor(username) {
+  return Object.keys(messages)
+    .filter((k) => fr.isDmKey(k) && fr.otherOf(k, username) && messages[k].length)
+    .map((k) => ({ user: fr.otherOf(k, username), lastAt: messages[k][messages[k].length - 1].created_at }));
+}
+
+function sendFriendsTo(username) {
+  emitToUser(username, 'friends', {
+    friends: fr.friendsOf(friendsDb, username),
+    ...fr.requestsFor(friendsDb, username),
+    dms: dmListFor(username)
+  });
+}
+
+// Quem pode ver uma sala mudou (entrou/saiu de servidor, canal apagado...): reenvia a presença.
+function refreshVisibility() {
+  broadcastServerMembers();
+  broadcastVoiceRooms();
+  broadcastMusicRooms(true);
+}
+
+// Tira da voz e do texto as pessoas que perderam acesso a uma sala.
+// shouldLeave(room, username) decide; quem sai da voz recebe 'voice-removed'.
+function evictFromRooms(shouldLeave) {
+  if (!io) return;
+  for (const [socketId, username] of authenticated) {
+    const s = io.sockets.sockets.get(socketId);
+    if (!s) continue;
+    if (s.data.voiceRoom && shouldLeave(s.data.voiceRoom, username)) {
+      const room = s.data.voiceRoom;
+      leaveVoiceFor(s);
+      s.emit('voice-removed', { room });
+    }
+    if (s.data.textRoom && shouldLeave(s.data.textRoom, username)) {
+      s.leave(s.data.textRoom);
+      s.data.textRoom = null;
+    }
+  }
+}
+
+// Canais apagados levam junto as mensagens (e imagens) e a fila de música.
+function deleteRoomData(roomIds) {
+  let changed = false;
+  for (const id of roomIds) {
+    if (messages[id]) { messages[id].forEach(removeUpload); delete messages[id]; changed = true; }
+    musicByRoom.delete(id);
+  }
+  if (changed) saveMessages(messages);
+}
+
+// Chamadas diretas tocando: sala call:a|b -> { from, to, timer }
+const pendingCalls = new Map();
+const CALL_RING_MS = 45000;
+
+// Para de tocar. reason (missed, declined, cancelled, answered) vai para os dois.
+function endPendingCall(room, reason) {
+  const p = pendingCalls.get(room);
+  if (!p) return;
+  clearTimeout(p.timer);
+  pendingCalls.delete(room);
+  for (const u of [p.from, p.to]) emitToUser(u, 'call-ended', { room, reason: reason || 'answered' });
+}
+
+function leaveVoiceFor(socket) {
+  const left = leaveVoiceRoom(roomUsers, socket.id);
+  socket.data.voiceRoom = null;
+  if (left) {
+    socket.leave(left);
+    dropMusicIfRoomEmpty(left);
+    broadcastRoomUsers(left);
+    // Quem ligou desistiu antes de atenderem
+    if (pendingCalls.has(left) && !roomUsers.has(left)) endPendingCall(left, 'cancelled');
+  }
+  broadcastVoiceRooms();
+}
+
 function removeSocketFromRooms(socketId) {
   const left = leaveVoiceRoom(roomUsers, socketId);
   if (left) {
     dropMusicIfRoomEmpty(left);
     broadcastRoomUsers(left);
+    if (pendingCalls.has(left) && !roomUsers.has(left)) endPendingCall(left, 'cancelled');
   }
   broadcastVoiceRooms();
 }
@@ -436,7 +564,9 @@ app.whenReady().then(() => {
       authenticated.set(socket.id, username);
       socket.data.token = token;
       callback({ success: true, username, token, protocol: PROTOCOL_VERSION });
-      socket.emit('music-rooms', musicRoomsList());
+      sendServersTo(username);
+      sendFriendsTo(username);
+      socket.emit('music-rooms', musicRoomsList(username));
       broadcastServerMembers();
     }
 
@@ -446,7 +576,7 @@ app.whenReady().then(() => {
       if (typeof username !== 'string' || typeof password !== 'string' || !username || !password) {
         return callback({ success: false, message: 'Preencha usuário e senha' });
       }
-      if (!/^[\p{L}\p{N}_.-]{2,24}$/u.test(username) || ['__proto__', 'constructor', 'prototype'].includes(username)) {
+      if (!/^[\p{L}\p{N}_.-]{2,24}$/u.test(username) || ['__proto__', 'constructor', 'prototype'].includes(username.toLowerCase())) {
         return callback({ success: false, message: 'O usuário deve ter de 2 a 24 letras, números, ponto, hífen ou _' });
       }
       if (Object.keys(users).some((u) => u.toLowerCase() === username.toLowerCase())) {
@@ -457,6 +587,12 @@ app.whenReady().then(() => {
       const hash = crypto.pbkdf2Sync(password, salt, 100000, 64, 'sha512').toString('hex');
       users[username] = { salt, hash, created_at: new Date().toISOString() };
       saveUsers(users);
+      // Primeira conta da instalação: cria a Casa dos Amigos; as seguintes entram nela sem convite.
+      const joined = srv.migrateLegacy(serversDb, users) ? [serversDb.servers[srv.LEGACY_ID]] : srv.joinAutoServers(serversDb, username);
+      if (joined.length) {
+        saveServers();
+        for (const s of joined) for (const m of s.members) if (m !== username) sendServersTo(m);
+      }
       signIn(username, callback);
     });
 
@@ -504,18 +640,23 @@ app.whenReady().then(() => {
       return true;
     }
 
+    // Canal de texto de um servidor do qual é membro, ou conversa direta da qual faz parte.
     socket.on('join-text', (room) => {
       if (!requireAuth()) return;
-      if (!isTextChannel(room)) return;
+      if (!canUseText(room, authenticated.get(socket.id))) return;
       if (socket.data.textRoom) socket.leave(socket.data.textRoom);
       socket.join(room);
       socket.data.textRoom = room;
     });
 
+    // Canal de voz de um servidor do qual é membro, ou chamada direta com um amigo.
     socket.on('join-voice', (room) => {
       if (!requireAuth()) return;
-      if (!isVoiceChannel(room)) return;
       const username = authenticated.get(socket.id);
+      if (!canUseVoice(room, username)) return;
+      // Atender: a chamada deixa de tocar para quem foi chamado
+      const pending = pendingCalls.get(room);
+      if (pending && pending.to === username) endPendingCall(room, null);
 
       const previous = joinVoiceRoom(roomUsers, socket.id, room, {
         username,
@@ -540,16 +681,7 @@ app.whenReady().then(() => {
       socket.emit('music-state', musicStateFor(room));
     });
 
-    socket.on('leave-voice', () => {
-      const left = leaveVoiceRoom(roomUsers, socket.id);
-      socket.data.voiceRoom = null;
-      if (left) {
-        socket.leave(left);
-        dropMusicIfRoomEmpty(left);
-        broadcastRoomUsers(left);
-      }
-      broadcastVoiceRooms();
-    });
+    socket.on('leave-voice', () => leaveVoiceFor(socket));
 
     // Exige login e voz; devolve a sala de voz ou null (e responde { ok: false }).
     function requireVoice(callback) {
@@ -652,6 +784,163 @@ app.whenReady().then(() => {
       broadcastServerMembers();
     });
 
+    // ---------- Servidores, canais e convites ----------
+    // Executa uma regra de servers-state/friends-state e responde { success, message } ao cliente.
+    function act(callback, fn) {
+      const reply = typeof callback === 'function' ? callback : () => {};
+      if (!requireAuth(reply)) return;
+      const result = fn(authenticated.get(socket.id));
+      if (!result.ok) return reply({ success: false, message: result.error });
+      reply({ success: true, ...(result.reply || {}) });
+    }
+
+    const notifyMembers = (server, extra = []) => {
+      for (const u of new Set([...server.members, ...extra])) sendServersTo(u);
+    };
+    const channelIdsOf = (server) => new Set(server.channels.map((c) => c.id));
+
+    socket.on('server-create', ({ name } = {}, callback) => act(callback, (user) => {
+      const r = srv.createServer(serversDb, user, name, ids());
+      if (r.ok) { saveServers(); sendServersTo(user); r.reply = { serverId: r.server.id }; }
+      return r;
+    }));
+
+    socket.on('server-update', ({ serverId, name } = {}, callback) => act(callback, (user) => {
+      const r = srv.renameServer(serversDb, serverId, user, name);
+      if (r.ok) { saveServers(); notifyMembers(r.server); }
+      return r;
+    }));
+
+    socket.on('server-delete', ({ serverId } = {}, callback) => act(callback, (user) => {
+      const r = srv.deleteServer(serversDb, serverId, user);
+      if (!r.ok) return r;
+      const rooms = channelIdsOf(r.server);
+      saveServers();
+      evictFromRooms((room) => rooms.has(room));
+      deleteRoomData(rooms);
+      notifyMembers(r.server);
+      refreshVisibility();
+      return r;
+    }));
+
+    socket.on('channel-create', ({ serverId, type, name } = {}, callback) => act(callback, (user) => {
+      const r = srv.createChannel(serversDb, serverId, user, type, name, ids());
+      if (r.ok) { saveServers(); notifyMembers(r.server); r.reply = { channelId: r.channel.id }; }
+      return r;
+    }));
+
+    socket.on('channel-update', ({ channelId, name } = {}, callback) => act(callback, (user) => {
+      const r = srv.renameChannel(serversDb, channelId, user, name);
+      if (r.ok) { saveServers(); notifyMembers(r.server); }
+      return r;
+    }));
+
+    socket.on('channel-delete', ({ channelId } = {}, callback) => act(callback, (user) => {
+      const r = srv.deleteChannel(serversDb, channelId, user);
+      if (!r.ok) return r;
+      saveServers();
+      evictFromRooms((room) => room === channelId);
+      deleteRoomData([channelId]);
+      notifyMembers(r.server);
+      refreshVisibility();
+      return r;
+    }));
+
+    socket.on('invite-create', ({ serverId } = {}, callback) => act(callback, (user) => {
+      const r = srv.createInvite(serversDb, serverId, user, ids());
+      if (r.ok) { saveServers(); notifyMembers(r.server); r.reply = { code: r.code }; }
+      return r;
+    }));
+
+    socket.on('invite-revoke', ({ serverId, code } = {}, callback) => act(callback, (user) => {
+      const r = srv.revokeInvite(serversDb, serverId, user, code);
+      if (r.ok) { saveServers(); notifyMembers(r.server); }
+      return r;
+    }));
+
+    socket.on('invite-join', ({ code } = {}, callback) => act(callback, (user) => {
+      const r = srv.joinByInvite(serversDb, code, user);
+      if (r.ok) {
+        r.reply = { serverId: r.server.id, already: !!r.already };
+        if (!r.already) { saveServers(); notifyMembers(r.server); refreshVisibility(); }
+      }
+      return r;
+    }));
+
+    // Perder acesso a um servidor (sair ou ser expulso) tira a pessoa dos canais dele.
+    function dropFromServer(server, target) {
+      const rooms = channelIdsOf(server);
+      evictFromRooms((room, u) => u === target && rooms.has(room));
+      notifyMembers(server, [target]);
+      refreshVisibility();
+    }
+
+    socket.on('server-leave', ({ serverId } = {}, callback) => act(callback, (user) => {
+      const r = srv.leaveServer(serversDb, serverId, user);
+      if (r.ok) { saveServers(); dropFromServer(r.server, user); }
+      return r;
+    }));
+
+    socket.on('member-kick', ({ serverId, user: target } = {}, callback) => act(callback, (user) => {
+      const r = srv.kickMember(serversDb, serverId, user, target);
+      if (r.ok) {
+        saveServers();
+        dropFromServer(r.server, target);
+        emitToUser(target, 'server-kicked', { serverId, name: r.server.name });
+      }
+      return r;
+    }));
+
+    socket.on('member-role', ({ serverId, user: target, admin } = {}, callback) => act(callback, (user) => {
+      const r = srv.setAdmin(serversDb, serverId, user, target, !!admin);
+      if (r.ok) { saveServers(); notifyMembers(r.server); }
+      return r;
+    }));
+
+    socket.on('server-transfer', ({ serverId, user: target } = {}, callback) => act(callback, (user) => {
+      const r = srv.transferOwnership(serversDb, serverId, user, target);
+      if (r.ok) { saveServers(); notifyMembers(r.server); }
+      return r;
+    }));
+
+    // ---------- Amigos ----------
+    const friendAction = (apply) => (payload, callback) => act(callback, (user) => {
+      const other = payload && typeof payload.user === 'string' ? payload.user : '';
+      const r = apply(user, other);
+      if (r.ok) { saveFriends(); sendFriendsTo(user); if (other) sendFriendsTo(other); }
+      return r;
+    });
+
+    socket.on('friend-request', friendAction((user, other) =>
+      fr.sendRequest(friendsDb, user, other, { exists: (u) => Object.hasOwn(users, u), now: new Date().toISOString() })));
+    socket.on('friend-accept', friendAction((user, other) => fr.acceptRequest(friendsDb, user, other)));
+    socket.on('friend-drop', friendAction((user, other) => fr.dropRequest(friendsDb, user, other)));
+    socket.on('friend-remove', friendAction((user, other) => fr.removeFriend(friendsDb, user, other)));
+
+    // ---------- Chamada direta ----------
+    // Toca para o amigo; quem liga entra na sala call:a|b logo em seguida (join-voice).
+    socket.on('call-start', ({ user: target } = {}, callback) => act(callback, (user) => {
+      if (!fr.areFriends(friendsDb, user, target)) return { ok: false, error: 'Só dá para ligar para amigos.' };
+      const online = [...authenticated].some(([sid, u]) => {
+        const s = io.sockets.sockets.get(sid);
+        return u === target && s && (s.data.status || 'online') !== 'invisible';
+      });
+      if (!online) return { ok: false, error: `${target} está offline.` };
+      const room = fr.callKey(user, target);
+      if (!pendingCalls.has(room) && !roomUsers.has(room)) {
+        pendingCalls.set(room, { from: user, to: target, timer: setTimeout(() => endPendingCall(room, 'missed'), CALL_RING_MS) });
+        emitToUser(target, 'call-incoming', { from: user, room });
+      }
+      return { ok: true, reply: { room } };
+    }));
+
+    socket.on('call-decline', ({ room } = {}, callback) => act(callback, (user) => {
+      const p = pendingCalls.get(room);
+      if (!p || p.to !== user) return { ok: false, error: 'Chamada não encontrada.' };
+      endPendingCall(room, 'declined');
+      return { ok: true };
+    }));
+
     socket.on('update-state', (patch) => {
       if (!requireAuth()) return;
       const room = socket.data.voiceRoom;
@@ -689,15 +978,24 @@ app.whenReady().then(() => {
 
     // Eventos de chat vão para todas as pessoas logadas (com o canal), para os
     // contadores de não lidas e as menções em outros canais.
+    // (Só para quem tem acesso à sala: membros do servidor ou as duas pessoas da conversa.)
     function broadcastChat(event, payload) {
-      for (const socketId of authenticated.keys()) io.to(socketId).emit(event, payload);
+      for (const [socketId, user] of authenticated) {
+        if (canSeeRoom(payload.room, user)) io.to(socketId).emit(event, payload);
+      }
     }
+
+    // Canal de texto aberto neste socket e ainda acessível (pode ter sido expulso).
+    const inTextRoom = (room) => canUseTextRoom(socket.data.textRoom, room) && canUseText(room, authenticated.get(socket.id));
 
     // O autor é sempre o usuário logado neste socket, nunca um campo do cliente.
     socket.on('save-message', ({ room, text, image } = {}, callback) => {
       const reply = typeof callback === 'function' ? callback : () => {};
       if (!requireAuth(reply)) return;
-      if (!canUseTextRoom(socket.data.textRoom, room)) return reply({ success: false, message: 'Canal inválido' });
+      if (!inTextRoom(room)) return reply({ success: false, message: 'Canal inválido' });
+      if (fr.isDmKey(room) && !fr.canWriteDm(friendsDb, room, authenticated.get(socket.id))) {
+        return reply({ success: false, message: 'Vocês não são mais amigos: não dá para mandar mensagens.' });
+      }
       const clean = chat.cleanText(text);
       if (clean === null) return reply({ success: false, message: `A mensagem passa de ${chat.MAX_TEXT} caracteres.` });
 
@@ -725,12 +1023,12 @@ app.whenReady().then(() => {
       if (messages[room].length > 200) messages[room].splice(0, messages[room].length - 200).forEach(removeUpload);
       saveMessages(messages);
       reply({ success: true, id: msg.id });
-      broadcastChat('new-message', { room, ...msg, mentions: chat.mentionsOf(clean, Object.keys(users)) });
+      broadcastChat('new-message', { room, ...msg, mentions: chat.mentionsOf(clean, roomAudience(room)) });
     });
 
     socket.on('edit-message', ({ room, id, text } = {}, callback) => {
       const reply = typeof callback === 'function' ? callback : () => {};
-      if (!requireAuth(reply) || !canUseTextRoom(socket.data.textRoom, room)) return reply({ success: false });
+      if (!requireAuth(reply) || !inTextRoom(room)) return reply({ success: false });
       const msg = chat.editMessage(messages[room], id, authenticated.get(socket.id), text, new Date().toISOString());
       if (!msg) return reply({ success: false, message: 'Não foi possível editar.' });
       saveMessages(messages);
@@ -740,7 +1038,7 @@ app.whenReady().then(() => {
 
     socket.on('delete-message', ({ room, id } = {}, callback) => {
       const reply = typeof callback === 'function' ? callback : () => {};
-      if (!requireAuth(reply) || !canUseTextRoom(socket.data.textRoom, room)) return reply({ success: false });
+      if (!requireAuth(reply) || !inTextRoom(room)) return reply({ success: false });
       const removed = chat.deleteMessage(messages[room], id, authenticated.get(socket.id));
       if (!removed) return reply({ success: false, message: 'Não foi possível apagar.' });
       if (messages[room].length === 0) delete messages[room];
@@ -752,7 +1050,7 @@ app.whenReady().then(() => {
 
     socket.on('get-messages', (room, callback) => {
       if (typeof callback !== 'function') return;
-      if (!requireAuth() || !canUseTextRoom(socket.data.textRoom, room)) { callback([]); return; }
+      if (!requireAuth() || !inTextRoom(room)) { callback([]); return; }
       purgeOldMessages();
       callback(messages[room] || []);
     });
@@ -761,7 +1059,7 @@ app.whenReady().then(() => {
     socket.on('delete-my-messages', ({ room } = {}, callback) => {
       const reply = typeof callback === 'function' ? callback : () => {};
       if (!requireAuth(reply)) return;
-      if (!canUseTextRoom(socket.data.textRoom, room)) return reply({ success: false });
+      if (!inTextRoom(room)) return reply({ success: false });
       const username = authenticated.get(socket.id);
       let removed = 0;
 

@@ -81,23 +81,24 @@ Saída: `dist\Vox-Setup-<versão>.exe`, `.blockmap` e `latest.yml` (versão de `
 
 | Arquivo | Responsabilidade |
 | --- | --- |
-| `main.js` | Processo principal: cópia única dos dados do antigo Concord (`migrateLegacyUserData`), janela, permissões, servidor Socket.io, autenticação, presença, membros do servidor (`buildServerMembers`), salas, mensagens, retenção, `desktopCapturer` e seletor de tela, fila de música por sala de voz (`musicByRoom`) e o `Referer` injetado nas requisições do YouTube. |
-| `renderer.js` | Interface e lógica do cliente: login, canais, chat, WebRTC, estado da conexão e ping por pessoa, grade de tiles (`layoutTiles`), câmera/microfone, compartilhamento de tela, música, status, membros, configurações em abas. |
+| `main.js` | Processo principal: cópia única dos dados do antigo Concord (`migrateLegacyUserData`), janela, permissões, servidor Socket.io, autenticação, presença, membros do servidor (`buildServerMembers`), salas, servidores e amigos (permissões `roomAudience`, `canSeeRoom`, `canUseText`, `canUseVoice`; `evictFromRooms`, `deleteRoomData`), mensagens, retenção, `desktopCapturer` e seletor de tela, fila de música por sala de voz (`musicByRoom`) e o `Referer` injetado nas requisições do YouTube. |
+| `renderer.js` | Interface e lógica do cliente: login, barra de servidores, coluna de canais montada pelo código (`renderSidebar`), painel de amigos e conversas diretas, chat, WebRTC, estado da conexão e ping por pessoa, grade de tiles (`layoutTiles`), câmera/microfone, compartilhamento de tela, música, status, membros, configurações em abas. |
 | `themes.js` | Os 18 temas (paletas, id padrão `escuro`) e os grupos do seletor (`THEME_GROUPS`: Escuros, Neon, Anime, Claros; cada tema tem `group`), leitura/gravação em `localStorage['vox-theme']`, `applyTheme`, opção "Reduzir animações" (`vox-reduce-motion`, `data-reduce-motion` no `<html>`) e `migrateLegacyStorage` (copia `concord-*` → `vox-*`). Carregado no `<head>` antes do CSS para aplicar o tema antes da primeira pintura. Também é módulo Node (testes). |
 | `icons.js` | Ícones SVG do Lucide (lucide-static 0.460.0, licença ISC) usados na interface: `icon(name, size)`, `setIcon(el, name, text, size)` e `hydrate(root)`, que troca `<i data-icon="…">` pelo SVG. Só os ícones usados estão no arquivo; para um novo, copie de `lucide-static/icons/*.svg`. Também é módulo Node (testes). |
 | `mic-gate.js` | Sensibilidade do microfone: `createGate` (gate com nível RMS, histerese, espera e limite automático pelo ruído de fundo; roda dentro do AudioWorklet), `gateParams`, `meterPercent` e `clampNumber`. Usado por `renderer.js` (`VoxMicGate`). Também é módulo Node (testes). |
 | `speaking.js` | Detecção de "falando" com histerese (liga ≥ 0.12, desliga após 250 ms abaixo) para o anel do avatar. |
 | `sounds.js` | Efeitos sonoros gerados com Web Audio (sem arquivos): `SOUNDS` (`join`, `leave`, `mute`, `unmute`), `playSound`, `rosterSound` (decide o som pela diferença entre a lista anterior e a nova da voz) e `isEnabled` (`vox-sound-effects`). Usado por `renderer.js`. Também é módulo Node (testes). |
-| `channels.js` | Lista fixa de canais: `TEXT_CHANNELS` (`geral`, `jogos`, `musica`) e `VOICE_CHANNELS` (`voz-sala`, `voz-jogos`, `voz-musica`); padrões `geral` e `voz-sala`. Usado por `main.js` e `renderer.js`. Também é módulo Node (testes). |
+| `servers-state.js` | Regras puras dos servidores (estilo Discord, na mesma instalação): nome, dono, administradores, membros, canais de texto/voz com ids, convites por código `VOX-XXXXXXXX`. `createServer`, `renameServer`, `deleteServer`, `createChannel`/`renameChannel`/`deleteChannel` (o servidor mantém ao menos 1 canal de texto), `createInvite`/`revokeInvite`/`joinByInvite`, `leaveServer`, `kickMember`, `setAdmin`, `transferOwnership`, `roleOf`, `isManager`, `findChannel` e `publicServer` (convites só para quem administra). `migrateLegacy` transforma a antiga Casa dos Amigos no servidor `casa` (ids `geral`, `jogos`, `musica`, `voz-sala`, `voz-jogos`, `voz-musica` mantidos; dono = conta mais antiga; todas as contas como membros). Usado por `main.js`. Também é módulo Node (testes). |
+| `friends-state.js` | Amizades, pedidos e chaves de conversa: `dmKey` (`dm:a|b`), `callKey` (`call:a|b`), `sendRequest`, `acceptRequest`, `dropRequest`, `removeFriend`, `friendsOf`, `areFriends`, `requestsFor`, `canReadDm`, `canWriteDm`. Usado por `main.js`. Também é módulo Node (testes). |
 | `chat-state.js` | Regras puras do chat: `cleanText` (até 2000), imagens (`MAX_IMAGE_BYTES` 2 MB, `imageExtension`, `isUploadName`), `ensureIds`, `editMessage`/`deleteMessage` (só o autor), menções (`splitMentions`, `mentionsOf`), não lidas (`addUnread`, `clearUnread`) e `shouldNotify`. Usado por `main.js` e `renderer.js` (`VoxChat`). Também é módulo Node (testes). |
 | `sessions.js` | Tokens de reconexão: `createSessionStore` (`issue`, `resolve`, `revoke`, `prune`), grava só o hash em `sessions.json`, validade 7 dias. Usado por `main.js`. |
 | `tunnel.js` | Túnel do Cloudflare aberto pelo Vox: `createTunnel` (baixa o `cloudflared` se faltar, inicia, reabre se cair, para) e `parseTunnelUrl`. Usado por `main.js`. |
-| `protocol.js` | `PROTOCOL_VERSION` (hoje `5`), mensagem de versão incompatível e `isCompatible`. Usado por `main.js` e `renderer.js`. Também é módulo Node (testes). |
+| `protocol.js` | `PROTOCOL_VERSION` (hoje `6`), mensagem de versão incompatível e `isCompatible`. Usado por `main.js` e `renderer.js`. Também é módulo Node (testes). |
 | `youtube.js` | `parseYouTubeId` (aceita links `youtu.be`, `watch?v=`, `shorts`, `embed`), `thumbnailUrl` e `lookupVideo` (oEmbed público, sem chave, timeout de 4 s). Usado por `main.js`. Também é módulo Node (testes). |
 | `music-state.js` | Regras puras da fila de música: `MAX_QUEUE` (50), `SYNC_TOLERANCE_MS` (2000), `RESYNC_INTERVAL_MS` (15000), `SEEK_COOLDOWN_MS` (5000), `shouldCorrectSeek`, adicionar/remover, pular ou terminar só se o item ainda é o atual, alternar pausa e posição atual. Usado por `main.js` e `renderer.js`. Também é módulo Node (testes). |
 | `presence.js` | Regras de status: modo escolhido (`online`, `away`, `busy`, `invisible`), ausente automático só a partir de Online e atividade que desfaz só o automático. Também é módulo Node (testes). |
-| `room-state.js` | Estado público do usuário na sala de voz (`publicUser`, `applyStatePatch`: `muted`, `status`, `sharing`) e troca de canais (`joinVoiceRoom`, `leaveVoiceRoom`, `canUseTextRoom`, `socketRoomsToLeave`). Usado por `main.js`. |
-| `test/` | Testes `node:test` (`npm test`): paletas e contraste, CSS sem cores fixas, estrutura das configurações, estado da sala, canais, presença, protocolo, detecção de fala, YouTube, fila de música, efeitos sonoros, chat (menções, editar/apagar, não lidas, notificações), sessões e endereço do túnel. Fora do instalador. |
+| `room-state.js` | Estado público do usuário na sala de voz (`publicUser`, `applyStatePatch`: `muted`, `status`, `sharing`) e troca de canais (`joinVoiceRoom`, `leaveVoiceRoom`, `canUseTextRoom`, `socketRoomsToLeave`); `canUseTextRoom` não depende de lista de canais (quem decide o acesso é `main.js`). Usado por `main.js`. |
+| `test/` | Testes `node:test` (`npm test`): paletas e contraste, CSS sem cores fixas, estrutura das configurações, estado da sala, servidores (`servers-state`), amigos (`friends-state`), presença, protocolo, detecção de fala, YouTube, fila de música, efeitos sonoros, chat (menções, editar/apagar, não lidas, notificações), sessões e endereço do túnel. Fora do instalador. |
 | `preload.js` | Ponte segura `contextBridge` para o IPC do seletor de tela, do túnel (`tunnelStart`/`tunnelStop`/`tunnelStatus`/`onTunnelStatus`), da atualização (`updateStatus`/`onUpdateStatus`/`installUpdate`) e das notificações (`focusWindow`, `flashFrame`). Ainda expõe `minimize`/`maximize`/`close`, sem uso desde que a janela passou a usar os botões nativos. |
 | `assets/icon.svg`, `assets/icon-small.svg`, `assets/icon.png` | Ícone do Vox: barras de equalizador roxas cujas pontas (rosa nas bordas, ciano no meio) formam um V. `icon-small.svg` é a versão de 3 barras usada até 24 px. `icon.png` (256 px, gerado) é o ícone da janela; `icon.svg` aparece na tela de login. |
 | `build/icon.ico` | Ícone do instalador e do `Vox.exe` (16 a 256 px, entradas BMP 32 bits), gerado por `scripts/gerar-icone.js`. Não editar à mão. |
@@ -107,7 +108,8 @@ Saída: `dist\Vox-Setup-<versão>.exe`, `.blockmap` e `latest.yml` (versão de `
 | `package.json` | Scripts, dependências e configuração do electron-builder. |
 | `socket.io.min.js` | Bundle do cliente Socket.io copiado pelo `postinstall`; **não editar à mão**. |
 | `users.json` | Dados de desenvolvimento das contas. Não faz parte do instalador. |
-| `messages.json` | Dados de desenvolvimento das mensagens. Não faz parte do instalador. |
+| `messages.json` | Dados de desenvolvimento das mensagens (canais e conversas diretas `dm:a|b`). Não faz parte do instalador. |
+| `servers.json`, `friends.json` | Dados de desenvolvimento dos servidores e das amizades/pedidos. Ficam ao lado de `users.json`, fora do Git e do instalador. |
 | `README.md` | Documentação para o usuário final. |
 | `AGENTS.md` | Este guia. |
 | `tools/cloudflared.exe` | Cloudflare Tunnel para o host. Não faz parte do instalador. |
@@ -123,9 +125,10 @@ Saída: `dist\Vox-Setup-<versão>.exe`, `.blockmap` e `latest.yml` (versão de `
 - Escuta em `0.0.0.0:3000` para permitir acesso pela rede local.
 - Mantém em memória:
   - `authenticated`: `socket.id -> username`;
-  - `roomUsers`: `voiceRoom -> Map(socket.id -> { username, muted, status, sharing })`, só para canais de voz;
+  - `roomUsers`: `voiceRoom -> Map(socket.id -> { username, muted, status, sharing })`, só para canais de voz (ids de canal são únicos entre servidores);
   - `socket.data.textRoom` e `socket.data.voiceRoom`: canal de texto e de voz atuais do socket (`null` quando não há);
   - `users`: objeto carregado de `users.json`;
+  - `servers` e `friends`: carregados de `servers.json` e `friends.json` (na primeira carga, `migrateLegacy` cria o servidor `casa`);
   - `messages`: objeto carregado de `messages.json`.
 - Usa `desktopCapturer` + `session.setDisplayMediaRequestHandler` para o seletor de tela personalizado.
 
@@ -187,6 +190,7 @@ Saída: `dist\Vox-Setup-<versão>.exe`, `.blockmap` e `latest.yml` (versão de `
 
 ### Eventos Socket.io principais
 
+- `servers` (servidor → cliente: servidores da pessoa via `publicServer`), `friends` (amigos, pedidos e lista de conversas diretas `dms`)
 - `register`, `login` (recebem `protocol`; ver “Versão do protocolo”)
 - `join-text` (room), `join-voice` (room), `leave-voice`
 - `room-users`, `voice-rooms`
@@ -202,11 +206,16 @@ Saída: `dist\Vox-Setup-<versão>.exe`, `.blockmap` e `latest.yml` (versão de `
 - `set-avatar` ({ data: ArrayBuffer, type } | null, callback): foto de perfil da conta do socket (até 512 KB; o cliente já manda 256×256 WebP com o centro recortado). Grava em `avatars/<uuid>.<ext>`, guarda o nome em `users[nome].avatar`, apaga a anterior e reenvia `server-members` (cada membro tem `avatar`, nome do arquivo ou `null`). Servida em `GET /avatars/<nome>`; fotos sem conta são apagadas ao iniciar (`pruneAvatars`).
 - `get-messages`, `messages-cleared`, `delete-my-messages`
 - `disconnect`
+- Servidores (cliente → servidor, com callback): `server-create`, `server-update`, `server-delete`, `channel-create`, `channel-update`, `channel-delete`, `invite-create`, `invite-revoke`, `invite-join` (código), `server-leave`, `member-kick`, `member-role`, `server-transfer`. Servidor → cliente: `voice-removed` (você foi tirado da voz) e `server-kicked` (perdeu acesso ao servidor).
+- Amigos e chamadas diretas: `friend-request`, `friend-accept`, `friend-drop`, `friend-remove`, `call-start`, `call-decline`. Servidor → cliente: `call-incoming` (toca por 45 s) e `call-ended` (`reason`: `declined`, `missed`, `cancelled`, `answered`).
 - Música (`main.js`): cliente → servidor `music-add` (url, callback), `music-remove` (itemId), `music-skip` (itemId atual), `music-toggle`, `music-ended` (itemId), `music-error` ({ itemId, code }). Servidor → sala de voz: `music-state` (`queue`, `playing`, `positionMs`, `serverNow`) e `music-notice` (texto curto, ex.: "Não foi possível tocar"). `music-state` também vai para quem entra na voz.
 - Estado da música fica em `musicByRoom` (por sala de voz): é apagado quando a fila esvazia ou a sala fica vazia. Com música tocando, o servidor reenvia `music-state` a cada `RESYNC_INTERVAL_MS` (15 s).
 
-- `join-text` troca o canal de texto (sem mídia). `join-voice` entra numa voz (sai antes da anterior). `leave-voice` sai da voz. Só aceitam ids da lista em `channels.js`.
-- `save-message`, `edit-message`, `delete-message`, `get-messages` e `delete-my-messages` só funcionam para o canal de texto atual do socket (`canUseTextRoom`).
+- `join-text` troca o canal de texto (sem mídia). `join-voice` entra numa voz (sai antes da anterior). `leave-voice` sai da voz. Só aceitam ids de canais de servidores dos quais a pessoa é membro (`canUseText`/`canUseVoice`); conversa direta usa a chave `dm:a|b` em `join-text`/`save-message`.
+- Acesso por sala: `new-message`, `message-updated`, `message-deleted`, `voice-rooms`, `music-rooms` e a sala de voz em `server-members` só vão para quem tem acesso à sala (`roomAudience`/`canSeeRoom`).
+- Mensagens diretas ficam em `messages.json` com a chave `dm:a|b` (mesmas regras de 7 dias e 200). Escrever e ligar exige amizade; ler a conversa continua permitido depois de desfazer a amizade. A chamada direta usa a sala de voz `call:a|b`; quando uma pessoa desliga, a chamada acaba para as duas.
+- Perder acesso (expulso, saiu, canal ou servidor apagado) tira a pessoa da voz e do texto (`evictFromRooms`); apagar canal ou servidor apaga as mensagens e a música dele (`deleteRoomData`).
+- `save-message`, `edit-message`, `delete-message`, `get-messages` e `delete-my-messages` só funcionam para o canal de texto atual do socket (`canUseTextRoom`), e `main.js` ainda confere a permissão (`canUseText`, amizade nas diretas).
 - Cadastro: usuário com 2 a 24 letras, números, `.`, `-` ou `_`, sem repetir ignorando maiúsculas.
 
 ### Reconexão
@@ -217,18 +226,25 @@ Saída: `dist\Vox-Setup-<versão>.exe`, `.blockmap` e `latest.yml` (versão de `
 - `resume` recusado (token vencido, conta apagada) → `endSession` volta para o login com a mensagem.
 - A primeira `room-users` depois de reconectar não toca som (`soundRoster = undefined`).
 
+### Servidores, canais e amigos
+
+- Vários servidores na mesma instalação, guardados em `servers.json`. Cada um tem dono, administradores, membros, canais de texto e de voz (ids próprios) e convites por código `VOX-XXXXXXXX`. O servidor `casa` (antiga Casa dos Amigos, via `migrateLegacy`) tem `autoJoin: true`: toda conta nova entra nele no cadastro (`joinAutoServers`); numa instalação vazia, a primeira conta cria a casa e vira dona. `ensureLegacyAutoJoin` marca a casa gravada antes dessa regra. Os outros servidores só por código (`invite-join`); quem sai ou é expulso da casa não volta sozinho.
+- Permissões: o dono pode tudo (renomear, apagar o servidor, promover/rebaixar administradores, passar a posse); não pode sair sem passar a posse. Administrador cria, renomeia e apaga canais, gera/revoga convites e expulsa membros comuns. O servidor precisa manter ao menos 1 canal de texto.
+- Interface: barra à esquerda com Início (amigos e diretas), servidores (iniciais) e `+` (criar servidor ou entrar com código); menu do servidor no cabeçalho (convidar, configurações, criar canais, sair; gerência só para dono/admin); engrenagem em cada canal (renomear/apagar); janela de configurações do servidor (abas Geral, Membros, Convites); painel de amigos (Online, Todos, Pendentes, Adicionar); conversa direta com botão Ligar; aviso de chamada no canto (atender/recusar, som `ring` em `sounds.js`). A coluna da direita mostra os membros do servidor ou, no Início, os amigos.
+- Formulários usam `#form-modal` (`openFormModal`): o Electron não tem `window.prompt`.
+
 ### Canais de texto e de voz
 
 - Texto e voz são independentes: a pessoa está sempre em **exatamente 1** canal de texto e em **no máximo 1** canal de voz.
 - Trocar de canal de texto nunca mexe em mídia nem na chamada; trocar ou sair da voz não mexe no chat.
 - Canais de texto não abrem microfone nem WebRTC. Canais de voz não têm chat.
-- Login: entra sempre em `#geral` e na `voz-sala`, com o microfone aberto.
+- Login: abre o último servidor usado (`vox-last-server`, canal em `vox-last-channels`) e entra no primeiro canal de voz dele com o microfone aberto; sem servidores, abre o Início.
 - Não existe mais tela “Entrar em um canal”.
 - Câmera e compartilhamento de tela só funcionam com voz conectada; os botões Cam, Tela e ✕ ficam desabilitados sem voz.
 
 ### Versão do protocolo
 
-- `PROTOCOL_VERSION` em `protocol.js` é compartilhado por cliente e servidor. Hoje é `5` (a versão 1 usava `join-room`/`leave-room`; a 3 adicionou os eventos `music-*`; a 4 adicionou `server-members` e `music-rooms`; a 5 adicionou `resume`, ids nas mensagens, editar/apagar, imagens e `new-message` para todos os logados).
+- `PROTOCOL_VERSION` em `protocol.js` é compartilhado por cliente e servidor. Hoje é `6` (a versão 1 usava `join-room`/`leave-room`; a 3 adicionou os eventos `music-*`; a 4 adicionou `server-members` e `music-rooms`; a 5 adicionou `resume`, ids nas mensagens, editar/apagar, imagens e `new-message` para todos os logados; a 6 adicionou servidores, amigos, mensagens e chamadas diretas, e `new-message` e afins passaram a ir só para quem tem acesso à sala).
 - O cliente envia `protocol` em `register` e `login`; o servidor recusa versão diferente (inclusive cliente antigo, sem o campo) com a mensagem “Seu Vox está em uma versão diferente da do servidor. Atualize para entrar.”
 - **Suba `PROTOCOL_VERSION` sempre que um evento ou payload mudar de forma incompatível** (nome, campos obrigatórios, significado). Mudança compatível não exige.
 
@@ -266,6 +282,8 @@ Em desenvolvimento (`app.isPackaged === false`):
 ```text
 C:\Users\Usuario\discord-clone-windows\users.json
 C:\Users\Usuario\discord-clone-windows\messages.json
+C:\Users\Usuario\discord-clone-windows\servers.json
+C:\Users\Usuario\discord-clone-windows\friends.json
 ```
 
 No app instalado:
@@ -273,6 +291,8 @@ No app instalado:
 ```text
 C:\Users\Usuario\AppData\Roaming\Vox\users.json
 C:\Users\Usuario\AppData\Roaming\Vox\messages.json
+C:\Users\Usuario\AppData\Roaming\Vox\servers.json
+C:\Users\Usuario\AppData\Roaming\Vox\friends.json
 ```
 
 Código relevante:
@@ -298,6 +318,8 @@ const DATA_DIR = app.isPackaged ? app.getPath('userData') : __dirname;
 - Senhas nunca são gravadas em texto puro.
 - Salt individual por usuário.
 
+`servers.json`: `{ "servers": { "<id>": { id, name, owner, admins, members, channels: [{ id, name, type }], invites: { "<8 letras>": { by, at } }, createdAt } } }` (o código é guardado sem o prefixo `VOX-`, que a interface mostra e `normalizeCode` aceita). `friends.json`: `{ "friends": { "<conta>": ["<amigo>"] }, "requests": [{ from, to, at }] }`. As conversas diretas ficam em `messages.json` com a chave `dm:a|b`.
+
 `messages.json`:
 
 ```json
@@ -314,6 +336,7 @@ Em `users.json`, `avatar` (opcional) é o arquivo da foto em `avatars/`. `sessio
 ### Preferências no localStorage
 
 - `vox-server-url`
+- `vox-last-server` (último servidor aberto), `vox-last-channels` (último canal por servidor)
 - `audioInputId`, `audioOutputId`, `monitorEnabled`
 - `vox-noise-suppression` (`off`, `browser`, `strong`; padrão `strong`)
 - `vox-mic-gain` (volume do microfone, 0–200, padrão 100), `vox-mic-auto` (`0` desliga a sensibilidade automática), `vox-mic-threshold` (sensibilidade manual em dB, −70 a −10, padrão −50). A antiga `vox-noise-gate-level` não é mais lida.
@@ -335,10 +358,10 @@ Ficam no perfil do Electron em `%APPDATA%\Vox` (no macOS em desenvolvimento: `~/
 
 ### Regras
 
-- Nunca apagar `users.json` ou `messages.json` sem autorização explícita.
+- Nunca apagar `users.json`, `messages.json`, `servers.json` ou `friends.json` sem autorização explícita.
 - Ao testar cadastro, remover a conta de teste depois e restaurar o estado.
 - Não usar PowerShell 5.1 `Set-Content -Encoding UTF8` para editar JSON: ele adiciona BOM. O leitor remove BOM, mas o ideal é gravar sem BOM com Node (`fs.writeFileSync`) ou com a ferramenta de edição.
-- O instalador não deve incluir dados de usuário (`users.json`, `messages.json`, `sessions.json`, `uploads/`, `avatars/`), `tools/`, `AGENTS.md` nem o `.bat` do túnel.
+- O instalador não deve incluir dados de usuário (`users.json`, `messages.json`, `servers.json`, `friends.json`, `sessions.json`, `uploads/`, `avatars/`), `tools/`, `AGENTS.md` nem o `.bat` do túnel.
 
 ## 6. Invariantes do produto
 
@@ -349,8 +372,9 @@ Manter estas decisões, salvo pedido explícito do usuário:
 - Câmera começa **desligada**; o usuário liga manualmente.
 - Microfone começa ligado.
 - Status Online/Ausente/Ocupado/Invisível; Ausente automático após 5 minutos (só a partir de Online) e manual pelo menu.
-- Sempre exatamente 1 canal de texto ativo; no máximo 1 canal de voz.
-- Login entra em `#geral` e na `voz-sala` com microfone aberto. Sem tela de “Entrar em um canal”.
+- Sempre exatamente 1 canal de texto ativo (ou conversa direta); no máximo 1 canal de voz.
+- Login abre o último servidor usado e entra no primeiro canal de voz dele com microfone aberto; sem servidores, abre o Início. Sem tela de “Entrar em um canal”.
+- Contas novas entram na Casa dos Amigos (`autoJoin`) sem convite; os demais servidores exigem código. Escrever e ligar para alguém exige amizade.
 - Cam e Tela só com voz conectada.
 - Configurações de entrada/saída de áudio e monitoramento do próprio microfone.
 - Compartilhamento de tela com seletor de janela/tela.
@@ -471,12 +495,12 @@ Antes de considerar uma alteração concluída:
 
 ## 9. Estado atual conhecido
 
-- Versão em `package.json`: `1.4.0` (Electron 45.2.1, electron-updater 6). `PROTOCOL_VERSION` `5`.
+- Versão em `package.json`: `1.5.0` (Electron 45.2.1, electron-updater 6). `PROTOCOL_VERSION` `6` (a 5 era a 1.4.0). Servidores, amigos, mensagens e chamadas diretas já implementados e testados; quem usa o 1.4.0 precisa atualizar para entrar.
 - Atualização automática (`setupAutoUpdate` em `main.js`, só no app instalado): procura na release mais recente do GitHub ao abrir e a cada 4 h, baixa sozinha e mostra `#update-banner`; instala em "Reiniciar e atualizar" ou ao fechar. **Medido:** sem `latest.yml` na release (caso da v1.2.0 publicada hoje) só registra erro 404 no log, sem afetar o app. Versões até 1.3.0 não têm o atualizador: instalar a 1.4.0 à mão uma vez.
 - O pacote `electron` 45 não tem script de instalação: o `electron.exe` é baixado na primeira vez que `npm start` roda (ou com `node node_modules/electron/install.js`). Exige Node ≥ 22.12.
 - Instaladores antigos (ainda com o nome Concord) no PC com Windows: `dist\Concord Setup 1.0.0.exe`, `1.0.1.exe` e `1.0.2.exe`. Nenhum instalador foi gerado desde a troca de nome e as mudanças de temas, música, membros e conexão.
 - Instalador NSIS sem assinatura, com o ícone próprio do Vox.
-- No Windows, o app antigo está instalado como Concord (`%LOCALAPPDATA%\Programs\Concord`), com dados em `%APPDATA%\Concord` (conta `vinicius` e histórico de `geral`).
+- No Windows, o app antigo está instalado como Concord (`%LOCALAPPDATA%\Programs\Concord`), com dados em `%APPDATA%\Concord` (conta `vinicius` e histórico de `geral`, que na versão nova vira o canal `geral` do servidor `casa`).
 - Pendências: compartilhamento 1080p60 (captura limitada a ~32 fps com o Vox em segundo plano); servidor TURN; testar a atualização automática com uma release real (1.4.0 → seguinte); conferir as notificações do Windows no app instalado.
 - O app instalado e o de desenvolvimento podem estar em estados diferentes; sempre confirme qual está rodando.
 - O Cloudflare Tunnel pode estar ativo. A URL é temporária e não deve ser documentada como fixa.

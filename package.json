@@ -1,6 +1,6 @@
 {
   "name": "vox",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "Vox - chat, voz, vídeo e compartilhamento de tela para Windows 11",
   "author": "Vox",
   "main": "main.js",
@@ -21,6 +21,8 @@
       "!uploads/**",
       "!avatars/**",
       "!sessions.json",
+      "!servers.json",
+      "!friends.json",
       "!dist/**",
       "!README.md",
       "!AGENTS.md",

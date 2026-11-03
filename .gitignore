@@ -10,6 +10,8 @@ dist/
 users.json
 messages.json
 sessions.json
+servers.json
+friends.json
 uploads/
 avatars/
 

@@ -511,6 +511,7 @@
   }
   .member:hover { background: color-mix(in srgb, var(--text) 4%, transparent); }
   .member .avatar { width: 30px; height: 30px; font-size: 12px; }
+  .channel.dm .member-status-dot, .friend-row .member-status-dot { position: absolute; right: -3px; bottom: -3px; width: 10px; height: 10px; border: 2px solid var(--bg-2); box-sizing: content-box; }
   .member .member-status-dot { position: absolute; right: -3px; bottom: -3px; width: 10px; height: 10px; border: 2px solid var(--bg-2); box-sizing: content-box; }
   .member-name {
     flex: 1; min-width: 0; font-size: 13px; overflow: hidden;
@@ -602,6 +603,112 @@
     display: flex; align-items: center; justify-content: center;
   }
   #settings-modal.hidden { display: none; }
+
+  /* ================= SERVIDORES, AMIGOS E DIRETAS ================= */
+  #channels { position: relative; }
+  #guild-header { width: 100%; border: none; background: transparent; color: var(--text); font: inherit; font-weight: 700; font-size: 15px; cursor: pointer; text-align: left; }
+  #guild-header:hover { background: color-mix(in srgb, var(--text) 4%, transparent); }
+  #guild-header.no-menu { cursor: default; }
+  #guild-header.no-menu:hover { background: transparent; }
+  #guild-header.no-menu .chevron { display: none; }
+  #guild-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #server-menu { top: 60px; bottom: auto; }
+  #server-menu button, #mention-popup button {
+    display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 10px; background: transparent; border: none;
+    color: var(--text); cursor: pointer; border-radius: 6px; font-size: 13px; text-align: left;
+  }
+  #server-menu button:hover { background: color-mix(in srgb, var(--text) 6%, transparent); }
+  #server-menu button.danger { color: var(--danger-text); }
+  #server-list { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .rail-btn { border: none; color: var(--text); font: inherit; position: relative; }
+  .rail-guild { font-weight: 800; font-size: 15px; }
+  .rail-add { color: var(--ok-text); font-size: 22px; }
+  .rail-add:hover { color: var(--on-accent); }
+  /* Bolinha de não lidas à esquerda do servidor (como no Discord) */
+  .rail-btn.has-unread::before {
+    content: ''; position: absolute; left: -12px; top: 50%; width: 6px; height: 8px; margin-top: -4px;
+    border-radius: 0 4px 4px 0; background: var(--text);
+  }
+  .rail-btn .rail-badge { position: absolute; right: -4px; bottom: -4px; }
+  .section-head { display: flex; align-items: center; justify-content: space-between; }
+  .section-head .section-add { border: none; background: transparent; color: var(--muted); cursor: pointer; padding: 4px 6px; border-radius: 4px; display: flex; }
+  .section-head .section-add:hover { color: var(--text); }
+  .channel-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .channel .channel-edit { border: none; background: transparent; color: var(--muted); cursor: pointer; padding: 2px; border-radius: 4px; display: none; }
+  .channel:hover .channel-edit, .channel.active .channel-edit { display: flex; }
+  .channel .channel-edit:hover { color: var(--text); }
+  .channel.dm .avatar-wrap { position: relative; flex-shrink: 0; }
+  .channel.dm .avatar { width: 28px; height: 28px; font-size: 11px; }
+  .channel-empty { font-size: 12px; color: var(--muted); padding: 6px 10px; line-height: 1.5; }
+
+  #friends-panel { flex: 1; min-height: 0; overflow-y: auto; padding: 14px 20px; }
+  .friends-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
+  .friends-tab { border: none; background: transparent; color: var(--muted); font: inherit; font-size: 13px; font-weight: 600; padding: 6px 12px; border-radius: 6px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+  .friends-tab:hover { color: var(--text); background: color-mix(in srgb, var(--text) 6%, transparent); }
+  .friends-tab.active { color: var(--text); background: var(--accent-soft); }
+  .friends-tab.add { color: var(--on-accent); background: var(--ok-bg, var(--green)); }
+  .friends-tab.add.active { outline: 2px solid var(--text); }
+  .friends-hint { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+  .friends-add-row { display: flex; gap: 8px; }
+  .friends-add-row input { flex: 1; min-width: 0; height: 40px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 14px; outline: none; }
+  .friends-add-row input:focus { border-color: var(--accent); }
+  .friends-add-row button { height: 40px; padding: 0 16px; border: none; border-radius: 8px; background: var(--accent); color: var(--on-accent); font-weight: 700; cursor: pointer; }
+  #friend-add-status.ok { color: var(--ok-text); }
+  .friends-section { font-size: 11px; font-weight: 700; letter-spacing: .6px; text-transform: uppercase; color: var(--muted); margin: 14px 0 6px; }
+  .friend-row { display: flex; align-items: center; gap: 12px; padding: 8px 10px; border-radius: 8px; border-top: 1px solid var(--border); }
+  .friend-row:hover { background: color-mix(in srgb, var(--text) 4%, transparent); }
+  .friend-row .avatar-wrap { position: relative; }
+  .friend-info { flex: 1; min-width: 0; }
+  .friend-name { font-weight: 600; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .friend-sub { font-size: 12px; color: var(--muted); }
+  .friend-actions { display: flex; gap: 6px; }
+  .round-btn { width: 34px; height: 34px; border: none; border-radius: 50%; background: var(--control); color: var(--text); cursor: pointer; display: flex; align-items: center; justify-content: center; }
+  .round-btn:hover { background: var(--control-hover); }
+  .round-btn.ok:hover { color: var(--ok-text); }
+  .round-btn.danger:hover { color: var(--danger-text); }
+  #chat-wrap.friends-mode #messages, #chat-wrap.friends-mode .chat-input-row, #chat-wrap.friends-mode #attach-preview { display: none; }
+  #chat-wrap:not(.friends-mode) #friends-panel { display: none; }
+  .friends-empty { font-size: 13px; color: var(--muted); padding: 24px 0; text-align: center; }
+
+  #call-ring {
+    position: fixed; right: 20px; bottom: 90px; z-index: 300; display: flex; align-items: center; gap: 12px;
+    padding: 14px 16px; border-radius: 14px; background: var(--bg-2); border: 1px solid var(--border);
+    box-shadow: 0 16px 40px rgba(0,0,0,.5); min-width: 300px;
+  }
+  #call-ring .avatar { width: 44px; height: 44px; font-size: 16px; }
+  .call-ring-info { flex: 1; display: flex; flex-direction: column; font-size: 13px; color: var(--muted); }
+  .call-ring-info strong { color: var(--text); font-size: 15px; }
+  .call-btn { width: 42px; height: 42px; border: none; border-radius: 50%; cursor: pointer; color: #fff; display: flex; align-items: center; justify-content: center; }
+  .call-btn.accept { background: var(--green); }
+  .call-btn.decline { background: var(--danger-bg); }
+
+  #form-modal, #server-modal {
+    position: fixed; inset: 0; z-index: 160; background: rgba(0,0,0,.6); backdrop-filter: blur(4px);
+    display: flex; align-items: center; justify-content: center;
+  }
+  #form-modal.hidden, #server-modal.hidden { display: none; }
+  .form-card { width: 440px; }
+  .form-card .field input, .form-card .field select { width: 100%; height: 40px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 14px; outline: none; }
+  .form-card .field input:focus { border-color: var(--accent); }
+  .btn-primary { background: var(--accent); color: var(--on-accent); }
+  .btn-primary:hover { background: var(--accent-2); }
+  .form-choices { display: flex; gap: 8px; margin-bottom: 14px; }
+  .form-choice { flex: 1; padding: 12px; border-radius: 10px; border: 1px solid var(--border); background: var(--bg); color: var(--text); cursor: pointer; text-align: left; font: inherit; }
+  .form-choice strong { display: block; font-size: 14px; margin-bottom: 4px; }
+  .form-choice span { font-size: 12px; color: var(--muted); }
+  .form-choice.active { border-color: var(--accent); background: var(--accent-soft); }
+  .server-panel { min-height: 220px; }
+  #server-delete, #invite-new { height: 38px; padding: 0 16px; border-radius: 8px; cursor: pointer; font-weight: 700; font-size: 12px; border: none; display: inline-flex; align-items: center; gap: 6px; }
+  #server-delete { border: 1px solid color-mix(in srgb, var(--red) 40%, transparent); margin: 6px 0; }
+  .server-member, .invite-row { display: flex; align-items: center; gap: 10px; padding: 8px 6px; border-top: 1px solid var(--border); }
+  .server-member .avatar { width: 30px; height: 30px; font-size: 12px; }
+  .server-member .role { font-size: 11px; color: var(--muted); display: inline-flex; align-items: center; gap: 4px; }
+  .server-member .member-actions, .invite-row .member-actions { margin-left: auto; display: flex; gap: 6px; }
+  .member-actions button { height: 30px; padding: 0 10px; border: none; border-radius: 6px; background: var(--control); color: var(--text); font-size: 12px; font-weight: 600; cursor: pointer; }
+  .member-actions button:hover { background: var(--control-hover); }
+  .member-actions button.danger { color: var(--danger-text); }
+  .invite-code { font-family: ui-monospace, Consolas, monospace; font-size: 15px; font-weight: 700; letter-spacing: 1px; }
+  .invite-meta { font-size: 11px; color: var(--muted); }
   .settings-card {
     width: 560px; max-width: 92vw; max-height: 88vh; overflow-y: auto; background: var(--bg-2);
     border: 1px solid var(--border); border-radius: 16px;
@@ -959,29 +1066,27 @@
 <div id="app">
   <!-- Rail de servidores -->
   <nav id="server-rail">
-    <div class="rail-btn rail-server active" title="Casa dos Amigos"><img src="assets/icon.svg" alt="Casa dos Amigos"></div>
+    <button type="button" class="rail-btn rail-server rail-home" id="rail-home" title="Início: amigos e mensagens diretas" aria-label="Início"><img src="assets/icon.svg" alt=""></button>
     <div class="rail-sep"></div>
-    <div class="rail-btn" title="Jogos"><i data-icon="gamepad-2" data-size="22"></i></div>
-    <div class="rail-btn" title="Música"><i data-icon="music" data-size="22"></i></div>
+    <div id="server-list"></div>
+    <button type="button" class="rail-btn rail-add" id="rail-add" title="Criar um servidor ou entrar com convite" aria-label="Criar ou entrar em servidor"><i data-icon="plus" data-size="22"></i></button>
   </nav>
 
   <!-- Coluna de canais -->
   <aside id="channels">
-    <div id="guild-header">
-      <span>Casa dos Amigos</span>
-      <span class="chevron">▾</span>
+    <button type="button" id="guild-header" aria-haspopup="menu" aria-expanded="false">
+      <span id="guild-name">Início</span>
+      <span class="chevron" id="guild-chevron">▾</span>
+    </button>
+    <div id="server-menu" class="popover hidden" role="menu">
+      <button type="button" data-action="invite" role="menuitem"><i data-icon="user-plus" data-size="16"></i> Convidar pessoas</button>
+      <button type="button" data-action="settings" data-manage role="menuitem"><i data-icon="settings" data-size="16"></i> Configurações do servidor</button>
+      <button type="button" data-action="new-text" data-manage role="menuitem"><i data-icon="plus" data-size="16"></i> Criar canal de texto</button>
+      <button type="button" data-action="new-voice" data-manage role="menuitem"><i data-icon="plus" data-size="16"></i> Criar canal de voz</button>
+      <button type="button" data-action="leave" class="danger" role="menuitem"><i data-icon="log-out" data-size="16"></i> Sair do servidor</button>
     </div>
-    <div id="channel-scroll">
-      <div class="section-title">Canais de texto</div>
-      <div class="channel active" data-room="geral"><span class="hash">#</span> geral</div>
-      <div class="channel" data-room="jogos"><span class="hash">#</span> jogos</div>
-      <div class="channel" data-room="musica"><span class="hash">#</span> música</div>
-
-      <div class="section-title" style="margin-top:10px;">Canais de voz</div>
-      <div class="channel voice" data-room="voz-sala"><span class="voice-icon"><i data-icon="volume-2" data-size="16"></i></span> Sala Principal</div>
-      <div class="channel voice" data-room="voz-jogos"><span class="voice-icon"><i data-icon="volume-2" data-size="16"></i></span> Jogos</div>
-      <div class="channel voice" data-room="voz-musica"><span class="voice-icon"><i data-icon="volume-2" data-size="16"></i></span> Música</div>
-    </div>
+    <!-- Preenchido pelo renderer.js: canais do servidor aberto ou amigos e conversas diretas -->
+    <div id="channel-scroll"></div>
     <div id="voice-connection" class="hidden">
       <div class="vc-info"><span id="voice-conn-name">—</span></div>
       <button id="btn-leave-voice" title="Desconectar" aria-label="Desconectar"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M12 9c-1.6 0-3.15.25-4.6.72v3.1c0 .39-.23.74-.56.9-.98.49-1.87 1.12-2.66 1.85-.18.18-.43.28-.7.28-.28 0-.53-.11-.71-.29L.29 13.08a.996.996 0 0 1 0-1.41C3.34 8.78 7.46 7 12 7s8.66 1.78 11.71 4.67c.18.18.29.43.29.71s-.11.53-.29.71l-2.48 2.48c-.18.18-.43.29-.71.29-.27 0-.52-.11-.7-.28a11.27 11.27 0 0 0-2.67-1.85.996.996 0 0 1-.56-.9v-3.1C15.15 9.25 13.6 9 12 9z"/></svg></button>
@@ -1016,6 +1121,7 @@
         <button class="ctrl primary" id="btn-mic" title="Microfone"><i data-icon="mic"></i> Mic</button>
         <button class="ctrl off" id="btn-cam" title="Câmera"><i data-icon="video-off"></i> Cam Off</button>
         <button class="ctrl off" id="btn-screen" title="Compartilhar tela"><i data-icon="monitor-up"></i> Tela</button>
+        <button class="ctrl primary hidden" id="btn-dm-call" title="Ligar (voz, câmera e tela)" aria-label="Ligar"><i data-icon="phone"></i> Ligar</button>
         <button class="ctrl off" id="btn-music" title="Música" aria-label="Música" aria-expanded="false"><svg class="yt-icon" viewBox="0 0 28 20" width="18" height="13" aria-hidden="true"><rect width="28" height="20" rx="5" fill="#FF0000"/><path d="M11 5.5v9l8-4.5z" fill="#FFFFFF"/></svg></button>
         <button class="ctrl danger" id="btn-hangup" title="Sair da chamada" aria-label="Sair da chamada"><i data-icon="phone-off"></i></button>
       </div>
@@ -1059,6 +1165,24 @@
         <div id="music-queue"></div>
         <p id="music-empty">Nenhuma música na fila. Cole um link acima para começar.</p>
       </div>
+      <!-- Início sem conversa aberta: amigos e pedidos -->
+      <div id="friends-panel">
+        <div class="friends-tabs" role="tablist" aria-label="Amigos">
+          <button type="button" class="friends-tab active" data-tab="online" role="tab">Online</button>
+          <button type="button" class="friends-tab" data-tab="all" role="tab">Todos</button>
+          <button type="button" class="friends-tab" data-tab="pending" role="tab">Pendentes <span id="pending-count" class="unread-badge mention hidden"></span></button>
+          <button type="button" class="friends-tab add" data-tab="add" role="tab">Adicionar amigo</button>
+        </div>
+        <div id="friends-add" class="hidden">
+          <p class="friends-hint">Digite o nome de usuário de alguém com conta neste servidor do Vox.</p>
+          <div class="friends-add-row">
+            <input type="text" id="friend-name" placeholder="Nome de usuário" autocomplete="off" spellcheck="false" maxlength="24">
+            <button type="button" id="friend-send">Enviar pedido</button>
+          </div>
+          <div id="friend-add-status" class="auth-error"></div>
+        </div>
+        <div id="friends-list"></div>
+      </div>
       <div id="messages"></div>
       <div id="mention-popup" class="popover hidden" role="listbox" aria-label="Mencionar"></div>
       <div id="attach-preview" class="hidden">
@@ -1077,7 +1201,7 @@
 
   <!-- Participantes -->
   <aside id="members">
-    <h4>Membros — <span id="member-count">0</span></h4>
+    <h4><span id="member-heading">Membros</span> — <span id="member-count">0</span></h4>
     <div id="member-list"></div>
   </aside>
 </div>
@@ -1276,6 +1400,65 @@
   </div>
 </div>
 
+<!-- Chamada direta tocando -->
+<div id="call-ring" class="hidden" role="alertdialog" aria-label="Chamada">
+  <div class="avatar" id="call-ring-avatar">?</div>
+  <div class="call-ring-info"><strong id="call-ring-name">—</strong><span>está te ligando…</span></div>
+  <button type="button" id="call-accept" class="call-btn accept" title="Atender" aria-label="Atender"><i data-icon="phone"></i></button>
+  <button type="button" id="call-decline" class="call-btn decline" title="Recusar" aria-label="Recusar"><i data-icon="phone-off"></i></button>
+</div>
+
+<!-- Formulário curto (criar servidor, canal, renomear, entrar com convite). O Electron não tem window.prompt. -->
+<div id="form-modal" class="hidden" role="dialog" aria-modal="true" aria-labelledby="form-title">
+  <form class="settings-card form-card" id="form-card">
+    <h3 id="form-title">—</h3>
+    <p class="settings-hint" id="form-hint"></p>
+    <div id="form-fields"></div>
+    <div id="form-error" class="auth-error"></div>
+    <div class="settings-actions">
+      <button type="button" id="form-cancel" class="btn-secondary">Cancelar</button>
+      <button type="submit" id="form-submit" class="btn-primary">OK</button>
+    </div>
+  </form>
+</div>
+
+<!-- Configurações do servidor -->
+<div id="server-modal" class="hidden" role="dialog" aria-modal="true" aria-labelledby="server-modal-title">
+  <div class="settings-card">
+    <h3 id="server-modal-title">Configurações do servidor</h3>
+    <div class="settings-tabs" role="tablist">
+      <button type="button" class="settings-tab server-tab active" data-tab="geral" role="tab">Geral</button>
+      <button type="button" class="settings-tab server-tab" data-tab="membros" role="tab">Membros</button>
+      <button type="button" class="settings-tab server-tab" data-tab="convites" role="tab">Convites</button>
+    </div>
+    <div class="server-panel" id="server-tab-geral">
+      <div class="field">
+        <label for="server-name-input">Nome do servidor</label>
+        <div class="friends-add-row">
+          <input type="text" id="server-name-input" maxlength="40">
+          <button type="button" id="server-rename">Salvar</button>
+        </div>
+      </div>
+      <p class="settings-hint" id="server-owner-line"></p>
+      <button type="button" id="server-delete" class="btn-danger-outline">Apagar servidor</button>
+      <p class="settings-hint">Apagar remove todos os canais e mensagens do servidor, para todo mundo. Não dá para desfazer.</p>
+    </div>
+    <div class="server-panel hidden" id="server-tab-membros">
+      <div id="server-member-list"></div>
+    </div>
+    <div class="server-panel hidden" id="server-tab-convites">
+      <p class="settings-hint">Quem tiver o código entra no servidor (na tela do Vox: botão + → Entrar com convite). Revogue o código para ninguém mais entrar com ele.</p>
+      <button type="button" id="invite-new" class="btn-secondary"><i data-icon="plus" data-size="16"></i> Gerar código</button>
+      <div id="invite-list"></div>
+    </div>
+    <div id="server-modal-error" class="auth-error"></div>
+    <div class="settings-actions">
+      <span></span>
+      <button type="button" id="server-modal-close" class="btn-secondary">Fechar</button>
+    </div>
+  </div>
+</div>
+
 <!-- Visualização em tela cheia -->
 <div id="fullscreen-view" class="hidden">
   <video id="fullscreen-video" autoplay playsinline muted></video>
@@ -1309,7 +1492,8 @@
 <script src="icons.js"></script>
 <script src="speaking.js"></script>
 <script src="presence.js"></script>
-<script src="channels.js"></script>
+<script src="servers-state.js"></script>
+<script src="friends-state.js"></script>
 <script src="protocol.js"></script>
 <script src="youtube.js"></script>
 <script src="music-state.js"></script>
