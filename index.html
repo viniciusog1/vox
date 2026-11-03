@@ -170,6 +170,9 @@
     display: flex; align-items: center; justify-content: center;
     font-weight: 700; font-size: 14px; color: #fff;
   }
+  /* Foto de perfil dentro do círculo (sem background-image: o tema Mangá força o fundo) */
+  .avatar.has-image { overflow: hidden; }
+  .avatar-img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; display: block; }
   .user-meta { flex: 1; min-width: 0; }
   .user-meta .name { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .user-meta .sub { font-size: 11px; color: var(--muted); }
@@ -622,6 +625,14 @@
   .channel .voice-icon .icon { vertical-align: -3px; }
   .channel .channel-yt { margin-left: auto; flex-shrink: 0; }
   .account-line { font-size: 14px; color: var(--text-2); margin: 4px 0 16px; }
+  #btn-logout { height: 38px; padding: 0 16px; border-radius: 8px; cursor: pointer; font-weight: 700; font-size: 12px; }
+  .account-profile { display: flex; gap: 16px; align-items: flex-start; margin-bottom: 16px; }
+  #account-avatar { width: 72px; height: 72px; font-size: 26px; }
+  .account-profile-info { flex: 1; min-width: 0; }
+  .account-profile-info .account-line { margin: 4px 0 10px; }
+  .account-avatar-actions { display: flex; gap: 8px; margin-bottom: 8px; }
+  .account-avatar-actions .btn-secondary { height: 34px; padding: 0 12px; border: none; border-radius: 8px; cursor: pointer; font-weight: 700; font-size: 12px; display: inline-flex; align-items: center; gap: 6px; }
+  .account-avatar-actions .btn-secondary:disabled { opacity: .5; cursor: default; }
   .theme-group-title { font-size: 12px; color: var(--muted); font-weight: 600; margin: 6px 0 8px; }
   .theme-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 8px; }
   .theme-option {
@@ -1190,7 +1201,18 @@
     </div>
 
     <div class="settings-panel hidden" id="settings-tab-conta" role="tabpanel" aria-labelledby="settings-tabbtn-conta">
-      <p class="account-line">Conectado como <strong id="account-name">—</strong></p>
+      <div class="account-profile">
+        <div class="avatar" id="account-avatar">?</div>
+        <div class="account-profile-info">
+          <p class="account-line">Conectado como <strong id="account-name">—</strong></p>
+          <div class="account-avatar-actions">
+            <button type="button" id="avatar-change" class="btn-secondary"><i data-icon="image-plus" data-size="16"></i> Trocar foto</button>
+            <button type="button" id="avatar-remove" class="btn-secondary">Remover</button>
+            <input type="file" id="avatar-input" accept="image/png,image/jpeg,image/webp,image/gif" hidden>
+          </div>
+          <p class="settings-hint">Use uma imagem quadrada; nas outras, o Vox recorta o centro. Todo mundo do servidor vê a sua foto.</p>
+        </div>
+      </div>
       <button type="button" id="btn-logout" class="btn-danger-outline">Sair da conta</button>
     </div>
 

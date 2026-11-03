@@ -51,7 +51,9 @@ const DB_PATH = path.join(DATA_DIR, 'messages.json');
 const USERS_PATH = path.join(DATA_DIR, 'users.json');
 const SESSIONS_PATH = path.join(DATA_DIR, 'sessions.json');
 const UPLOADS_DIR = path.join(DATA_DIR, 'uploads');
+const AVATARS_DIR = path.join(DATA_DIR, 'avatars');
 fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+fs.mkdirSync(AVATARS_DIR, { recursive: true });
 
 function readJsonFile(file) {
   try {
@@ -99,13 +101,23 @@ function pruneUploads() {
   }
 }
 
+// Fotos de perfil sem conta que as use (trocadas ou removidas com o app fechado).
+function pruneAvatars() {
+  const used = new Set(Object.values(users).map((u) => u.avatar).filter(Boolean));
+  for (const name of fs.readdirSync(AVATARS_DIR)) {
+    if (!used.has(name)) fs.rm(path.join(AVATARS_DIR, name), { force: true }, () => {});
+  }
+}
+
 const UPLOAD_TYPES = { jpg: 'image/jpeg', png: 'image/png', webp: 'image/webp', gif: 'image/gif' };
 
-// GET /uploads/<uuid>.<ext>: nomes aleatórios, só leitura, sem listar a pasta.
+// GET /uploads/<uuid>.<ext> e /avatars/<uuid>.<ext>: nomes aleatórios, só leitura, sem listar a pasta.
 function handleHttp(req, res) {
-  const m = /^\/uploads\/([^/?#]+)$/.exec(req.url || '');
-  if (req.method !== 'GET' || !m || !chat.isUploadName(m[1])) return false;
-  const file = path.join(UPLOADS_DIR, m[1]);
+  const m = /^\/(uploads|avatars)\/([^/?#]+)$/.exec(req.url || '');
+  if (req.method !== 'GET' || !m) return false;
+  const isAvatar = m[1] === 'avatars';
+  if (isAvatar ? !chat.isAvatarName(m[2]) : !chat.isUploadName(m[2])) return false;
+  const file = path.join(isAvatar ? AVATARS_DIR : UPLOADS_DIR, m[2]);
   fs.readFile(file, (err, data) => {
     if (err) { res.writeHead(404); return res.end(); }
     res.writeHead(200, {
@@ -211,9 +223,10 @@ function buildServerMembers(viewerId) {
   }
   return Object.keys(users).sort((a, b) => a.localeCompare(b)).map((username) => {
     const o = online.get(username);
+    const avatar = users[username].avatar || null;
     return o
-      ? { username, online: true, ...o }
-      : { username, online: false, id: null, status: 'offline', voiceRoom: null, muted: false };
+      ? { username, avatar, online: true, ...o }
+      : { username, avatar, online: false, id: null, status: 'offline', voiceRoom: null, muted: false };
   });
 }
 
@@ -254,6 +267,7 @@ function purgeOldMessages() {
 
 purgeOldMessages();
 pruneUploads();
+pruneAvatars();
 sessions.prune();
 setInterval(() => { purgeOldMessages(); sessions.prune(); }, 60 * 60 * 1000);
 
@@ -613,6 +627,29 @@ app.whenReady().then(() => {
       if (!advanceIfCurrent(state, itemId, Date.now())) return;
       broadcastMusic(room);
       io.to(room).emit('music-notice', { text: `Não foi possível tocar «${title}»` });
+    });
+
+    // Foto de perfil: { data: ArrayBuffer, type } troca; null remove. Vale para a conta do socket.
+    socket.on('set-avatar', (image, callback) => {
+      const reply = typeof callback === 'function' ? callback : () => {};
+      if (!requireAuth(reply)) return;
+      const username = authenticated.get(socket.id);
+      let file = null;
+      if (image) {
+        const ext = chat.avatarExtension(image.type);
+        const data = Buffer.isBuffer(image.data) ? image.data : null;
+        if (!ext || !data || !data.length) return reply({ success: false, message: 'Imagem inválida.' });
+        if (data.length > chat.MAX_AVATAR_BYTES) return reply({ success: false, message: 'A foto passa de 512 KB.' });
+        file = `${crypto.randomUUID()}.${ext}`;
+        fs.writeFileSync(path.join(AVATARS_DIR, file), data);
+      }
+      const old = users[username].avatar;
+      if (file) users[username].avatar = file;
+      else delete users[username].avatar;
+      saveUsers(users);
+      if (old && chat.isAvatarName(old)) fs.rm(path.join(AVATARS_DIR, old), { force: true }, () => {});
+      reply({ success: true, avatar: file });
+      broadcastServerMembers();
     });
 
     socket.on('update-state', (patch) => {

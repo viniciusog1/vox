@@ -161,6 +161,7 @@ Saída: `dist\Vox-Setup-<versão>.exe`, `.blockmap` e `latest.yml` (versão de `
 - Estado da conexão: `peerConn` guarda o estado de cada peer; a cada 2 s o RTT vem do par de candidatos ICE nomeado. A coluna Membros mostra "Conectando…", "Conectado · N ms", "Reconectando…" ou "Falhou" para quem está na mesma voz.
 - Grade da chamada: `layoutTiles()` calcula colunas e tamanho dos tiles (16:9, gap 12, largura mínima 260; tile da música com altura mínima 240) e grava `--grid-cols`, `--tile-w`, `--tile-h`. Roda num `ResizeObserver` e ao fim de `renderTiles`/`syncMusicTile`.
 - Membros: `server-members` traz todas as contas do servidor; `renderMembers` separa Online/Offline. Invisíveis aparecem como offline para os outros.
+- Avatares: `makeAvatar`/`applyAvatar` põem a foto (`<img class="avatar-img">` dentro do círculo; não usar background-image, o tema Mangá força o fundo com `!important`) ou as iniciais. Todo avatar tem `data-user`; quando `server-members` traz foto nova, `refreshAvatars()` atualiza todos na tela. Trocar/remover fica em Configurações → Conta.
 - Ícones: `VoxIcons.hydrate()` roda no início de `renderer.js`; ícones trocados em tempo de execução usam `VoxIcons.setIcon`.
 - Música (YouTube):
   - A fila aparece como primeiro tile da grade de chamada enquanto houver música; o botão do YouTube da barra superior (`#btn-music`, desabilitado sem voz) e o tile abrem o painel de música. O tile tem botão para abrir só o vídeo em tela cheia.
@@ -198,6 +199,7 @@ Saída: `dist\Vox-Setup-<versão>.exe`, `.blockmap` e `latest.yml` (versão de `
 - `save-message` ({ room, text, image? }, callback → `{ success, id }`): o autor é **sempre** o usuário autenticado do socket (o campo `user` do cliente é ignorado). `image` = `{ data: ArrayBuffer, type, width, height }`, até 2 MB (`maxHttpBufferSize` 3 MB); o arquivo vai para `uploads/<uuid>.<ext>` e é servido em `GET /uploads/<nome>` pelo mesmo servidor HTTP
 - `new-message` (servidor → **todas** as pessoas logadas: `{ room, id, user, text, created_at, image?, mentions }`); o cliente mostra se `room` é o canal aberto e conta como não lida nos outros
 - `edit-message` / `delete-message` ({ room, id[, text] }, callback): só o autor; difundem `message-updated` ({ room, id, text, edited_at }) e `message-deleted` ({ room, id }) para todos os logados
+- `set-avatar` ({ data: ArrayBuffer, type } | null, callback): foto de perfil da conta do socket (até 512 KB; o cliente já manda 256×256 WebP com o centro recortado). Grava em `avatars/<uuid>.<ext>`, guarda o nome em `users[nome].avatar`, apaga a anterior e reenvia `server-members` (cada membro tem `avatar`, nome do arquivo ou `null`). Servida em `GET /avatars/<nome>`; fotos sem conta são apagadas ao iniciar (`pruneAvatars`).
 - `get-messages`, `messages-cleared`, `delete-my-messages`
 - `disconnect`
 - Música (`main.js`): cliente → servidor `music-add` (url, callback), `music-remove` (itemId), `music-skip` (itemId atual), `music-toggle`, `music-ended` (itemId), `music-error` ({ itemId, code }). Servidor → sala de voz: `music-state` (`queue`, `playing`, `positionMs`, `serverNow`) e `music-notice` (texto curto, ex.: "Não foi possível tocar"). `music-state` também vai para quem entra na voz.
@@ -307,7 +309,7 @@ const DATA_DIR = app.isPackaged ? app.getPath('userData') : __dirname;
 }
 ```
 
-`sessions.json`: `{ "<sha256 do token>": { "username": "usuario", "expires": 1700000000000 } }`. `uploads/`: imagens do chat. Ambos ficam ao lado de `users.json` e fora do Git e do instalador.
+Em `users.json`, `avatar` (opcional) é o arquivo da foto em `avatars/`. `sessions.json`: `{ "<sha256 do token>": { "username": "usuario", "expires": 1700000000000 } }`. `uploads/`: imagens do chat. `avatars/`: fotos de perfil. Ficam ao lado de `users.json` e fora do Git e do instalador.
 
 ### Preferências no localStorage
 
@@ -336,7 +338,7 @@ Ficam no perfil do Electron em `%APPDATA%\Vox` (no macOS em desenvolvimento: `~/
 - Nunca apagar `users.json` ou `messages.json` sem autorização explícita.
 - Ao testar cadastro, remover a conta de teste depois e restaurar o estado.
 - Não usar PowerShell 5.1 `Set-Content -Encoding UTF8` para editar JSON: ele adiciona BOM. O leitor remove BOM, mas o ideal é gravar sem BOM com Node (`fs.writeFileSync`) ou com a ferramenta de edição.
-- O instalador não deve incluir dados de usuário (`users.json`, `messages.json`, `sessions.json`, `uploads/`), `tools/`, `AGENTS.md` nem o `.bat` do túnel.
+- O instalador não deve incluir dados de usuário (`users.json`, `messages.json`, `sessions.json`, `uploads/`, `avatars/`), `tools/`, `AGENTS.md` nem o `.bat` do túnel.
 
 ## 6. Invariantes do produto
 

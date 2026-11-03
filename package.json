@@ -19,6 +19,7 @@
       "!users.json",
       "!messages.json",
       "!uploads/**",
+      "!avatars/**",
       "!sessions.json",
       "!dist/**",
       "!README.md",

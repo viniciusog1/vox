@@ -5,6 +5,25 @@
   const MAX_IMAGE_BYTES = 2 * 1024 * 1024; // depois da compressão no cliente
   const IMAGE_TYPES = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif' };
   const UPLOAD_NAME_RE = /^[0-9a-f-]{36}\.(jpg|png|webp|gif)$/;
+  // Foto de perfil: quadrada, recortada e reduzida no cliente (256 px, WebP).
+  const AVATAR_SIZE = 256;
+  const MAX_AVATAR_BYTES = 512 * 1024;
+  const AVATAR_TYPES = { 'image/webp': 'webp', 'image/png': 'png', 'image/jpeg': 'jpg' };
+  const AVATAR_NAME_RE = /^[0-9a-f-]{36}\.(webp|png|jpg)$/;
+
+  function avatarExtension(mime) {
+    return AVATAR_TYPES[mime] || null;
+  }
+
+  function isAvatarName(name) {
+    return typeof name === 'string' && AVATAR_NAME_RE.test(name);
+  }
+
+  // Recorte central quadrado: { sx, sy, size } da imagem original.
+  function centerSquare(width, height) {
+    const size = Math.min(width, height);
+    return { sx: Math.floor((width - size) / 2), sy: Math.floor((height - size) / 2), size };
+  }
 
   // Texto limpo ou '' (vazio é aceito quando há imagem); null quando inválido.
   function cleanText(text) {
@@ -100,7 +119,8 @@
   }
 
   const api = {
-    MAX_TEXT, MAX_IMAGE_BYTES, IMAGE_TYPES,
+    MAX_TEXT, MAX_IMAGE_BYTES, IMAGE_TYPES, AVATAR_SIZE, MAX_AVATAR_BYTES,
+    avatarExtension, isAvatarName, centerSquare,
     cleanText, imageExtension, isUploadName, ensureIds, editMessage, deleteMessage,
     splitMentions, mentionsOf, addUnread, clearUnread, shouldNotify
   };

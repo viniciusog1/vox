@@ -248,20 +248,47 @@ function initials(name) {
   return (name || '?').trim().slice(0, 2).toUpperCase();
 }
 
+// Fotos de perfil (username -> arquivo em /avatars), vindas de 'server-members'.
+const avatarFiles = new Map();
+
+// Foto da pessoa, ou iniciais sobre a cor dela. data-user permite atualizar
+// todos os avatares da tela quando alguém troca a foto (refreshAvatars).
+function applyAvatar(el, name) {
+  el.dataset.user = name || '';
+  el.style.background = avatarColor(name || '?');
+  const file = name && avatarFiles.get(name);
+  el.classList.toggle('has-image', !!file);
+  if (!file) { el.textContent = initials(name); return; }
+  const src = `${SERVER_URL}/avatars/${encodeURIComponent(file)}`;
+  const current = el.querySelector('img');
+  if (current && current.getAttribute('src') === src) return;
+  const img = document.createElement('img');
+  img.className = 'avatar-img';
+  img.alt = '';
+  img.src = src;
+  img.addEventListener('error', () => { el.classList.remove('has-image'); el.textContent = initials(name); });
+  el.textContent = '';
+  el.appendChild(img);
+}
+
 function makeAvatar(name, extraClass = '') {
   const el = document.createElement('div');
   el.className = 'avatar ' + extraClass;
-  el.textContent = initials(name);
-  el.style.background = avatarColor(name || '?');
+  applyAvatar(el, name);
   return el;
+}
+
+function refreshAvatars() {
+  document.querySelectorAll('.avatar[data-user]').forEach((el) => {
+    if (el.dataset.user) applyAvatar(el, el.dataset.user);
+  });
 }
 
 function setMyIdentity(name) {
   currentUser = name;
   myName.textContent = name;
-  myAvatar.textContent = initials(name);
-  myAvatar.style.background = avatarColor(name);
-  document.getElementById('empty-avatar').textContent = initials(name);
+  applyAvatar(myAvatar, name);
+  applyAvatar(document.getElementById('empty-avatar'), name);
 }
 
 const VOICE_NAMES = {
@@ -1085,7 +1112,16 @@ socket.on('music-rooms', (list) => {
 let serverMembers = [];
 socket.on('server-members', (list) => {
   serverMembers = Array.isArray(list) ? list : [];
+  let changed = false;
+  for (const m of serverMembers) {
+    const file = m.avatar && VoxChat.isAvatarName(m.avatar) ? m.avatar : null;
+    if ((avatarFiles.get(m.username) || null) !== file) {
+      changed = true;
+      if (file) avatarFiles.set(m.username, file); else avatarFiles.delete(m.username);
+    }
+  }
   renderMembers();
+  if (changed) { refreshAvatars(); renderAccountAvatar(); }
 });
 
 function appendMemberRow(u) {
@@ -2211,6 +2247,64 @@ document.querySelectorAll('.settings-tab').forEach((btn) => {
   btn.addEventListener('click', () => showSettingsTab(btn.dataset.tab));
 });
 
+/* ================= FOTO DE PERFIL ================= */
+const accountAvatar = document.getElementById('account-avatar');
+const avatarChangeBtn = document.getElementById('avatar-change');
+const avatarRemoveBtn = document.getElementById('avatar-remove');
+const avatarInput = document.getElementById('avatar-input');
+
+function renderAccountAvatar() {
+  if (!currentUser) return;
+  applyAvatar(accountAvatar, currentUser);
+  avatarRemoveBtn.disabled = !avatarFiles.has(currentUser);
+}
+
+// Recorta o centro em quadrado e reduz para 256 px em WebP (GIF vira imagem parada).
+async function prepareAvatar(file) {
+  if (!file || !file.type.startsWith('image/')) throw new Error('Escolha uma imagem (PNG, JPG, WebP ou GIF).');
+  const bitmap = await createImageBitmap(file);
+  const { sx, sy, size } = VoxChat.centerSquare(bitmap.width, bitmap.height);
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = VoxChat.AVATAR_SIZE;
+  const g = canvas.getContext('2d');
+  g.imageSmoothingQuality = 'high';
+  g.drawImage(bitmap, sx, sy, size, size, 0, 0, VoxChat.AVATAR_SIZE, VoxChat.AVATAR_SIZE);
+  bitmap.close();
+  for (const quality of [0.9, 0.8, 0.65]) {
+    const blob = await new Promise((r) => canvas.toBlob(r, 'image/webp', quality));
+    if (blob && blob.size <= VoxChat.MAX_AVATAR_BYTES) return { data: await blob.arrayBuffer(), type: 'image/webp' };
+  }
+  throw new Error('Não foi possível reduzir essa imagem.');
+}
+
+function sendAvatar(image) {
+  settingsError.textContent = '';
+  if (!socket.connected) { settingsError.textContent = 'Sem conexão com o servidor.'; return; }
+  avatarChangeBtn.disabled = true;
+  avatarRemoveBtn.disabled = true;
+  socket.timeout(20000).emit('set-avatar', image, (err, res) => {
+    avatarChangeBtn.disabled = false;
+    if (err || !res || !res.success) settingsError.textContent = (res && res.message) || 'Não foi possível trocar a foto.';
+    // A foto nova chega para todos (inclusive aqui) pelo 'server-members'.
+    renderAccountAvatar();
+  });
+}
+
+avatarChangeBtn.addEventListener('click', () => avatarInput.click());
+avatarInput.addEventListener('change', async () => {
+  const file = avatarInput.files && avatarInput.files[0];
+  avatarInput.value = '';
+  if (!file) return;
+  try {
+    sendAvatar(await prepareAvatar(file));
+  } catch (e) {
+    settingsError.textContent = e.message || 'Não foi possível usar essa imagem.';
+  }
+});
+avatarRemoveBtn.addEventListener('click', () => {
+  if (window.confirm('Remover sua foto de perfil?')) sendAvatar(null);
+});
+
 /* ================= TÚNEL (ABRIR PARA AMIGOS) ================= */
 // Só faz sentido no PC que hospeda: o túnel aponta para o servidor deste processo.
 const IS_LOCAL_SERVER = /^https?:\/\/(127\.0\.0\.1|localhost)(:3000)?$/i.test(SERVER_URL);
@@ -2391,6 +2485,7 @@ btnSettings.addEventListener('click', async () => {
   settingsError.textContent = '';
   renderThemePicker();
   document.getElementById('account-name').textContent = currentUser || '—';
+  renderAccountAvatar();
   showSettingsTab('audio');
   settingsModal.classList.remove('hidden');
   monitorToggle.checked = monitorEnabled;
@@ -3309,6 +3404,8 @@ function endSession(message) {
   currentUser = '';
   voiceRooms = {};
   myName.textContent = '—';
+  myAvatar.classList.remove('has-image');
+  delete myAvatar.dataset.user;
   myAvatar.textContent = '?';
   myAvatar.style.background = '';
   myStatusEl.textContent = 'Online';

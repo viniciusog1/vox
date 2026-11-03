@@ -31,6 +31,7 @@ App desktop para Windows 11 de chat, voz, vídeo e compartilhamento de tela, fei
 - O vídeo do YouTube aparece no próprio Vox; nada é baixado. Cada pessoa usa o player oficial do YouTube. Ao sair da voz, a música para para você. Em tela cheia, o player vai para um canto da própria visualização, e o vídeo da música também pode ser aberto sozinho em tela cheia. O canal de voz com música mostra o ícone do YouTube ao lado do nome
 - 18 temas (Configurações → aba Aparência), salvos no próprio computador e organizados em quatro grupos — Escuros: Escuro, Grafite, Drácula, Nord, Aquático, Natureza, Pôr do sol; Neon: Cyberpunk, Neon Verde, Neon Vermelho, Neon Azul; Anime: Bizarro, Mangá, Ninja; Claros: Claro, Sépia, Lavanda / Sakura, Algodão-doce
 - Os temas Anime têm efeitos além das cores (fundos com degradês e padrões, animações e efeitos em quem está falando), sempre atrás dos vídeos. A opção "Reduzir animações dos temas" desliga as animações; a preferência do sistema por menos movimento também é respeitada
+- Foto de perfil: Configurações → aba Conta → Trocar foto (o Vox recorta o centro e reduz para 256 px). Aparece para todos no chat, na lista de membros, na voz e na chamada
 - Configurações em abas: Áudio, Conta (nome da conta e botão Sair da conta), Aparência, Notificações e Servidor
 - Ícones SVG próprios, iguais em qualquer sistema (sem depender de emojis)
 - Layout com rail de servidores, canais, chat e membros; a janela usa os botões nativos do sistema

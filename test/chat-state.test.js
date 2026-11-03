@@ -19,6 +19,15 @@ test('tipos de imagem e nomes de upload', () => {
   }
 });
 
+test('foto de perfil: tipos, nomes e recorte central', () => {
+  assert.equal(chat.avatarExtension('image/webp'), 'webp');
+  assert.equal(chat.avatarExtension('image/gif'), null); // o cliente converte para WebP
+  assert.equal(chat.isAvatarName('0b6c3f7e-1f2a-4b5c-8d9e-0123456789ab.webp'), true);
+  for (const bad of ['../users.json', '0b6c3f7e-1f2a-4b5c-8d9e-0123456789ab.gif', '', null]) assert.equal(chat.isAvatarName(bad), false);
+  assert.deepEqual(chat.centerSquare(1920, 1080), { sx: 420, sy: 0, size: 1080 });
+  assert.deepEqual(chat.centerSquare(300, 500), { sx: 0, sy: 100, size: 300 });
+});
+
 test('ensureIds dá id só a quem não tem', () => {
   const data = { geral: [{ user: 'a', text: '1' }, { id: 'x', user: 'b', text: '2' }] };
   let n = 0;
