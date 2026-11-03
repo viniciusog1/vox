@@ -23,6 +23,7 @@
       "!sessions.json",
       "!servers.json",
       "!friends.json",
+      "!music-history.json",
       "!dist/**",
       "!README.md",
       "!AGENTS.md",

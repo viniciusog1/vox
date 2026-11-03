@@ -65,6 +65,7 @@
 ### 🎵 Música do YouTube
 - 🔗 Cole um link e todos na chamada ouvem juntos, sincronizado
 - ⏯️ Qualquer um pausa, pula ou tira da fila (até 50 músicas)
+- 💡 Aba **Sugestões**: as mais pedidas e as tocadas recentemente no servidor, com **+** para pôr na fila
 - 🔊 Volume da música só no seu PC
 - ▶️ Player oficial do YouTube: nada é baixado
 

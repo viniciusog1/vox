@@ -1709,6 +1709,7 @@ function openMusicPanel() {
   musicVolumeInput.value = String(vol);
   musicVolumeValue.textContent = String(vol);
   renderMusicPanel();
+  if (musicTab === 'sugestoes') loadSuggestions();
   musicUrlInput.focus();
 }
 
@@ -1720,41 +1721,131 @@ function closeMusicPanel() {
   musicErrorEl.textContent = '';
 }
 
+// Linha de música (fila ou sugestão): capa, título, detalhe e um botão.
+function musicRow({ thumbnail, title, meta, current, button }) {
+  const row = document.createElement('div');
+  row.className = 'music-item' + (current ? ' current' : '');
+  const img = document.createElement('img');
+  img.alt = '';
+  img.loading = 'lazy';
+  if (thumbnail) img.src = thumbnail;
+  const info = document.createElement('div');
+  info.className = 'music-item-info';
+  const t = document.createElement('div');
+  t.className = 'music-item-title';
+  t.textContent = title;
+  t.title = title;
+  const m = document.createElement('div');
+  m.className = 'music-item-meta';
+  m.textContent = meta;
+  info.append(t, m);
+  row.append(img, info, button);
+  return row;
+}
+
+function musicButton(icon, title, onClick, extraClass) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'music-icon-btn' + (extraClass ? ' ' + extraClass : '');
+  b.title = title;
+  b.setAttribute('aria-label', title);
+  VoxIcons.setIcon(b, icon, '', 14);
+  b.addEventListener('click', onClick);
+  return b;
+}
+
 // Fila, ⏯ e ⏭ conforme o último music-state (chamado a cada music-state).
 function renderMusicPanel() {
   const queue = (musicState && musicState.queue) || [];
   musicQueueEl.replaceChildren(...queue.map((item, i) => {
-    const row = document.createElement('div');
-    row.className = 'music-item' + (i === 0 ? ' current' : '');
-    row.dataset.itemId = item.id;
-    const img = document.createElement('img');
-    img.alt = '';
-    img.loading = 'lazy';
-    if (item.thumbnail) img.src = item.thumbnail;
-    const info = document.createElement('div');
-    info.className = 'music-item-info';
-    const title = document.createElement('div');
-    title.className = 'music-item-title';
-    title.textContent = item.title || item.videoId;
-    title.title = title.textContent;
-    const meta = document.createElement('div');
-    meta.className = 'music-item-meta';
     const by = `adicionada por ${item.addedBy || 'alguém'}`;
-    meta.textContent = i === 0 ? `Tocando agora · ${by}` : by;
-    info.append(title, meta);
-    const remove = document.createElement('button');
-    remove.className = 'music-icon-btn';
-    remove.title = 'Tirar da fila';
-    VoxIcons.setIcon(remove, 'x', '', 14);
-    remove.addEventListener('click', () => socket.emit('music-remove', item.id));
-    row.append(img, info, remove);
+    const row = musicRow({
+      thumbnail: item.thumbnail,
+      title: item.title || item.videoId,
+      meta: i === 0 ? `Tocando agora · ${by}` : by,
+      current: i === 0,
+      button: musicButton('x', 'Tirar da fila', () => socket.emit('music-remove', item.id))
+    });
+    row.dataset.itemId = item.id;
     return row;
   }));
+  musicQueueCount.textContent = queue.length ? `(${queue.length})` : '';
+  if (musicTab === 'sugestoes') scheduleSuggestions();
   musicEmptyEl.classList.toggle('hidden', queue.length > 0);
   musicToggleBtn.disabled = queue.length === 0;
   musicSkipBtn.disabled = queue.length === 0;
   musicToggleBtn.title = musicState && musicState.playing ? 'Pausar para todos' : 'Tocar para todos';
   VoxIcons.setIcon(musicToggleBtn, musicState && musicState.playing ? 'pause' : 'play');
+}
+
+/* ---------- Abas Fila / Sugestões ---------- */
+const musicQueueCount = document.getElementById('music-queue-count');
+const musicSuggestionsEl = document.getElementById('music-suggestions');
+const musicSuggestionsEmpty = document.getElementById('music-suggestions-empty');
+let musicTab = 'fila';
+let suggestionsTimer = null;
+
+function showMusicTab(name) {
+  musicTab = name;
+  document.querySelectorAll('.music-tab').forEach((b) => {
+    const on = b.dataset.tab === name;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-selected', String(on));
+  });
+  document.querySelectorAll('.music-tab-panel').forEach((p) => p.classList.toggle('hidden', p.id !== 'music-tab-' + name));
+  if (name === 'sugestoes') loadSuggestions();
+}
+document.querySelectorAll('.music-tab').forEach((b) => b.addEventListener('click', () => showMusicTab(b.dataset.tab)));
+
+// A fila mudou com a aba aberta: atualiza (uma vez a cada várias mudanças seguidas).
+function scheduleSuggestions() {
+  clearTimeout(suggestionsTimer);
+  suggestionsTimer = setTimeout(loadSuggestions, 300);
+}
+
+function loadSuggestions() {
+  if (!currentVoiceRoom || !isMusicPanelOpen()) return;
+  socket.emit('music-suggestions', (res) => {
+    if (!res || !res.ok || musicTab !== 'sugestoes') return;
+    renderSuggestions(res);
+  });
+}
+
+function addSuggestion(item, button) {
+  button.disabled = true;
+  socket.emit('music-add', `https://www.youtube.com/watch?v=${item.videoId}`, (res) => {
+    if (res && res.ok) return; // a lista se atualiza com o music-state
+    button.disabled = false;
+    showToast((res && res.message) || 'Não foi possível adicionar a música');
+  });
+}
+
+function suggestionRow(item, meta) {
+  const button = item.inQueue
+    ? musicButton('check', 'Já está na fila', () => {}, '')
+    : musicButton('plus', 'Pôr na fila', () => addSuggestion(item, button), 'add');
+  if (item.inQueue) button.disabled = true;
+  return musicRow({ thumbnail: item.thumbnail, title: item.title || item.videoId, meta, button });
+}
+
+function renderSuggestions({ recent = [], top = [] }) {
+  const nodes = [];
+  const section = (text) => {
+    const t = document.createElement('div');
+    t.className = 'music-section';
+    t.textContent = text;
+    nodes.push(t);
+  };
+  if (top.length) {
+    section('Mais pedidas');
+    top.forEach((s) => nodes.push(suggestionRow(s, `pedida ${s.count}× · última por ${s.lastBy || 'alguém'}`)));
+  }
+  if (recent.length) {
+    section('Tocadas recentemente');
+    recent.forEach((s) => nodes.push(suggestionRow(s, `pedida por ${s.lastBy || 'alguém'}${s.count > 1 ? ` · ${s.count}×` : ''}`)));
+  }
+  musicSuggestionsEl.replaceChildren(...nodes);
+  musicSuggestionsEmpty.classList.toggle('hidden', nodes.length > 0);
 }
 
 function submitMusicUrl() {
