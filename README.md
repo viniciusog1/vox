@@ -21,7 +21,7 @@ App desktop para Windows 11 de chat, voz, vídeo e compartilhamento de tela, fei
 - Qualidade do compartilhamento: 480p, 720p ou 1080p e 30 ou 60 FPS (padrão 1080p 30 FPS)
 - Áudio do PC no compartilhamento (Windows, opcional): vai o som do computador, sem o que o próprio Vox toca (vozes da chamada, música e efeitos sonoros)
 - Visualização do compartilhamento em tela cheia (botão de tela cheia no bloco ou duplo clique)
-- Redução de ruído do microfone (gate + filtro + compressor), com níveis de intensidade
+- Redução de ruído do microfone (Desligada, Padrão ou Forte), volume do microfone (0–200%) e sensibilidade do microfone com medidor ao vivo: automática (acompanha o ruído do ambiente) ou manual. Configurações → aba Áudio
 - Efeitos sonoros curtos quando alguém entra ou sai da sua voz (inclusive você) e quando você muta ou desmuta o microfone, gerados no próprio app e tocados no dispositivo de saída escolhido. Podem ser desligados em Configurações → aba Áudio
 - Coluna **Membros** com todas as contas do servidor, separadas em Online e Offline, com bolinha de status sobre o avatar e, para quem está na sua chamada, o estado da conexão e o ping ("Conectando…", "Conectado · 32 ms", "Reconectando…", "Falhou")
 - Canal de voz mostrando quem está conectado, com avatar, bolinha de status, anel de quem está falando, ícone de microfone desligado e selo "AO VIVO" para quem compartilha a tela

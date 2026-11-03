@@ -92,9 +92,13 @@ const monitorAudio = document.getElementById('monitor-audio');
 const clearMyMessages = document.getElementById('clear-my-messages');
 const settingsError = document.getElementById('settings-error');
 const noiseSuppressionSelect = document.getElementById('noise-suppression');
-const noiseGateLevel = document.getElementById('noise-gate-level');
-const noiseGateValue = document.getElementById('noise-gate-value');
-const noiseGateField = document.getElementById('noise-gate-field');
+const micGainInput = document.getElementById('mic-gain');
+const micGainValueEl = document.getElementById('mic-gain-value');
+const micAutoToggle = document.getElementById('mic-auto');
+const micThresholdInput = document.getElementById('mic-threshold');
+const micMeterEl = document.querySelector('.mic-meter');
+const micMeterLevel = document.getElementById('mic-meter-level');
+const micMeterThreshold = document.getElementById('mic-meter-threshold');
 
 const fullscreenView = document.getElementById('fullscreen-view');
 const fullscreenVideo = document.getElementById('fullscreen-video');
@@ -176,7 +180,11 @@ let lastUsersSignature = '';
 let micPipeline = null;
 let micProcessedTrack = null;
 let noiseSuppressionMode = localStorage.getItem('vox-noise-suppression') || 'strong';
-let noiseGateLevelValue = Number(localStorage.getItem('vox-noise-gate-level') || 35);
+if (!['off', 'browser', 'strong'].includes(noiseSuppressionMode)) noiseSuppressionMode = 'strong';
+const { clampNumber } = window.VoxMicGate;
+let micGainPercent = clampNumber(localStorage.getItem('vox-mic-gain') ?? 100, 0, 200, 100);
+let micAuto = localStorage.getItem('vox-mic-auto') !== '0';
+let micThresholdDb = clampNumber(localStorage.getItem('vox-mic-threshold') ?? -50, -70, -10, -50);
 const noiseGateContexts = new WeakSet();
 
 // Música do YouTube na chamada
@@ -504,16 +512,21 @@ function ensureLocalMedia() {
   return localMediaPromise;
 }
 
-async function acquireLocalMedia() {
-  const audioBase = {
+// Restrições do microfone: a redução de ruído do navegador só fica de fora no modo "Desligada".
+function micAudioConstraints(deviceId) {
+  const audio = {
     echoCancellation: true,
-    noiseSuppression: true,
+    noiseSuppression: noiseSuppressionMode !== 'off',
     autoGainControl: false,
     channelCount: 1
   };
-  const savedAudio = { ...audioBase };
-  if (audioInputId) savedAudio.deviceId = { exact: audioInputId };
-  const defaultAudio = { ...audioBase };
+  if (deviceId) audio.deviceId = { exact: deviceId };
+  return audio;
+}
+
+async function acquireLocalMedia() {
+  const savedAudio = micAudioConstraints(audioInputId);
+  const defaultAudio = micAudioConstraints();
 
   const buildConstraints = (withVideo, audio) => {
     const constraints = { audio };
@@ -1875,46 +1888,29 @@ function playSoundEffect(name) {
 }
 
 /* ================= REDUÇÃO DE RUÍDO DO MICROFONE ================= */
+// Cadeia: microfone → volume → [passa-alta/passa-baixa] → gate (sensibilidade) → [compressor] → faixa enviada.
+// A lógica do gate fica em mic-gate.js (createGate), testada no Node e copiada para o worklet.
 const NOISE_GATE_WORKLET = `
-class VoxNoiseGate extends AudioWorkletProcessor {
-  static get parameterDescriptors() {
-    return [
-      { name: 'threshold', defaultValue: 0.015, minValue: 0, maxValue: 1 },
-      { name: 'attack', defaultValue: 0.005, minValue: 0.0005, maxValue: 0.5 },
-      { name: 'release', defaultValue: 0.18, minValue: 0.01, maxValue: 1.5 },
-      { name: 'makeup', defaultValue: 1.0, minValue: 0, maxValue: 4 }
-    ];
-  }
+const createGate = ${window.VoxMicGate.createGate.toString()};
+class VoxMicGate extends AudioWorkletProcessor {
   constructor() {
     super();
-    this.env = 0;
-    this.gain = 0;
+    this.gate = createGate(sampleRate);
+    this.params = null;
+    this.blocks = 0;
+    this.port.onmessage = (e) => { this.params = e.data; };
   }
-  process(inputs, outputs, parameters) {
-    const input = inputs[0];
-    const output = outputs[0];
-    if (!input || !input.length || !input[0]) return true;
-    const inCh = input[0];
-    const outCh = output[0];
-    const threshold = parameters.threshold[0];
-    const attack = parameters.attack[0];
-    const release = parameters.release[0];
-    const makeup = parameters.makeup[0];
-    const sr = sampleRate;
-    const atk = 1 - Math.exp(-1 / Math.max(1, attack * sr));
-    const rel = 1 - Math.exp(-1 / Math.max(1, release * sr));
-    for (let i = 0; i < inCh.length; i++) {
-      const x = inCh[i];
-      const abs = Math.abs(x);
-      this.env += (abs - this.env) * (abs > this.env ? 0.5 : 0.0006);
-      const open = this.env >= threshold;
-      this.gain += ((open ? 1 : 0) - this.gain) * (open ? atk : rel);
-      outCh[i] = x * this.gain * makeup;
-    }
+  process(inputs, outputs) {
+    const input = inputs[0] && inputs[0][0];
+    const output = outputs[0] && outputs[0][0];
+    if (!input || !output || !this.params) return true;
+    const s = this.gate.processBlock(input, output, this.params);
+    // Nível para o medidor das configurações, ~20 vezes por segundo
+    if (++this.blocks % 18 === 0) this.port.postMessage({ levelDb: s.levelDb, thresholdDb: s.thresholdDb, open: s.open });
     return true;
   }
 }
-registerProcessor('vox-noise-gate', VoxNoiseGate);
+registerProcessor('vox-mic-gate', VoxMicGate);
 `;
 
 async function ensureNoiseGateWorklet(ctx) {
@@ -1929,9 +1925,12 @@ async function ensureNoiseGateWorklet(ctx) {
   }
 }
 
-function gateThreshold() {
-  const v = Math.max(0, Math.min(100, noiseGateLevelValue)) / 100;
-  return 0.002 + v * 0.038;
+function currentGateParams() {
+  return window.VoxMicGate.gateParams({ auto: micAuto, thresholdDb: micThresholdDb, mode: noiseSuppressionMode });
+}
+
+function sendGateParams() {
+  if (micPipeline && micPipeline.gate) micPipeline.gate.port.postMessage(currentGateParams());
 }
 
 function destroyMicProcessing() {
@@ -1940,13 +1939,11 @@ function destroyMicProcessing() {
     micProcessedTrack = null;
   }
   if (micPipeline) {
-    try { micPipeline.source.disconnect(); } catch (e) {}
-    try { micPipeline.highpass.disconnect(); } catch (e) {}
-    if (micPipeline.gate) { try { micPipeline.gate.disconnect(); } catch (e) {} }
-    try { micPipeline.compressor.disconnect(); } catch (e) {}
-    try { micPipeline.makeup.disconnect(); } catch (e) {}
+    for (const node of micPipeline.nodes) { try { node.disconnect(); } catch (e) {} }
+    if (micPipeline.gate) micPipeline.gate.port.onmessage = null;
     micPipeline = null;
   }
+  renderMicMeter(null);
 }
 
 function getOutboundAudioTracks() {
@@ -1960,56 +1957,57 @@ async function rebuildMicProcessing() {
   if (!localStream) return;
   const rawTrack = localStream.getAudioTracks()[0];
   if (!rawTrack) return;
-  if (noiseSuppressionMode === 'off') return;
 
   try {
     const ctx = ensureAudioContext();
     const source = ctx.createMediaStreamSource(new MediaStream([rawTrack]));
+    const nodes = [source];
+    const chain = (node) => { nodes[nodes.length - 1].connect(node); nodes.push(node); return node; };
 
-    const highpass = ctx.createBiquadFilter();
-    highpass.type = 'highpass';
-    highpass.frequency.value = 85;
-    highpass.Q.value = 0.7;
-    source.connect(highpass);
+    const inputGain = chain(ctx.createGain());
+    inputGain.gain.value = micGainPercent / 100;
 
-    let last = highpass;
-    let gate = null;
-    if (noiseSuppressionMode === 'strong') {
-      try {
-        await ensureNoiseGateWorklet(ctx);
-        gate = new AudioWorkletNode(ctx, 'vox-noise-gate', {
-          numberOfInputs: 1,
-          numberOfOutputs: 1,
-          outputChannelCount: [1]
-        });
-        gate.parameters.get('threshold').value = gateThreshold();
-        last.connect(gate);
-        last = gate;
-      } catch (e) {
-        console.warn('Gate de ruído indisponível, usando apenas filtros:', e);
-        gate = null;
+    if (noiseSuppressionMode !== 'off') {
+      const highpass = chain(ctx.createBiquadFilter());
+      highpass.type = 'highpass';
+      highpass.frequency.value = noiseSuppressionMode === 'strong' ? 100 : 80;
+      highpass.Q.value = 0.7;
+      if (noiseSuppressionMode === 'strong') {
+        const lowpass = chain(ctx.createBiquadFilter()); // corta chiado acima da voz
+        lowpass.type = 'lowpass';
+        lowpass.frequency.value = 9000;
+        lowpass.Q.value = 0.7;
       }
     }
 
-    const compressor = ctx.createDynamicsCompressor();
-    compressor.threshold.value = -26;
-    compressor.knee.value = 24;
-    compressor.ratio.value = 4;
-    compressor.attack.value = 0.003;
-    compressor.release.value = 0.25;
+    let gate = null;
+    try {
+      await ensureNoiseGateWorklet(ctx);
+      gate = new AudioWorkletNode(ctx, 'vox-mic-gate', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1] });
+      gate.port.postMessage(currentGateParams());
+      gate.port.onmessage = (e) => renderMicMeter(e.data);
+      chain(gate);
+    } catch (e) {
+      console.warn('Gate do microfone indisponível, seguindo sem ele:', e);
+      gate = null;
+    }
 
-    const makeup = ctx.createGain();
-    makeup.gain.value = 1.25;
+    if (noiseSuppressionMode !== 'off') {
+      const compressor = chain(ctx.createDynamicsCompressor());
+      compressor.threshold.value = -26;
+      compressor.knee.value = 24;
+      compressor.ratio.value = 4;
+      compressor.attack.value = 0.003;
+      compressor.release.value = 0.25;
+      chain(ctx.createGain()).gain.value = 1.25; // repõe o volume tirado pelo compressor
+    }
 
     const dest = ctx.createMediaStreamDestination();
     dest.channelCount = 1;
     dest.channelCountMode = 'explicit';
+    nodes[nodes.length - 1].connect(dest);
 
-    last.connect(compressor);
-    compressor.connect(makeup);
-    makeup.connect(dest);
-
-    micPipeline = { source, highpass, gate, compressor, makeup, dest };
+    micPipeline = { nodes, inputGain, gate, dest };
     micProcessedTrack = dest.stream.getAudioTracks()[0];
   } catch (e) {
     console.warn('Falha ao criar processamento de áudio:', e);
@@ -2030,11 +2028,26 @@ function replaceAudioTrackOnPeers() {
   });
 }
 
+// Medidor da sensibilidade: barra do nível (verde com o gate aberto) e linha do limite.
+function renderMicMeter(m) {
+  if (!micMeterEl || settingsModal.classList.contains('hidden')) return;
+  const { meterPercent } = window.VoxMicGate;
+  const threshold = m ? m.thresholdDb : micThresholdDb;
+  micMeterLevel.style.width = (m ? meterPercent(m.levelDb) : 0) + '%';
+  micMeterThreshold.style.left = `calc(${meterPercent(threshold)}% - 1px)`;
+  micMeterEl.classList.toggle('open', !!(m && m.open));
+  // No automático, o controle acompanha o limite calculado.
+  if (m && micAuto) micThresholdInput.value = String(Math.round(threshold));
+}
+
 function applyNoiseSuppressionUI() {
   if (noiseSuppressionSelect) noiseSuppressionSelect.value = noiseSuppressionMode;
-  if (noiseGateLevel) noiseGateLevel.value = String(noiseGateLevelValue);
-  if (noiseGateValue) noiseGateValue.textContent = String(noiseGateLevelValue);
-  if (noiseGateField) noiseGateField.style.display = noiseSuppressionMode === 'strong' ? '' : 'none';
+  micGainInput.value = String(micGainPercent);
+  micGainValueEl.textContent = String(micGainPercent);
+  micAutoToggle.checked = micAuto;
+  micThresholdInput.disabled = micAuto;
+  if (!micAuto) micThresholdInput.value = String(micThresholdDb);
+  renderMicMeter(null);
 }
 
 function setupAnalyser(id, stream) {
@@ -2283,15 +2296,19 @@ async function refreshDevices() {
   }
 }
 
-async function changeInputDevice(id) {
+// stopFirst: fecha o microfone atual antes de abrir de novo. Necessário quando muda a
+// redução de ruído do navegador: com o mesmo dispositivo ainda aberto, o Chromium
+// devolve a faixa nova com o processamento antigo (medido).
+async function changeInputDevice(id, { stopFirst = false } = {}) {
   settingsError.textContent = '';
   // Fora da voz só a preferência é gravada; ela vale na próxima entrada em voz.
   if (!currentVoiceRoom) return;
   const leaves = voiceLeaves;
+  if (stopFirst && localStream) {
+    localStream.getAudioTracks().forEach((t) => { t.stop(); localStream.removeTrack(t); });
+  }
   try {
-    const constraints = { audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: false, channelCount: 1 } };
-    if (id) constraints.audio.deviceId = { exact: id };
-
+    const constraints = { audio: micAudioConstraints(id) };
     const newStream = await navigator.mediaDevices.getUserMedia(constraints);
     const newTrack = newStream.getAudioTracks()[0];
     if (!newTrack) return;
@@ -2402,22 +2419,36 @@ if (noiseSuppressionSelect) {
     noiseSuppressionMode = noiseSuppressionSelect.value;
     localStorage.setItem('vox-noise-suppression', noiseSuppressionMode);
     applyNoiseSuppressionUI();
-    await rebuildMicProcessing();
-    replaceAudioTrackOnPeers();
-    updateMonitor();
+    // A redução do navegador é escolhida ao abrir o microfone: reabre com a nova opção.
+    if (currentVoiceRoom && localStream) await changeInputDevice(audioInputId, { stopFirst: true });
   });
 }
 
-if (noiseGateLevel) {
-  noiseGateLevel.addEventListener('input', () => {
-    noiseGateLevelValue = Number(noiseGateLevel.value) || 0;
-    localStorage.setItem('vox-noise-gate-level', String(noiseGateLevelValue));
-    if (noiseGateValue) noiseGateValue.textContent = String(noiseGateLevelValue);
-    if (micPipeline && micPipeline.gate) {
-      try { micPipeline.gate.parameters.get('threshold').value = gateThreshold(); } catch (e) {}
-    }
-  });
-}
+micGainInput.addEventListener('input', () => {
+  micGainPercent = clampNumber(micGainInput.value, 0, 200, 100);
+  localStorage.setItem('vox-mic-gain', String(micGainPercent));
+  micGainValueEl.textContent = String(micGainPercent);
+  if (micPipeline) micPipeline.inputGain.gain.setTargetAtTime(micGainPercent / 100, micPipeline.inputGain.context.currentTime, 0.02);
+});
+
+micAutoToggle.addEventListener('change', () => {
+  micAuto = micAutoToggle.checked;
+  localStorage.setItem('vox-mic-auto', micAuto ? '1' : '0');
+  // Ao sair do automático, começa do limite que ele estava usando.
+  if (!micAuto) {
+    micThresholdDb = clampNumber(micThresholdInput.value, -70, -10, -50);
+    localStorage.setItem('vox-mic-threshold', String(micThresholdDb));
+  }
+  applyNoiseSuppressionUI();
+  sendGateParams();
+});
+
+micThresholdInput.addEventListener('input', () => {
+  micThresholdDb = clampNumber(micThresholdInput.value, -70, -10, -50);
+  localStorage.setItem('vox-mic-threshold', String(micThresholdDb));
+  sendGateParams();
+  renderMicMeter(null);
+});
 
 applyNoiseSuppressionUI();
 

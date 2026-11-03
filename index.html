@@ -321,7 +321,12 @@
     background: color-mix(in srgb, #fff 14%, transparent); color: #fff; font-size: 16px; cursor: pointer;
   }
   .fullscreen-actions button:hover { background: color-mix(in srgb, #fff 26%, transparent); }
-  #noise-gate-level { width: 100%; accent-color: var(--accent); }
+  .settings-range { width: 100%; accent-color: var(--accent); }
+  .mic-meter { position: relative; height: 10px; margin: 8px 0 2px; border-radius: 5px; background: var(--bg); border: 1px solid var(--border); overflow: hidden; }
+  #mic-meter-level { position: absolute; inset: 0 auto 0 0; width: 0; background: var(--muted); transition: width .06s linear; }
+  .mic-meter.open #mic-meter-level { background: var(--green); }
+  #mic-meter-threshold { position: absolute; top: -1px; bottom: -1px; width: 2px; left: 0; background: var(--text); }
+  #mic-threshold:disabled { opacity: .45; }
   #call-empty {
     position: absolute; inset: 0;
     display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -1204,11 +1209,20 @@
       </select>
     </div>
 
-    <div class="field" id="noise-gate-field">
-      <label>Intensidade do gate (<span id="noise-gate-value">35</span>%)</label>
-      <input type="range" id="noise-gate-level" min="0" max="100" value="35">
+    <p class="settings-hint">“Padrão” usa a redução de ruído do navegador. “Forte” soma filtros de graves e chiado e deixa a sensibilidade automática mais exigente. “Desligada” manda o som do microfone sem tratamento.</p>
+
+    <div class="field">
+      <label for="mic-gain">Volume do microfone (<span id="mic-gain-value">100</span>%)</label>
+      <input type="range" id="mic-gain" class="settings-range" min="0" max="200" step="5" value="100">
     </div>
-    <p class="settings-hint">“Forte” corta ruídos baixos (ventilador, chiado) quando você não está falando. Se sua voz ficar cortada, diminua a intensidade.</p>
+
+    <div class="field">
+      <label for="mic-threshold">Sensibilidade do microfone</label>
+      <label class="check-line"><input type="checkbox" id="mic-auto" checked> Ajustar automaticamente ao ruído do ambiente</label>
+      <div class="mic-meter" aria-hidden="true"><div id="mic-meter-level"></div><div id="mic-meter-threshold"></div></div>
+      <input type="range" id="mic-threshold" class="settings-range" min="-70" max="-10" step="1" value="-50" aria-label="Sensibilidade do microfone">
+      <p class="settings-hint" id="mic-meter-hint">A barra mostra o volume da sua voz; ela fica verde quando passa da linha e os outros te ouvem. Arraste para a esquerda se a voz cortar e para a direita se o ruído vazar.</p>
+    </div>
 
     <label class="toggle-row">
       <input type="checkbox" id="monitor-toggle">
@@ -1273,6 +1287,7 @@
 <script src="music-state.js"></script>
 <script src="sounds.js"></script>
 <script src="chat-state.js"></script>
+<script src="mic-gate.js"></script>
 <script src="renderer.js"></script>
 </body>
 </html>

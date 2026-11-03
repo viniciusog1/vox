@@ -85,6 +85,7 @@ Saída: `dist\Vox-Setup-<versão>.exe`, `.blockmap` e `latest.yml` (versão de `
 | `renderer.js` | Interface e lógica do cliente: login, canais, chat, WebRTC, estado da conexão e ping por pessoa, grade de tiles (`layoutTiles`), câmera/microfone, compartilhamento de tela, música, status, membros, configurações em abas. |
 | `themes.js` | Os 18 temas (paletas, id padrão `escuro`) e os grupos do seletor (`THEME_GROUPS`: Escuros, Neon, Anime, Claros; cada tema tem `group`), leitura/gravação em `localStorage['vox-theme']`, `applyTheme`, opção "Reduzir animações" (`vox-reduce-motion`, `data-reduce-motion` no `<html>`) e `migrateLegacyStorage` (copia `concord-*` → `vox-*`). Carregado no `<head>` antes do CSS para aplicar o tema antes da primeira pintura. Também é módulo Node (testes). |
 | `icons.js` | Ícones SVG do Lucide (lucide-static 0.460.0, licença ISC) usados na interface: `icon(name, size)`, `setIcon(el, name, text, size)` e `hydrate(root)`, que troca `<i data-icon="…">` pelo SVG. Só os ícones usados estão no arquivo; para um novo, copie de `lucide-static/icons/*.svg`. Também é módulo Node (testes). |
+| `mic-gate.js` | Sensibilidade do microfone: `createGate` (gate com nível RMS, histerese, espera e limite automático pelo ruído de fundo; roda dentro do AudioWorklet), `gateParams`, `meterPercent` e `clampNumber`. Usado por `renderer.js` (`VoxMicGate`). Também é módulo Node (testes). |
 | `speaking.js` | Detecção de "falando" com histerese (liga ≥ 0.12, desliga após 250 ms abaixo) para o anel do avatar. |
 | `sounds.js` | Efeitos sonoros gerados com Web Audio (sem arquivos): `SOUNDS` (`join`, `leave`, `mute`, `unmute`), `playSound`, `rosterSound` (decide o som pela diferença entre a lista anterior e a nova da voz) e `isEnabled` (`vox-sound-effects`). Usado por `renderer.js`. Também é módulo Node (testes). |
 | `channels.js` | Lista fixa de canais: `TEXT_CHANNELS` (`geral`, `jogos`, `musica`) e `VOICE_CHANNELS` (`voz-sala`, `voz-jogos`, `voz-musica`); padrões `geral` e `voz-sala`. Usado por `main.js` e `renderer.js`. Também é módulo Node (testes). |
@@ -169,9 +170,11 @@ Saída: `dist\Vox-Setup-<versão>.exe`, `.blockmap` e `latest.yml` (versão de `
   - Volume local em `localStorage['vox-music-volume']` (não é sincronizado).
   - Sincronização: o cliente estima a posição a partir de `positionMs`/`serverNow` e faz `seekTo` só se a diferença passar de `SYNC_TOLERANCE_MS`, respeitando `SEEK_COOLDOWN_MS`.
 - Áudio do microfone:
-  - Pipeline de redução de ruído: high-pass (85 Hz) → gate (AudioWorklet `vox-noise-gate` via Blob) → compressor → gain → `MediaStreamAudioDestination`.
+  - Cadeia (`rebuildMicProcessing`): microfone → volume (`vox-mic-gain`, 0–200%) → passa-alta (80 Hz; 100 Hz no Forte) → passa-baixa 9 kHz (só Forte) → gate (AudioWorklet `vox-mic-gate`) → compressor + ganho 1,25 → `MediaStreamAudioDestination`. No modo `off` ficam só volume e gate.
+  - Modos em `vox-noise-suppression`: `off` (pede `noiseSuppression: false` ao navegador), `browser` (Padrão) e `strong` (Forte). Trocar o modo reabre o microfone com `changeInputDevice(id, { stopFirst: true })`: **medido** que, com o mesmo dispositivo ainda aberto, o Chromium devolve a faixa nova com o processamento antigo.
+  - Gate = sensibilidade do microfone. A lógica fica em `mic-gate.js` (`createGate`, testada no Node; o worklet recebe o texto da função). Nível RMS em ~10 ms, histerese de 4 dB, espera de 250 ms antes de fechar, ataque 3 ms, soltura 120 ms. Automático (`vox-mic-auto`, padrão ligado): limite = ruído de fundo (mínimo dos últimos 2 s, sobe no máximo 3 dB/s) + 8 dB (12 dB no Forte), entre −65 e −25 dB. Manual: `vox-mic-threshold` (−70 a −10 dB). O worklet manda nível/limite/aberto ~20×/s para o medidor das configurações.
+  - **Medido** no gate antigo (limite fixo de pico ~−36 dBFS, sem espera): fala a −38 dB nunca abria (com `autoGainControl: false`, microfone baixo = pessoa muda) e pausas de 150 ms entre palavras abriam/fechavam 23 vezes em 5 s.
   - `micProcessedTrack` é a faixa enviada aos peers; `getOutboundAudioTracks()` decide entre processada e bruta.
-  - Modos em `vox-noise-suppression`: `off`, `browser`, `strong`. Intensidade em `vox-noise-gate-level`.
   - O monitor do próprio microfone toca a faixa processada.
 - Quem está falando aparece pelo anel no avatar da lista da voz (`speaking.js`), inclusive você. A antiga barra "Ninguém falando" foi removida.
 - Efeitos sonoros (`sounds.js` + `playSoundEffect`):
@@ -309,7 +312,8 @@ const DATA_DIR = app.isPackaged ? app.getPath('userData') : __dirname;
 
 - `vox-server-url`
 - `audioInputId`, `audioOutputId`, `monitorEnabled`
-- `vox-noise-suppression`, `vox-noise-gate-level`
+- `vox-noise-suppression` (`off`, `browser`, `strong`; padrão `strong`)
+- `vox-mic-gain` (volume do microfone, 0–200, padrão 100), `vox-mic-auto` (`0` desliga a sensibilidade automática), `vox-mic-threshold` (sensibilidade manual em dB, −70 a −10, padrão −50). A antiga `vox-noise-gate-level` não é mais lida.
 - `vox-share-resolution`, `vox-share-fps`
 - `vox-peer-volumes` (volume de cada pessoa, só neste computador)
 - `vox-theme` (id do tema; inválido ou ausente → `escuro`)
