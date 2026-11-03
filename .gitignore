@@ -9,6 +9,9 @@ dist/
 # Dados do usuário (locais, não subir)
 users.json
 messages.json
+sessions.json
+uploads/
+avatars/
 
 # Logs
 *.log

@@ -54,6 +54,9 @@
   }
   .rail-btn:hover { border-radius: 12px; background: var(--accent); }
   .rail-btn.active { border-radius: 12px; background: var(--accent); box-shadow: var(--glow); }
+  /* Servidor com o ícone do Vox: a imagem já tem fundo e cantos próprios */
+  .rail-btn.rail-server { padding: 0; overflow: hidden; background: transparent; }
+  .rail-server img { width: 100%; height: 100%; display: block; }
   .rail-sep { width: 32px; height: 2px; background: var(--border); border-radius: 1px; margin: 2px 0; }
 
   /* ================= COLUNA DE CANAIS ================= */
@@ -167,6 +170,9 @@
     display: flex; align-items: center; justify-content: center;
     font-weight: 700; font-size: 14px; color: #fff;
   }
+  /* Foto de perfil dentro do círculo (sem background-image: o tema Mangá força o fundo) */
+  .avatar.has-image { overflow: hidden; }
+  .avatar-img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; display: block; }
   .user-meta { flex: 1; min-width: 0; }
   .user-meta .name { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .user-meta .sub { font-size: 11px; color: var(--muted); }
@@ -318,7 +324,16 @@
     background: color-mix(in srgb, #fff 14%, transparent); color: #fff; font-size: 16px; cursor: pointer;
   }
   .fullscreen-actions button:hover { background: color-mix(in srgb, #fff 26%, transparent); }
-  #noise-gate-level { width: 100%; accent-color: var(--accent); }
+  .settings-range { width: 100%; accent-color: var(--accent); }
+  /* .field input é o estilo das caixas de texto; aqui volta ao normal para controle deslizante e caixa de marcar */
+  .settings-card .field input[type="range"] { height: auto; padding: 0; border: none; border-radius: 0; background: transparent; box-shadow: none; }
+  .settings-card .field input[type="checkbox"] { width: 16px; height: 16px; padding: 0; flex: none; accent-color: var(--accent); }
+  .settings-card .field label.check-line { display: flex; margin: 2px 0 8px; font-size: 13px; font-weight: 400; color: var(--text); }
+  .mic-meter { position: relative; height: 10px; margin: 8px 0 2px; border-radius: 5px; background: var(--bg); border: 1px solid var(--border); overflow: hidden; }
+  #mic-meter-level { position: absolute; inset: 0 auto 0 0; width: 0; background: var(--muted); transition: width .06s linear; }
+  .mic-meter.open #mic-meter-level { background: var(--green); }
+  #mic-meter-threshold { position: absolute; top: -1px; bottom: -1px; width: 2px; left: 0; background: var(--text); }
+  #mic-threshold:disabled { opacity: .45; }
   #call-empty {
     position: absolute; inset: 0;
     display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -398,6 +413,88 @@
     background: var(--accent); color: var(--on-accent); font-weight: 700; cursor: pointer;
   }
   #send-btn:hover { background: var(--accent-2); }
+  .msg-icon-btn {
+    width: 42px; height: 42px; flex-shrink: 0; border: none; border-radius: 10px;
+    background: var(--control); color: var(--text); cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .msg-icon-btn:hover { background: var(--control-hover); }
+
+  /* Mensagens: editar/apagar, menções, imagens */
+  .msg-row { position: relative; }
+  .msg-head { display: flex; align-items: baseline; gap: 8px; }
+  .msg-edited { font-size: 10px; color: var(--muted); }
+  .msg-actions {
+    position: absolute; top: -12px; right: 0; display: none; gap: 2px; padding: 2px;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 8px; z-index: 2;
+  }
+  .msg-row.own .msg-actions { right: auto; left: 0; }
+  .msg-row:hover .msg-actions, .msg-row:focus-within .msg-actions { display: flex; }
+  .msg-action {
+    width: 26px; height: 26px; border: none; border-radius: 6px; background: transparent;
+    color: var(--muted); cursor: pointer; display: flex; align-items: center; justify-content: center;
+  }
+  .msg-action:hover { color: var(--text); background: color-mix(in srgb, var(--text) 8%, transparent); }
+  .msg-action.danger:hover { color: var(--danger-text); }
+  .msg-mention { color: var(--link); font-weight: 600; background: color-mix(in srgb, var(--link) 14%, transparent); border-radius: 4px; padding: 0 2px; }
+  .msg-row.mentions-me .msg-body { box-shadow: inset 3px 0 0 var(--link); }
+  .msg-image {
+    display: block; margin: 4px 0; max-width: min(360px, 100%); max-height: 280px;
+    border-radius: 8px; cursor: zoom-in; background: var(--bg); object-fit: contain;
+  }
+  .msg-edit-input {
+    width: min(420px, 60vw); min-height: 34px; padding: 6px 10px; border-radius: 8px;
+    border: 1px solid var(--accent); background: var(--bg); color: var(--text); font: inherit; font-size: 14px; outline: none;
+  }
+  .msg-edit-hint { font-size: 11px; color: var(--muted); margin-top: 4px; }
+  #attach-preview {
+    flex-shrink: 0; display: flex; align-items: center; gap: 10px;
+    padding: 8px 20px; border-top: 1px solid var(--border); background: var(--bg-2); font-size: 12px; color: var(--muted);
+  }
+  #attach-thumb { width: 48px; height: 48px; object-fit: cover; border-radius: 6px; background: var(--bg); }
+  #attach-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #mention-popup { left: 20px; right: auto; bottom: calc(var(--bottom-bar-h) + 6px); min-width: 200px; }
+  #mention-popup button.active { background: var(--accent-soft); color: var(--text); }
+  #messages.drag-over { outline: 2px dashed var(--accent); outline-offset: -8px; }
+  #image-viewer {
+    position: fixed; inset: 0; z-index: 330; background: rgba(0,0,0,.85);
+    display: flex; align-items: center; justify-content: center; cursor: zoom-out;
+  }
+  #image-viewer-img { max-width: 92vw; max-height: 90vh; object-fit: contain; border-radius: 6px; }
+  #image-viewer-close {
+    position: absolute; top: 14px; right: 14px; width: 36px; height: 36px; border: none; border-radius: 8px;
+    background: color-mix(in srgb, #fff 14%, transparent); color: #fff; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+  }
+
+  /* Não lidas na lista de canais */
+  .unread-badge {
+    margin-left: auto; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px;
+    background: var(--control); color: var(--text); font-size: 11px; font-weight: 700;
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  .unread-badge.mention { background: var(--danger-bg); color: #fff; }
+  .channel.has-unread { color: var(--text); font-weight: 600; }
+
+  /* Faixas de aviso (conexão, atualização): ficam no fluxo, sem cobrir vídeos */
+  .app-banner {
+    flex-shrink: 0; display: flex; align-items: center; gap: 8px; padding: 8px 16px;
+    font-size: 13px; color: var(--text); background: var(--accent-soft); border-bottom: 1px solid var(--border);
+  }
+  .app-banner.warn { background: color-mix(in srgb, var(--yellow) 18%, var(--bg-2)); }
+  .app-banner button {
+    margin-left: auto; height: 28px; padding: 0 12px; border: none; border-radius: 6px;
+    background: var(--accent); color: var(--on-accent); font-weight: 700; font-size: 12px; cursor: pointer;
+  }
+  .tunnel-row { display: flex; align-items: center; gap: 10px; margin: 10px 0; }
+  .tunnel-row .btn-secondary { height: 38px; padding: 0 14px; border-radius: 8px; border: none; cursor: pointer; font-weight: 700; font-size: 12px; display: inline-flex; align-items: center; gap: 6px; }
+  .tunnel-state { font-size: 12px; color: var(--muted); }
+  .tunnel-state[data-state="on"] { color: var(--ok-text); }
+  .tunnel-state[data-state="error"] { color: var(--danger-text); }
+  #tunnel-url {
+    flex: 1; min-width: 0; height: 38px; padding: 0 10px; border-radius: 8px;
+    border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 13px;
+  }
 
   /* ================= PARTICIPANTES ================= */
   #members {
@@ -447,12 +544,9 @@
     border-radius: 16px; padding: 34px 38px;
     box-shadow: 0 24px 60px rgba(0,0,0,.55);
   }
-  .brand { display: flex; align-items: center; gap: 10px; margin-bottom: 22px; }
-  .brand-logo {
-    width: 40px; height: 40px; border-radius: 12px; background: var(--accent);
-    display: flex; align-items: center; justify-content: center; font-size: 20px;
-  }
-  .brand h1 { font-size: 20px; letter-spacing: .2px; }
+  .brand { display: flex; flex-direction: column; align-items: center; gap: 8px; margin-bottom: 22px; }
+  .brand-logo { width: 72px; height: 72px; display: block; }
+  .brand h1 { font-size: 22px; letter-spacing: .4px; }
   .overlay-card h2 { font-size: 22px; margin-bottom: 6px; }
   .overlay-card .sub { color: var(--muted); font-size: 13px; margin-bottom: 20px; }
   .tabs { display: flex; gap: 6px; margin-bottom: 18px; border-bottom: 1px solid var(--border); }
@@ -480,6 +574,8 @@
   .submit-btn:hover { background: var(--accent-2); }
   .submit-btn:disabled { opacity: .6; cursor: not-allowed; }
   .auth-error { color: var(--red); font-size: 12px; min-height: 16px; margin-bottom: 8px; }
+  /* Sem erro, a linha não ocupa espaço (abria um vão entre as abas e o primeiro campo) */
+  .auth-error:empty { min-height: 0; margin-bottom: 0; }
 
   /* ================= SERVIDOR ================= */
   .server-box { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); }
@@ -529,6 +625,14 @@
   .channel .voice-icon .icon { vertical-align: -3px; }
   .channel .channel-yt { margin-left: auto; flex-shrink: 0; }
   .account-line { font-size: 14px; color: var(--text-2); margin: 4px 0 16px; }
+  #btn-logout { height: 38px; padding: 0 16px; border-radius: 8px; cursor: pointer; font-weight: 700; font-size: 12px; }
+  .account-profile { display: flex; gap: 16px; align-items: flex-start; margin-bottom: 16px; }
+  #account-avatar { width: 72px; height: 72px; font-size: 26px; }
+  .account-profile-info { flex: 1; min-width: 0; }
+  .account-profile-info .account-line { margin: 4px 0 10px; }
+  .account-avatar-actions { display: flex; gap: 8px; margin-bottom: 8px; }
+  .account-avatar-actions .btn-secondary { height: 34px; padding: 0 12px; border: none; border-radius: 8px; cursor: pointer; font-weight: 700; font-size: 12px; display: inline-flex; align-items: center; gap: 6px; }
+  .account-avatar-actions .btn-secondary:disabled { opacity: .5; cursor: default; }
   .theme-group-title { font-size: 12px; color: var(--muted); font-weight: 600; margin: 6px 0 8px; }
   .theme-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 8px; }
   .theme-option {
@@ -705,13 +809,13 @@
     --control: var(--bg); --control-hover: var(--bg-3); --accent-2: var(--bg-3); --danger-hover: var(--bg-3);
   }
   :root[data-theme="manga"] .avatar { background: var(--bg) !important; color: var(--text); border: 2px solid var(--text); }
-  :root[data-theme="manga"] :is(.rail-btn, .brand-logo, .ctrl, .submit-btn, #send-btn, .server-row button,
+  :root[data-theme="manga"] :is(.rail-btn, .ctrl, .submit-btn, #send-btn, .server-row button,
     .btn-secondary, .music-icon-btn, .tab-btn, #voice-connection button) {
     background: var(--bg); color: var(--text); border: 2px solid var(--text); box-shadow: none;
   }
   :root[data-theme="manga"] :is(.rail-btn, .ctrl, .submit-btn, #send-btn, .server-row button,
     .btn-secondary, .music-icon-btn, .tab-btn, #voice-connection button):hover { background: var(--bg-3); }
-  :root[data-theme="manga"] :is(.rail-btn.active, .ctrl.primary, .tab-btn.active, .brand-logo) {
+  :root[data-theme="manga"] :is(.rail-btn.active, .ctrl.primary, .tab-btn.active) {
     background: radial-gradient(color-mix(in srgb, var(--text) 32%, transparent) 1px, transparent 1.5px) 0 0 / 4px 4px, var(--bg);
   }
   :root[data-theme="manga"] .ctrl.off { color: var(--muted); border-color: var(--muted); }
@@ -855,7 +959,7 @@
 <div id="app">
   <!-- Rail de servidores -->
   <nav id="server-rail">
-    <div class="rail-btn active" title="Casa dos Amigos"><i data-icon="house" data-size="22"></i></div>
+    <div class="rail-btn rail-server active" title="Casa dos Amigos"><img src="assets/icon.svg" alt="Casa dos Amigos"></div>
     <div class="rail-sep"></div>
     <div class="rail-btn" title="Jogos"><i data-icon="gamepad-2" data-size="22"></i></div>
     <div class="rail-btn" title="Música"><i data-icon="music" data-size="22"></i></div>
@@ -917,6 +1021,14 @@
       </div>
     </header>
 
+    <div id="conn-banner" class="app-banner warn hidden" role="status" aria-live="polite">
+      <i data-icon="refresh-cw" data-size="16"></i><span>Conexão com o servidor perdida. Reconectando…</span>
+    </div>
+    <div id="update-banner" class="app-banner hidden" role="status" aria-live="polite">
+      <i data-icon="download" data-size="16"></i><span id="update-text"></span>
+      <button type="button" id="update-install" class="hidden">Reiniciar e atualizar</button>
+    </div>
+
     <section id="call-area">
       <div id="video-grid"></div>
       <div id="call-empty">
@@ -948,8 +1060,16 @@
         <p id="music-empty">Nenhuma música na fila. Cole um link acima para começar.</p>
       </div>
       <div id="messages"></div>
+      <div id="mention-popup" class="popover hidden" role="listbox" aria-label="Mencionar"></div>
+      <div id="attach-preview" class="hidden">
+        <img id="attach-thumb" alt="">
+        <span id="attach-name"></span>
+        <button type="button" id="attach-remove" class="msg-action" title="Remover imagem" aria-label="Remover imagem"><i data-icon="x" data-size="16"></i></button>
+      </div>
       <div class="chat-input-row">
-        <input type="text" id="msg-input" placeholder="Enviar mensagem em #geral">
+        <button type="button" id="attach-btn" class="msg-icon-btn" title="Enviar imagem (ou cole com Ctrl+V)" aria-label="Enviar imagem"><i data-icon="image-plus"></i></button>
+        <input type="file" id="attach-input" accept="image/png,image/jpeg,image/webp,image/gif" hidden>
+        <input type="text" id="msg-input" placeholder="Enviar mensagem em #geral" maxlength="2000" autocomplete="off">
         <button id="send-btn">Enviar</button>
       </div>
     </div>
@@ -966,7 +1086,7 @@
 <div id="auth-screen">
   <div class="overlay-card">
     <div class="brand">
-      <div class="brand-logo"><i data-icon="message-circle" data-size="22"></i></div>
+      <img class="brand-logo" src="assets/icon.svg" alt="">
       <h1>Vox</h1>
     </div>
     <h2>Bem-vindo de volta</h2>
@@ -1046,6 +1166,33 @@
       <button type="button" class="settings-tab active" role="tab" id="settings-tabbtn-audio" aria-selected="true" aria-controls="settings-tab-audio" data-tab="audio">Áudio</button>
       <button type="button" class="settings-tab" role="tab" id="settings-tabbtn-conta" aria-selected="false" aria-controls="settings-tab-conta" data-tab="conta">Conta</button>
       <button type="button" class="settings-tab" role="tab" id="settings-tabbtn-aparencia" aria-selected="false" aria-controls="settings-tab-aparencia" data-tab="aparencia">Aparência</button>
+      <button type="button" class="settings-tab" role="tab" id="settings-tabbtn-notificacoes" aria-selected="false" aria-controls="settings-tab-notificacoes" data-tab="notificacoes">Notificações</button>
+      <button type="button" class="settings-tab" role="tab" id="settings-tabbtn-servidor" aria-selected="false" aria-controls="settings-tab-servidor" data-tab="servidor">Servidor</button>
+    </div>
+
+    <div class="settings-panel hidden" id="settings-tab-notificacoes" role="tabpanel" aria-labelledby="settings-tabbtn-notificacoes">
+      <div class="field">
+        <label for="notify-mode">Avisar no Windows quando chegar mensagem</label>
+        <select id="notify-mode">
+          <option value="all">Todas as mensagens</option>
+          <option value="mentions">Só quando me mencionarem (@)</option>
+          <option value="off">Nunca</option>
+        </select>
+      </div>
+      <p class="settings-hint">Mensagens do canal aberto só avisam com o Vox minimizado ou em segundo plano. Menções (@seu nome) sempre avisam e tocam um som. No status Ocupado nada avisa.</p>
+    </div>
+
+    <div class="settings-panel hidden" id="settings-tab-servidor" role="tabpanel" aria-labelledby="settings-tabbtn-servidor">
+      <p class="settings-hint">Abre um túnel gratuito da Cloudflare para seus amigos entrarem neste servidor pela internet. Só funciona no PC que hospeda o Vox. O endereço muda toda vez que o túnel é aberto.</p>
+      <div class="tunnel-row">
+        <button type="button" id="tunnel-toggle" class="btn-secondary"><i data-icon="globe" data-size="16"></i> <span>Abrir para amigos</span></button>
+        <span id="tunnel-state" class="tunnel-state">Fechado</span>
+      </div>
+      <div id="tunnel-url-row" class="tunnel-row hidden">
+        <input type="text" id="tunnel-url" readonly aria-label="Endereço para os amigos">
+        <button type="button" id="tunnel-copy" class="btn-secondary" title="Copiar endereço"><i data-icon="copy" data-size="16"></i> Copiar</button>
+      </div>
+      <p class="settings-hint">Seu amigo cola esse endereço no campo Servidor da tela de login e clica em Aplicar. Um endereço novo pode levar cerca de 1 minuto para começar a funcionar. O túnel fecha junto com o Vox; se cair sozinho, reabre com outro endereço.</p>
     </div>
 
     <div class="settings-panel hidden" id="settings-tab-aparencia" role="tabpanel" aria-labelledby="settings-tabbtn-aparencia">
@@ -1054,7 +1201,18 @@
     </div>
 
     <div class="settings-panel hidden" id="settings-tab-conta" role="tabpanel" aria-labelledby="settings-tabbtn-conta">
-      <p class="account-line">Conectado como <strong id="account-name">—</strong></p>
+      <div class="account-profile">
+        <div class="avatar" id="account-avatar">?</div>
+        <div class="account-profile-info">
+          <p class="account-line">Conectado como <strong id="account-name">—</strong></p>
+          <div class="account-avatar-actions">
+            <button type="button" id="avatar-change" class="btn-secondary"><i data-icon="image-plus" data-size="16"></i> Trocar foto</button>
+            <button type="button" id="avatar-remove" class="btn-secondary">Remover</button>
+            <input type="file" id="avatar-input" accept="image/png,image/jpeg,image/webp,image/gif" hidden>
+          </div>
+          <p class="settings-hint">Use uma imagem quadrada; nas outras, o Vox recorta o centro. Todo mundo do servidor vê a sua foto.</p>
+        </div>
+      </div>
       <button type="button" id="btn-logout" class="btn-danger-outline">Sair da conta</button>
     </div>
 
@@ -1079,11 +1237,20 @@
       </select>
     </div>
 
-    <div class="field" id="noise-gate-field">
-      <label>Intensidade do gate (<span id="noise-gate-value">35</span>%)</label>
-      <input type="range" id="noise-gate-level" min="0" max="100" value="35">
+    <p class="settings-hint">“Padrão” usa a redução de ruído do navegador. “Forte” soma filtros de graves e chiado e deixa a sensibilidade automática mais exigente. “Desligada” manda o som do microfone sem tratamento.</p>
+
+    <div class="field">
+      <label for="mic-gain">Volume do microfone (<span id="mic-gain-value">100</span>%)</label>
+      <input type="range" id="mic-gain" class="settings-range" min="0" max="200" step="5" value="100">
     </div>
-    <p class="settings-hint">“Forte” corta ruídos baixos (ventilador, chiado) quando você não está falando. Se sua voz ficar cortada, diminua a intensidade.</p>
+
+    <div class="field">
+      <label for="mic-threshold">Sensibilidade do microfone</label>
+      <label class="check-line"><input type="checkbox" id="mic-auto" checked> Ajustar automaticamente ao ruído do ambiente</label>
+      <div class="mic-meter" aria-hidden="true"><div id="mic-meter-level"></div><div id="mic-meter-threshold"></div></div>
+      <input type="range" id="mic-threshold" class="settings-range" min="-70" max="-10" step="1" value="-50" aria-label="Sensibilidade do microfone">
+      <p class="settings-hint" id="mic-meter-hint">A barra mostra o volume da sua voz; ela fica verde quando passa da linha e os outros te ouvem. Arraste para a esquerda se a voz cortar e para a direita se o ruído vazar.</p>
+    </div>
 
     <label class="toggle-row">
       <input type="checkbox" id="monitor-toggle">
@@ -1123,6 +1290,12 @@
   </div>
 </div>
 
+<!-- Imagem do chat em tamanho grande -->
+<div id="image-viewer" class="hidden" role="dialog" aria-label="Imagem">
+  <img id="image-viewer-img" alt="">
+  <button type="button" id="image-viewer-close" title="Fechar (Esc)" aria-label="Fechar"><i data-icon="x"></i></button>
+</div>
+
 <audio id="monitor-audio" autoplay></audio>
 <audio id="sound-effects-audio" autoplay></audio>
 <div id="toast" class="hidden" role="status" aria-live="polite"></div>
@@ -1141,6 +1314,8 @@
 <script src="youtube.js"></script>
 <script src="music-state.js"></script>
 <script src="sounds.js"></script>
+<script src="chat-state.js"></script>
+<script src="mic-gate.js"></script>
 <script src="renderer.js"></script>
 </body>
 </html>

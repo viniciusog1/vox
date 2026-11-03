@@ -34,6 +34,25 @@ const callEmpty = document.getElementById('call-empty');
 const messagesEl = document.getElementById('messages');
 const msgInput = document.getElementById('msg-input');
 const sendBtn = document.getElementById('send-btn');
+const attachBtn = document.getElementById('attach-btn');
+const attachInput = document.getElementById('attach-input');
+const attachPreview = document.getElementById('attach-preview');
+const attachThumb = document.getElementById('attach-thumb');
+const attachName = document.getElementById('attach-name');
+const attachRemove = document.getElementById('attach-remove');
+const mentionPopup = document.getElementById('mention-popup');
+const imageViewer = document.getElementById('image-viewer');
+const imageViewerImg = document.getElementById('image-viewer-img');
+const connBanner = document.getElementById('conn-banner');
+const updateBanner = document.getElementById('update-banner');
+const updateText = document.getElementById('update-text');
+const updateInstall = document.getElementById('update-install');
+const notifyModeSelect = document.getElementById('notify-mode');
+const tunnelToggle = document.getElementById('tunnel-toggle');
+const tunnelStateEl = document.getElementById('tunnel-state');
+const tunnelUrlRow = document.getElementById('tunnel-url-row');
+const tunnelUrlInput = document.getElementById('tunnel-url');
+const tunnelCopy = document.getElementById('tunnel-copy');
 
 const memberList = document.getElementById('member-list');
 const memberCount = document.getElementById('member-count');
@@ -73,9 +92,13 @@ const monitorAudio = document.getElementById('monitor-audio');
 const clearMyMessages = document.getElementById('clear-my-messages');
 const settingsError = document.getElementById('settings-error');
 const noiseSuppressionSelect = document.getElementById('noise-suppression');
-const noiseGateLevel = document.getElementById('noise-gate-level');
-const noiseGateValue = document.getElementById('noise-gate-value');
-const noiseGateField = document.getElementById('noise-gate-field');
+const micGainInput = document.getElementById('mic-gain');
+const micGainValueEl = document.getElementById('mic-gain-value');
+const micAutoToggle = document.getElementById('mic-auto');
+const micThresholdInput = document.getElementById('mic-threshold');
+const micMeterEl = document.querySelector('.mic-meter');
+const micMeterLevel = document.getElementById('mic-meter-level');
+const micMeterThreshold = document.getElementById('mic-meter-threshold');
 
 const fullscreenView = document.getElementById('fullscreen-view');
 const fullscreenVideo = document.getElementById('fullscreen-video');
@@ -101,6 +124,7 @@ const { PROTOCOL_VERSION, VERSION_MISMATCH_MESSAGE, isCompatible } = window.VoxP
 const { targetPositionMs, shouldCorrectSeek } = window.VoxMusic;
 
 let currentUser = '';
+let sessionToken = null;   // só na memória: reconecta sem senha, mas fechar o app pede login de novo
 let currentTextRoom = '';  // sempre preenchido depois do login
 let currentVoiceRoom = ''; // '' = fora de canal de voz
 let voiceLeaves = 0;       // conta as saídas da voz; pedidos de mídia comparam para saber se a voz caiu
@@ -156,7 +180,11 @@ let lastUsersSignature = '';
 let micPipeline = null;
 let micProcessedTrack = null;
 let noiseSuppressionMode = localStorage.getItem('vox-noise-suppression') || 'strong';
-let noiseGateLevelValue = Number(localStorage.getItem('vox-noise-gate-level') || 35);
+if (!['off', 'browser', 'strong'].includes(noiseSuppressionMode)) noiseSuppressionMode = 'strong';
+const { clampNumber } = window.VoxMicGate;
+let micGainPercent = clampNumber(localStorage.getItem('vox-mic-gain') ?? 100, 0, 200, 100);
+let micAuto = localStorage.getItem('vox-mic-auto') !== '0';
+let micThresholdDb = clampNumber(localStorage.getItem('vox-mic-threshold') ?? -50, -70, -10, -50);
 const noiseGateContexts = new WeakSet();
 
 // Música do YouTube na chamada
@@ -166,6 +194,7 @@ let musicTileEl = null;    // tile persistente com o player: renderTiles nunca o
 let musicPlayerReady = false;
 let musicLoadedItemId = null; // item da fila carregado no player
 let musicLastSeekAt = null;    // último seek corretivo no item carregado (limita a um por SEEK_COOLDOWN_MS)
+let musicCommandUntil = 0;     // até quando mudanças de estado do player vêm de comandos do próprio Vox
 let musicPlayerGen = 0;       // invalida criações de player pendentes (API ainda carregando)
 let musicPlayerHost = null;   // onde o player atual está: host do tile ou o canto da tela cheia
 let youTubeApiPromise = null;
@@ -219,20 +248,47 @@ function initials(name) {
   return (name || '?').trim().slice(0, 2).toUpperCase();
 }
 
+// Fotos de perfil (username -> arquivo em /avatars), vindas de 'server-members'.
+const avatarFiles = new Map();
+
+// Foto da pessoa, ou iniciais sobre a cor dela. data-user permite atualizar
+// todos os avatares da tela quando alguém troca a foto (refreshAvatars).
+function applyAvatar(el, name) {
+  el.dataset.user = name || '';
+  el.style.background = avatarColor(name || '?');
+  const file = name && avatarFiles.get(name);
+  el.classList.toggle('has-image', !!file);
+  if (!file) { el.textContent = initials(name); return; }
+  const src = `${SERVER_URL}/avatars/${encodeURIComponent(file)}`;
+  const current = el.querySelector('img');
+  if (current && current.getAttribute('src') === src) return;
+  const img = document.createElement('img');
+  img.className = 'avatar-img';
+  img.alt = '';
+  img.src = src;
+  img.addEventListener('error', () => { el.classList.remove('has-image'); el.textContent = initials(name); });
+  el.textContent = '';
+  el.appendChild(img);
+}
+
 function makeAvatar(name, extraClass = '') {
   const el = document.createElement('div');
   el.className = 'avatar ' + extraClass;
-  el.textContent = initials(name);
-  el.style.background = avatarColor(name || '?');
+  applyAvatar(el, name);
   return el;
+}
+
+function refreshAvatars() {
+  document.querySelectorAll('.avatar[data-user]').forEach((el) => {
+    if (el.dataset.user) applyAvatar(el, el.dataset.user);
+  });
 }
 
 function setMyIdentity(name) {
   currentUser = name;
   myName.textContent = name;
-  myAvatar.textContent = initials(name);
-  myAvatar.style.background = avatarColor(name);
-  document.getElementById('empty-avatar').textContent = initials(name);
+  applyAvatar(myAvatar, name);
+  applyAvatar(document.getElementById('empty-avatar'), name);
 }
 
 const VOICE_NAMES = {
@@ -323,7 +379,10 @@ function hideOverlays() {
 }
 
 // Login ou cadastro concluído: entra direto em #geral e na Sala Principal, com microfone aberto.
-function enterApp(username) {
+function enterApp(username, token) {
+  sessionToken = token || null;
+  unread = {};
+  renderUnread();
   setMyIdentity(username);
   micEnabled = true;
   updateControlButtons();
@@ -381,6 +440,7 @@ serverUrlInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') apply
 socket.on('connect', () => {
   serverStatus.textContent = `Conectado: ${SERVER_URL}`;
   serverStatus.style.color = 'var(--ok-text)';
+  if (currentUser && sessionToken) resumeSession();
 });
 socket.on('connect_error', () => {
   serverStatus.textContent = 'Sem conexão. Confira o endereço do servidor.';
@@ -391,7 +451,36 @@ socket.on('disconnect', () => {
   serverStatus.style.color = 'var(--danger-text)';
   // Sem servidor não há como controlar a música: para o player e some com o tile.
   resetMusic();
+  // Logado: o Socket.io tenta reconectar sozinho; a chamada P2P segue enquanto der.
+  if (currentUser) connBanner.classList.remove('hidden');
 });
+
+/* ================= RECONEXÃO ================= */
+// O socket novo tem outro id: entra de novo no texto e na voz com o mesmo estado.
+function resumeSession() {
+  socket.emit('resume', { token: sessionToken, protocol: PROTOCOL_VERSION }, (res) => {
+    if (!res || !res.success) {
+      connBanner.classList.add('hidden');
+      endSession((res && res.message) || 'Sua sessão expirou. Entre de novo.');
+      return;
+    }
+    connBanner.classList.add('hidden');
+    sendStatus(); // antes do join-voice: invisível continua invisível
+    if (currentTextRoom) {
+      socket.emit('join-text', currentTextRoom);
+      reloadMessages();
+    }
+    if (currentVoiceRoom) {
+      closeAllPeers();
+      userMap.clear();
+      lastUsersSignature = '';
+      soundRoster = undefined; // a primeira lista depois de voltar não toca som
+      socket.emit('join-voice', currentVoiceRoom);
+      sendStatus();
+    }
+    renderMembers();
+  });
+}
 
 if (socket.connected) {
   serverStatus.textContent = `Conectado: ${SERVER_URL}`;
@@ -415,7 +504,7 @@ btnRegister.addEventListener('click', () => {
     btnRegister.disabled = false;
     if (!res.success) { errorRegister.textContent = res.message; return; }
     if (rejectIfIncompatible(res, errorRegister)) return;
-    enterApp(res.username);
+    enterApp(res.username, res.token);
   });
 });
 
@@ -431,7 +520,7 @@ function doLogin() {
     btnLogin.disabled = false;
     if (!res.success) { errorLogin.textContent = res.message; return; }
     if (rejectIfIncompatible(res, errorLogin)) return;
-    enterApp(res.username);
+    enterApp(res.username, res.token);
   });
 }
 
@@ -451,16 +540,21 @@ function ensureLocalMedia() {
   return localMediaPromise;
 }
 
-async function acquireLocalMedia() {
-  const audioBase = {
+// Restrições do microfone: a redução de ruído do navegador só fica de fora no modo "Desligada".
+function micAudioConstraints(deviceId) {
+  const audio = {
     echoCancellation: true,
-    noiseSuppression: true,
+    noiseSuppression: noiseSuppressionMode !== 'off',
     autoGainControl: false,
     channelCount: 1
   };
-  const savedAudio = { ...audioBase };
-  if (audioInputId) savedAudio.deviceId = { exact: audioInputId };
-  const defaultAudio = { ...audioBase };
+  if (deviceId) audio.deviceId = { exact: deviceId };
+  return audio;
+}
+
+async function acquireLocalMedia() {
+  const savedAudio = micAudioConstraints(audioInputId);
+  const defaultAudio = micAudioConstraints();
 
   const buildConstraints = (withVideo, audio) => {
     const constraints = { audio };
@@ -799,6 +893,9 @@ function joinText(room) {
   channelIcon.textContent = '#';
   msgInput.placeholder = `Enviar mensagem em ${roomDisplayName(room)}`;
   messagesEl.innerHTML = '';
+  messageRows.clear();
+  unread = VoxChatRules.clearUnread(unread, room);
+  renderUnread();
   reloadMessages();
   updateActiveChannel();
 }
@@ -920,7 +1017,8 @@ socket.on('room-users', (list) => {
 
   if (currentVoiceRoom) {
     const listIds = list.map((u) => u.id);
-    const sound = VoxSounds.rosterSound(soundRoster, listIds, socket.id);
+    // undefined = primeira lista depois de reconectar: só guarda, sem som
+    const sound = soundRoster === undefined ? null : VoxSounds.rosterSound(soundRoster, listIds, socket.id);
     soundRoster = listIds;
     if (sound) playSoundEffect(sound);
   }
@@ -1014,7 +1112,16 @@ socket.on('music-rooms', (list) => {
 let serverMembers = [];
 socket.on('server-members', (list) => {
   serverMembers = Array.isArray(list) ? list : [];
+  let changed = false;
+  for (const m of serverMembers) {
+    const file = m.avatar && VoxChat.isAvatarName(m.avatar) ? m.avatar : null;
+    if ((avatarFiles.get(m.username) || null) !== file) {
+      changed = true;
+      if (file) avatarFiles.set(m.username, file); else avatarFiles.delete(m.username);
+    }
+  }
   renderMembers();
+  if (changed) { refreshAvatars(); renderAccountAvatar(); }
 });
 
 function appendMemberRow(u) {
@@ -1453,6 +1560,7 @@ function syncMusicPlayer() {
   const item = musicState.queue[0];
   const targetMs = targetPositionMs(musicState, Date.now(), musicState.receivedAt);
 
+  markMusicCommand();
   if (musicLoadedItemId !== item.id) {
     musicLoadedItemId = item.id;
     musicLastSeekAt = null;
@@ -1485,10 +1593,22 @@ function onMusicPlayerStateChange(state) {
     if (musicLoadedItemId === current.id) socket.emit('music-ended', current.id);
     return;
   }
-  // Pausa por clique no vídeo (ou play com o estado pausado): volta ao estado compartilhado.
-  // Ao começar a tocar também confere o minuto (o carregamento do vídeo atrasa a posição).
-  const contradicts = state === YT_STATE.PAUSED && musicState.playing;
-  if (contradicts || state === YT_STATE.PLAYING) syncMusicPlayer();
+  // Clique no botão central do vídeo (pausar/tocar): vale para todos, como o botão do painel.
+  // Mudanças logo depois de um comando do próprio Vox não contam como clique.
+  const clickedPause = state === YT_STATE.PAUSED && musicState.playing;
+  const clickedPlay = state === YT_STATE.PLAYING && !musicState.playing;
+  if ((clickedPause || clickedPlay) && Date.now() >= musicCommandUntil && musicLoadedItemId === current.id) {
+    markMusicCommand();
+    socket.emit('music-toggle', { playing: clickedPlay });
+    return;
+  }
+  // Ao começar a tocar confere o minuto (o carregamento do vídeo atrasa a posição);
+  // qualquer outra divergência volta ao estado compartilhado.
+  if (clickedPause || clickedPlay || state === YT_STATE.PLAYING) syncMusicPlayer();
+}
+
+function markMusicCommand() {
+  musicCommandUntil = Date.now() + 2500;
 }
 
 function applyMusicState(pub) {
@@ -1818,46 +1938,29 @@ function playSoundEffect(name) {
 }
 
 /* ================= REDUÇÃO DE RUÍDO DO MICROFONE ================= */
+// Cadeia: microfone → volume → [passa-alta/passa-baixa] → gate (sensibilidade) → [compressor] → faixa enviada.
+// A lógica do gate fica em mic-gate.js (createGate), testada no Node e copiada para o worklet.
 const NOISE_GATE_WORKLET = `
-class VoxNoiseGate extends AudioWorkletProcessor {
-  static get parameterDescriptors() {
-    return [
-      { name: 'threshold', defaultValue: 0.015, minValue: 0, maxValue: 1 },
-      { name: 'attack', defaultValue: 0.005, minValue: 0.0005, maxValue: 0.5 },
-      { name: 'release', defaultValue: 0.18, minValue: 0.01, maxValue: 1.5 },
-      { name: 'makeup', defaultValue: 1.0, minValue: 0, maxValue: 4 }
-    ];
-  }
+const createGate = ${window.VoxMicGate.createGate.toString()};
+class VoxMicGate extends AudioWorkletProcessor {
   constructor() {
     super();
-    this.env = 0;
-    this.gain = 0;
+    this.gate = createGate(sampleRate);
+    this.params = null;
+    this.blocks = 0;
+    this.port.onmessage = (e) => { this.params = e.data; };
   }
-  process(inputs, outputs, parameters) {
-    const input = inputs[0];
-    const output = outputs[0];
-    if (!input || !input.length || !input[0]) return true;
-    const inCh = input[0];
-    const outCh = output[0];
-    const threshold = parameters.threshold[0];
-    const attack = parameters.attack[0];
-    const release = parameters.release[0];
-    const makeup = parameters.makeup[0];
-    const sr = sampleRate;
-    const atk = 1 - Math.exp(-1 / Math.max(1, attack * sr));
-    const rel = 1 - Math.exp(-1 / Math.max(1, release * sr));
-    for (let i = 0; i < inCh.length; i++) {
-      const x = inCh[i];
-      const abs = Math.abs(x);
-      this.env += (abs - this.env) * (abs > this.env ? 0.5 : 0.0006);
-      const open = this.env >= threshold;
-      this.gain += ((open ? 1 : 0) - this.gain) * (open ? atk : rel);
-      outCh[i] = x * this.gain * makeup;
-    }
+  process(inputs, outputs) {
+    const input = inputs[0] && inputs[0][0];
+    const output = outputs[0] && outputs[0][0];
+    if (!input || !output || !this.params) return true;
+    const s = this.gate.processBlock(input, output, this.params);
+    // Nível para o medidor das configurações, ~20 vezes por segundo
+    if (++this.blocks % 18 === 0) this.port.postMessage({ levelDb: s.levelDb, thresholdDb: s.thresholdDb, open: s.open });
     return true;
   }
 }
-registerProcessor('vox-noise-gate', VoxNoiseGate);
+registerProcessor('vox-mic-gate', VoxMicGate);
 `;
 
 async function ensureNoiseGateWorklet(ctx) {
@@ -1872,9 +1975,12 @@ async function ensureNoiseGateWorklet(ctx) {
   }
 }
 
-function gateThreshold() {
-  const v = Math.max(0, Math.min(100, noiseGateLevelValue)) / 100;
-  return 0.002 + v * 0.038;
+function currentGateParams() {
+  return window.VoxMicGate.gateParams({ auto: micAuto, thresholdDb: micThresholdDb, mode: noiseSuppressionMode });
+}
+
+function sendGateParams() {
+  if (micPipeline && micPipeline.gate) micPipeline.gate.port.postMessage(currentGateParams());
 }
 
 function destroyMicProcessing() {
@@ -1883,13 +1989,11 @@ function destroyMicProcessing() {
     micProcessedTrack = null;
   }
   if (micPipeline) {
-    try { micPipeline.source.disconnect(); } catch (e) {}
-    try { micPipeline.highpass.disconnect(); } catch (e) {}
-    if (micPipeline.gate) { try { micPipeline.gate.disconnect(); } catch (e) {} }
-    try { micPipeline.compressor.disconnect(); } catch (e) {}
-    try { micPipeline.makeup.disconnect(); } catch (e) {}
+    for (const node of micPipeline.nodes) { try { node.disconnect(); } catch (e) {} }
+    if (micPipeline.gate) micPipeline.gate.port.onmessage = null;
     micPipeline = null;
   }
+  renderMicMeter(null);
 }
 
 function getOutboundAudioTracks() {
@@ -1903,56 +2007,57 @@ async function rebuildMicProcessing() {
   if (!localStream) return;
   const rawTrack = localStream.getAudioTracks()[0];
   if (!rawTrack) return;
-  if (noiseSuppressionMode === 'off') return;
 
   try {
     const ctx = ensureAudioContext();
     const source = ctx.createMediaStreamSource(new MediaStream([rawTrack]));
+    const nodes = [source];
+    const chain = (node) => { nodes[nodes.length - 1].connect(node); nodes.push(node); return node; };
 
-    const highpass = ctx.createBiquadFilter();
-    highpass.type = 'highpass';
-    highpass.frequency.value = 85;
-    highpass.Q.value = 0.7;
-    source.connect(highpass);
+    const inputGain = chain(ctx.createGain());
+    inputGain.gain.value = micGainPercent / 100;
 
-    let last = highpass;
-    let gate = null;
-    if (noiseSuppressionMode === 'strong') {
-      try {
-        await ensureNoiseGateWorklet(ctx);
-        gate = new AudioWorkletNode(ctx, 'vox-noise-gate', {
-          numberOfInputs: 1,
-          numberOfOutputs: 1,
-          outputChannelCount: [1]
-        });
-        gate.parameters.get('threshold').value = gateThreshold();
-        last.connect(gate);
-        last = gate;
-      } catch (e) {
-        console.warn('Gate de ruído indisponível, usando apenas filtros:', e);
-        gate = null;
+    if (noiseSuppressionMode !== 'off') {
+      const highpass = chain(ctx.createBiquadFilter());
+      highpass.type = 'highpass';
+      highpass.frequency.value = noiseSuppressionMode === 'strong' ? 100 : 80;
+      highpass.Q.value = 0.7;
+      if (noiseSuppressionMode === 'strong') {
+        const lowpass = chain(ctx.createBiquadFilter()); // corta chiado acima da voz
+        lowpass.type = 'lowpass';
+        lowpass.frequency.value = 9000;
+        lowpass.Q.value = 0.7;
       }
     }
 
-    const compressor = ctx.createDynamicsCompressor();
-    compressor.threshold.value = -26;
-    compressor.knee.value = 24;
-    compressor.ratio.value = 4;
-    compressor.attack.value = 0.003;
-    compressor.release.value = 0.25;
+    let gate = null;
+    try {
+      await ensureNoiseGateWorklet(ctx);
+      gate = new AudioWorkletNode(ctx, 'vox-mic-gate', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1] });
+      gate.port.postMessage(currentGateParams());
+      gate.port.onmessage = (e) => renderMicMeter(e.data);
+      chain(gate);
+    } catch (e) {
+      console.warn('Gate do microfone indisponível, seguindo sem ele:', e);
+      gate = null;
+    }
 
-    const makeup = ctx.createGain();
-    makeup.gain.value = 1.25;
+    if (noiseSuppressionMode !== 'off') {
+      const compressor = chain(ctx.createDynamicsCompressor());
+      compressor.threshold.value = -26;
+      compressor.knee.value = 24;
+      compressor.ratio.value = 4;
+      compressor.attack.value = 0.003;
+      compressor.release.value = 0.25;
+      chain(ctx.createGain()).gain.value = 1.25; // repõe o volume tirado pelo compressor
+    }
 
     const dest = ctx.createMediaStreamDestination();
     dest.channelCount = 1;
     dest.channelCountMode = 'explicit';
+    nodes[nodes.length - 1].connect(dest);
 
-    last.connect(compressor);
-    compressor.connect(makeup);
-    makeup.connect(dest);
-
-    micPipeline = { source, highpass, gate, compressor, makeup, dest };
+    micPipeline = { nodes, inputGain, gate, dest };
     micProcessedTrack = dest.stream.getAudioTracks()[0];
   } catch (e) {
     console.warn('Falha ao criar processamento de áudio:', e);
@@ -1973,11 +2078,26 @@ function replaceAudioTrackOnPeers() {
   });
 }
 
+// Medidor da sensibilidade: barra do nível (verde com o gate aberto) e linha do limite.
+function renderMicMeter(m) {
+  if (!micMeterEl || settingsModal.classList.contains('hidden')) return;
+  const { meterPercent } = window.VoxMicGate;
+  const threshold = m ? m.thresholdDb : micThresholdDb;
+  micMeterLevel.style.width = (m ? meterPercent(m.levelDb) : 0) + '%';
+  micMeterThreshold.style.left = `calc(${meterPercent(threshold)}% - 1px)`;
+  micMeterEl.classList.toggle('open', !!(m && m.open));
+  // No automático, o controle acompanha o limite calculado.
+  if (m && micAuto) micThresholdInput.value = String(Math.round(threshold));
+}
+
 function applyNoiseSuppressionUI() {
   if (noiseSuppressionSelect) noiseSuppressionSelect.value = noiseSuppressionMode;
-  if (noiseGateLevel) noiseGateLevel.value = String(noiseGateLevelValue);
-  if (noiseGateValue) noiseGateValue.textContent = String(noiseGateLevelValue);
-  if (noiseGateField) noiseGateField.style.display = noiseSuppressionMode === 'strong' ? '' : 'none';
+  micGainInput.value = String(micGainPercent);
+  micGainValueEl.textContent = String(micGainPercent);
+  micAutoToggle.checked = micAuto;
+  micThresholdInput.disabled = micAuto;
+  if (!micAuto) micThresholdInput.value = String(micThresholdDb);
+  renderMicMeter(null);
 }
 
 function setupAnalyser(id, stream) {
@@ -2127,6 +2247,124 @@ document.querySelectorAll('.settings-tab').forEach((btn) => {
   btn.addEventListener('click', () => showSettingsTab(btn.dataset.tab));
 });
 
+/* ================= FOTO DE PERFIL ================= */
+const accountAvatar = document.getElementById('account-avatar');
+const avatarChangeBtn = document.getElementById('avatar-change');
+const avatarRemoveBtn = document.getElementById('avatar-remove');
+const avatarInput = document.getElementById('avatar-input');
+
+function renderAccountAvatar() {
+  if (!currentUser) return;
+  applyAvatar(accountAvatar, currentUser);
+  avatarRemoveBtn.disabled = !avatarFiles.has(currentUser);
+}
+
+// Recorta o centro em quadrado e reduz para 256 px em WebP (GIF vira imagem parada).
+async function prepareAvatar(file) {
+  if (!file || !file.type.startsWith('image/')) throw new Error('Escolha uma imagem (PNG, JPG, WebP ou GIF).');
+  const bitmap = await createImageBitmap(file);
+  const { sx, sy, size } = VoxChat.centerSquare(bitmap.width, bitmap.height);
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = VoxChat.AVATAR_SIZE;
+  const g = canvas.getContext('2d');
+  g.imageSmoothingQuality = 'high';
+  g.drawImage(bitmap, sx, sy, size, size, 0, 0, VoxChat.AVATAR_SIZE, VoxChat.AVATAR_SIZE);
+  bitmap.close();
+  for (const quality of [0.9, 0.8, 0.65]) {
+    const blob = await new Promise((r) => canvas.toBlob(r, 'image/webp', quality));
+    if (blob && blob.size <= VoxChat.MAX_AVATAR_BYTES) return { data: await blob.arrayBuffer(), type: 'image/webp' };
+  }
+  throw new Error('Não foi possível reduzir essa imagem.');
+}
+
+function sendAvatar(image) {
+  settingsError.textContent = '';
+  if (!socket.connected) { settingsError.textContent = 'Sem conexão com o servidor.'; return; }
+  avatarChangeBtn.disabled = true;
+  avatarRemoveBtn.disabled = true;
+  socket.timeout(20000).emit('set-avatar', image, (err, res) => {
+    avatarChangeBtn.disabled = false;
+    if (err || !res || !res.success) settingsError.textContent = (res && res.message) || 'Não foi possível trocar a foto.';
+    // A foto nova chega para todos (inclusive aqui) pelo 'server-members'.
+    renderAccountAvatar();
+  });
+}
+
+avatarChangeBtn.addEventListener('click', () => avatarInput.click());
+avatarInput.addEventListener('change', async () => {
+  const file = avatarInput.files && avatarInput.files[0];
+  avatarInput.value = '';
+  if (!file) return;
+  try {
+    sendAvatar(await prepareAvatar(file));
+  } catch (e) {
+    settingsError.textContent = e.message || 'Não foi possível usar essa imagem.';
+  }
+});
+avatarRemoveBtn.addEventListener('click', () => {
+  if (window.confirm('Remover sua foto de perfil?')) sendAvatar(null);
+});
+
+/* ================= TÚNEL (ABRIR PARA AMIGOS) ================= */
+// Só faz sentido no PC que hospeda: o túnel aponta para o servidor deste processo.
+const IS_LOCAL_SERVER = /^https?:\/\/(127\.0\.0\.1|localhost)(:3000)?$/i.test(SERVER_URL);
+let tunnelState = { state: 'off', url: null };
+
+function renderTunnel(s) {
+  tunnelState = s || { state: 'off', url: null };
+  const labels = {
+    off: 'Fechado',
+    downloading: `Baixando o cloudflared… ${Math.round((tunnelState.progress || 0) * 100)}%`,
+    starting: tunnelState.message || 'Abrindo…',
+    on: 'Aberto',
+    error: tunnelState.message || 'Falhou'
+  };
+  tunnelStateEl.textContent = IS_LOCAL_SERVER ? (labels[tunnelState.state] || '') : 'Disponível só no PC que hospeda o servidor (endereço 127.0.0.1).';
+  tunnelStateEl.dataset.state = tunnelState.state;
+  const active = ['downloading', 'starting', 'on'].includes(tunnelState.state);
+  tunnelToggle.querySelector('span').textContent = active ? 'Fechar túnel' : 'Abrir para amigos';
+  tunnelToggle.disabled = !IS_LOCAL_SERVER;
+  tunnelUrlRow.classList.toggle('hidden', !tunnelState.url);
+  tunnelUrlInput.value = tunnelState.url || '';
+}
+
+tunnelToggle.addEventListener('click', async () => {
+  const active = ['downloading', 'starting', 'on'].includes(tunnelState.state);
+  renderTunnel(active ? await window.electronAPI.tunnelStop() : { state: 'starting', url: null });
+  if (!active) window.electronAPI.tunnelStart();
+});
+tunnelCopy.addEventListener('click', async () => {
+  if (!tunnelState.url) return;
+  try {
+    await navigator.clipboard.writeText(tunnelState.url);
+    showToast('Endereço copiado. Mande para o seu amigo.');
+  } catch (e) {
+    tunnelUrlInput.select();
+  }
+});
+window.electronAPI.onTunnelStatus(renderTunnel);
+window.electronAPI.tunnelStatus().then(renderTunnel);
+
+/* ================= ATUALIZAÇÃO AUTOMÁTICA ================= */
+function renderUpdate(s) {
+  if (!s || (s.state !== 'downloading' && s.state !== 'ready')) { updateBanner.classList.add('hidden'); return; }
+  updateBanner.classList.remove('hidden');
+  if (s.state === 'downloading') {
+    updateText.textContent = `Baixando o Vox ${s.version || ''}… ${s.percent || 0}%`;
+    updateInstall.classList.add('hidden');
+  } else {
+    updateText.textContent = `O Vox ${s.version || ''} está pronto. Ele instala ao reiniciar (ou quando você fechar o app).`;
+    updateInstall.classList.remove('hidden');
+  }
+}
+updateInstall.addEventListener('click', () => {
+  const hosting = IS_LOCAL_SERVER && serverMembers.some((m) => m.online && m.username !== currentUser);
+  if (hosting && !window.confirm('Você hospeda o servidor: reiniciar desconecta todo mundo por alguns segundos. Continuar?')) return;
+  window.electronAPI.installUpdate();
+});
+window.electronAPI.onUpdateStatus(renderUpdate);
+window.electronAPI.updateStatus().then(renderUpdate);
+
 /* ================= DISPOSITIVOS DE ÁUDIO ================= */
 function fillDeviceSelect(select, devices, savedId, defaultLabel) {
   select.innerHTML = '';
@@ -2166,15 +2404,19 @@ async function refreshDevices() {
   }
 }
 
-async function changeInputDevice(id) {
+// stopFirst: fecha o microfone atual antes de abrir de novo. Necessário quando muda a
+// redução de ruído do navegador: com o mesmo dispositivo ainda aberto, o Chromium
+// devolve a faixa nova com o processamento antigo (medido).
+async function changeInputDevice(id, { stopFirst = false } = {}) {
   settingsError.textContent = '';
   // Fora da voz só a preferência é gravada; ela vale na próxima entrada em voz.
   if (!currentVoiceRoom) return;
   const leaves = voiceLeaves;
+  if (stopFirst && localStream) {
+    localStream.getAudioTracks().forEach((t) => { t.stop(); localStream.removeTrack(t); });
+  }
   try {
-    const constraints = { audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: false, channelCount: 1 } };
-    if (id) constraints.audio.deviceId = { exact: id };
-
+    const constraints = { audio: micAudioConstraints(id) };
     const newStream = await navigator.mediaDevices.getUserMedia(constraints);
     const newTrack = newStream.getAudioTracks()[0];
     if (!newTrack) return;
@@ -2243,6 +2485,7 @@ btnSettings.addEventListener('click', async () => {
   settingsError.textContent = '';
   renderThemePicker();
   document.getElementById('account-name').textContent = currentUser || '—';
+  renderAccountAvatar();
   showSettingsTab('audio');
   settingsModal.classList.remove('hidden');
   monitorToggle.checked = monitorEnabled;
@@ -2285,22 +2528,36 @@ if (noiseSuppressionSelect) {
     noiseSuppressionMode = noiseSuppressionSelect.value;
     localStorage.setItem('vox-noise-suppression', noiseSuppressionMode);
     applyNoiseSuppressionUI();
-    await rebuildMicProcessing();
-    replaceAudioTrackOnPeers();
-    updateMonitor();
+    // A redução do navegador é escolhida ao abrir o microfone: reabre com a nova opção.
+    if (currentVoiceRoom && localStream) await changeInputDevice(audioInputId, { stopFirst: true });
   });
 }
 
-if (noiseGateLevel) {
-  noiseGateLevel.addEventListener('input', () => {
-    noiseGateLevelValue = Number(noiseGateLevel.value) || 0;
-    localStorage.setItem('vox-noise-gate-level', String(noiseGateLevelValue));
-    if (noiseGateValue) noiseGateValue.textContent = String(noiseGateLevelValue);
-    if (micPipeline && micPipeline.gate) {
-      try { micPipeline.gate.parameters.get('threshold').value = gateThreshold(); } catch (e) {}
-    }
-  });
-}
+micGainInput.addEventListener('input', () => {
+  micGainPercent = clampNumber(micGainInput.value, 0, 200, 100);
+  localStorage.setItem('vox-mic-gain', String(micGainPercent));
+  micGainValueEl.textContent = String(micGainPercent);
+  if (micPipeline) micPipeline.inputGain.gain.setTargetAtTime(micGainPercent / 100, micPipeline.inputGain.context.currentTime, 0.02);
+});
+
+micAutoToggle.addEventListener('change', () => {
+  micAuto = micAutoToggle.checked;
+  localStorage.setItem('vox-mic-auto', micAuto ? '1' : '0');
+  // Ao sair do automático, começa do limite que ele estava usando.
+  if (!micAuto) {
+    micThresholdDb = clampNumber(micThresholdInput.value, -70, -10, -50);
+    localStorage.setItem('vox-mic-threshold', String(micThresholdDb));
+  }
+  applyNoiseSuppressionUI();
+  sendGateParams();
+});
+
+micThresholdInput.addEventListener('input', () => {
+  micThresholdDb = clampNumber(micThresholdInput.value, -70, -10, -50);
+  localStorage.setItem('vox-mic-threshold', String(micThresholdDb));
+  sendGateParams();
+  renderMicMeter(null);
+});
 
 applyNoiseSuppressionUI();
 
@@ -2591,59 +2848,469 @@ document.addEventListener('keydown', (e) => {
 });
 
 /* ================= CHAT ================= */
+const VoxChatRules = window.VoxChat;
+const messageRows = new Map(); // id -> { row, msg }
+
+function memberNames() {
+  const names = serverMembers.map((m) => m.username);
+  if (currentUser && !names.includes(currentUser)) names.push(currentUser);
+  return names;
+}
+
+const sameName = (a, b) => String(a || '').toLowerCase() === String(b || '').toLowerCase();
+
+function showEmptyChat() {
+  const empty = document.createElement('div');
+  empty.className = 'msg-user';
+  empty.id = 'chat-empty';
+  empty.textContent = 'Nenhuma mensagem ainda. Diga olá!';
+  messagesEl.appendChild(empty);
+}
+
 function reloadMessages() {
   if (!currentTextRoom) return;
-  socket.emit('get-messages', currentTextRoom, (rows) => {
+  const room = currentTextRoom;
+  socket.emit('get-messages', room, (rows) => {
+    if (room !== currentTextRoom) return;
     messagesEl.innerHTML = '';
-    if (!rows || rows.length === 0) {
-      const empty = document.createElement('div');
-      empty.className = 'msg-user';
-      empty.textContent = 'Nenhuma mensagem ainda. Diga olá!';
-      messagesEl.appendChild(empty);
-      return;
-    }
-    rows.forEach((m) => appendMessage(m.user, m.text, m.user === currentUser));
+    messageRows.clear();
+    if (!rows || rows.length === 0) { showEmptyChat(); return; }
+    rows.forEach((m) => appendMessage(m, { scroll: false }));
+    messagesEl.scrollTop = messagesEl.scrollHeight;
   });
 }
 
 socket.on('messages-cleared', () => reloadMessages());
 
-function appendMessage(user, text, own) {
+// Texto com as menções (@nome) destacadas, sem innerHTML.
+function fillMessageText(el, text) {
+  el.textContent = '';
+  for (const part of VoxChatRules.splitMentions(text, memberNames())) {
+    if (part.mention) {
+      const span = document.createElement('span');
+      span.className = 'msg-mention';
+      span.textContent = part.text;
+      el.appendChild(span);
+    } else {
+      el.appendChild(document.createTextNode(part.text));
+    }
+  }
+}
+
+function uploadUrl(file) {
+  return `${SERVER_URL}/uploads/${encodeURIComponent(file)}`;
+}
+
+function buildMessageRow(m) {
+  const own = m.user === currentUser;
+  const mentionsMe = !own && VoxChatRules.mentionsOf(m.text, memberNames()).some((n) => sameName(n, currentUser));
   const row = document.createElement('div');
-  row.className = 'msg-row' + (own ? ' own' : '');
-  row.appendChild(makeAvatar(user));
+  row.className = 'msg-row' + (own ? ' own' : '') + (mentionsMe ? ' mentions-me' : '');
+  row.dataset.id = m.id || '';
+  row.appendChild(makeAvatar(m.user));
 
   const body = document.createElement('div');
   body.className = 'msg-body';
 
+  const head = document.createElement('div');
+  head.className = 'msg-head';
   const name = document.createElement('div');
   name.className = 'msg-user';
-  name.textContent = user;
+  name.textContent = m.user;
+  head.appendChild(name);
+  if (m.edited_at) {
+    const edited = document.createElement('span');
+    edited.className = 'msg-edited';
+    edited.textContent = '(editada)';
+    head.appendChild(edited);
+  }
+  body.appendChild(head);
 
-  const content = document.createElement('div');
-  content.className = 'msg-text';
-  content.textContent = text;
+  if (m.image && VoxChatRules.isUploadName(m.image.file)) {
+    const img = document.createElement('img');
+    img.className = 'msg-image';
+    img.alt = 'Imagem enviada por ' + m.user;
+    img.loading = 'lazy';
+    if (m.image.width && m.image.height) { img.width = m.image.width; img.height = m.image.height; }
+    img.src = uploadUrl(m.image.file);
+    img.addEventListener('click', () => openImageViewer(img.src, img.alt));
+    img.addEventListener('load', () => { if (nearBottom(200)) messagesEl.scrollTop = messagesEl.scrollHeight; });
+    body.appendChild(img);
+  }
 
-  body.appendChild(name);
-  body.appendChild(content);
+  if (m.text) {
+    const content = document.createElement('div');
+    content.className = 'msg-text';
+    fillMessageText(content, m.text);
+    body.appendChild(content);
+  }
   row.appendChild(body);
-  messagesEl.appendChild(row);
-  messagesEl.scrollTop = messagesEl.scrollHeight;
+
+  if (own && m.id) {
+    const actions = document.createElement('div');
+    actions.className = 'msg-actions';
+    const edit = document.createElement('button');
+    edit.type = 'button';
+    edit.className = 'msg-action';
+    edit.title = 'Editar';
+    edit.setAttribute('aria-label', 'Editar mensagem');
+    VoxIcons.setIcon(edit, 'pencil', '', 16);
+    edit.addEventListener('click', () => startEditMessage(m.id));
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'msg-action danger';
+    del.title = 'Apagar';
+    del.setAttribute('aria-label', 'Apagar mensagem');
+    VoxIcons.setIcon(del, 'trash-2', '', 16);
+    del.addEventListener('click', () => deleteOwnMessage(m.id));
+    actions.append(edit, del);
+    row.appendChild(actions);
+  }
+  return row;
 }
+
+function nearBottom(px = 80) {
+  return messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < px;
+}
+
+function appendMessage(m, { scroll = true } = {}) {
+  const empty = document.getElementById('chat-empty');
+  if (empty) empty.remove();
+  const stick = nearBottom();
+  const row = buildMessageRow(m);
+  messagesEl.appendChild(row);
+  if (m.id) messageRows.set(m.id, { row, msg: m });
+  if (scroll && (stick || m.user === currentUser)) messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+function replaceMessageRow(id) {
+  const entry = messageRows.get(id);
+  if (!entry) return;
+  const row = buildMessageRow(entry.msg);
+  entry.row.replaceWith(row);
+  entry.row = row;
+}
+
+// Edição no lugar: Enter salva, Esc cancela.
+function startEditMessage(id) {
+  const entry = messageRows.get(id);
+  if (!entry) return;
+  const body = entry.row.querySelector('.msg-body');
+  const textEl = body.querySelector('.msg-text');
+  const input = document.createElement('textarea');
+  input.className = 'msg-edit-input';
+  input.maxLength = VoxChatRules.MAX_TEXT;
+  input.value = entry.msg.text || '';
+  const hint = document.createElement('div');
+  hint.className = 'msg-edit-hint';
+  hint.textContent = 'Enter salva · Esc cancela';
+  if (textEl) textEl.replaceWith(input); else body.appendChild(input);
+  body.appendChild(hint);
+  input.focus();
+  input.setSelectionRange(input.value.length, input.value.length);
+
+  let done = false;
+  const finish = (save) => {
+    if (done) return;
+    done = true;
+    const text = input.value.trim();
+    const previous = entry.msg.text || '';
+    if (!save || text === previous || (!text && !entry.msg.image)) { replaceMessageRow(id); return; }
+    entry.msg = { ...entry.msg, text };
+    replaceMessageRow(id);
+    socket.emit('edit-message', { room: currentTextRoom, id, text }, (res) => {
+      if (res && res.success) return;
+      showToast((res && res.message) || 'Não foi possível editar.');
+      const cur = messageRows.get(id);
+      if (cur) { cur.msg = { ...cur.msg, text: previous }; replaceMessageRow(id); }
+    });
+  };
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); finish(true); }
+    if (e.key === 'Escape') { e.stopPropagation(); finish(false); }
+  });
+  input.addEventListener('blur', () => finish(false));
+}
+
+function deleteOwnMessage(id) {
+  if (!window.confirm('Apagar esta mensagem?')) return;
+  socket.emit('delete-message', { room: currentTextRoom, id }, (res) => {
+    if (!res || !res.success) showToast((res && res.message) || 'Não foi possível apagar.');
+  });
+}
+
+socket.on('message-updated', (u) => {
+  if (!u || u.room !== currentTextRoom) return;
+  const entry = messageRows.get(u.id);
+  if (!entry) return;
+  entry.msg = { ...entry.msg, text: u.text, edited_at: u.edited_at };
+  // Não atrapalha quem está editando esta mesma mensagem agora
+  if (!entry.row.querySelector('.msg-edit-input')) replaceMessageRow(u.id);
+});
+
+socket.on('message-deleted', (d) => {
+  if (!d || d.room !== currentTextRoom) return;
+  const entry = messageRows.get(d.id);
+  if (!entry) return;
+  entry.row.remove();
+  messageRows.delete(d.id);
+  if (!messageRows.size) showEmptyChat();
+});
+
+/* ---------- Envio, com imagem opcional ---------- */
+let pendingAttachment = null; // { data: ArrayBuffer, type, width, height, previewUrl, name }
+let sending = false;
 
 function sendMessage() {
   const text = msgInput.value.trim();
-  if (!text || !currentTextRoom) return;
-  socket.emit('save-message', { room: currentTextRoom, user: currentUser, text });
-  appendMessage(currentUser, text, true);
-  msgInput.value = '';
+  if ((!text && !pendingAttachment) || !currentTextRoom || sending) return;
+  if (!socket.connected) { showToast('Sem conexão com o servidor. Tente de novo quando reconectar.'); return; }
+  const payload = { room: currentTextRoom, text };
+  if (pendingAttachment) {
+    const { data, type, width, height } = pendingAttachment;
+    payload.image = { data, type, width, height };
+  }
+  sending = true;
+  sendBtn.disabled = true;
+  socket.timeout(20000).emit('save-message', payload, (err, res) => {
+    sending = false;
+    sendBtn.disabled = false;
+    if (err || !res || !res.success) {
+      showToast((res && res.message) || 'A mensagem não foi enviada.');
+      return;
+    }
+    // A mensagem aparece pelo 'new-message', como para todo mundo.
+    if (msgInput.value.trim() === text) msgInput.value = '';
+    clearAttachment();
+    hideMentionPopup();
+  });
 }
 
 sendBtn.addEventListener('click', sendMessage);
-msgInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendMessage(); });
+msgInput.addEventListener('keydown', (e) => {
+  if (handleMentionKey(e)) return;
+  if (e.key === 'Enter') sendMessage();
+});
+
+// Reduz e recomprime no próprio PC (lado maior até 1920 px), para caber em 2 MB.
+// GIF vai como está para não perder a animação.
+async function prepareImage(file) {
+  if (!VoxChatRules.imageExtension(file.type)) throw new Error('Formato não suportado. Use PNG, JPG, WebP ou GIF.');
+  const bitmap = await createImageBitmap(file);
+  const { width, height } = bitmap;
+  if (file.type === 'image/gif') {
+    bitmap.close();
+    if (file.size > VoxChatRules.MAX_IMAGE_BYTES) throw new Error('O GIF passa de 2 MB.');
+    return { data: await file.arrayBuffer(), type: file.type, width, height };
+  }
+  const scale = Math.min(1, 1920 / Math.max(width, height));
+  const w = Math.max(1, Math.round(width * scale));
+  const h = Math.max(1, Math.round(height * scale));
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  canvas.getContext('2d').drawImage(bitmap, 0, 0, w, h);
+  bitmap.close();
+  for (const quality of [0.86, 0.75, 0.6, 0.45]) {
+    const blob = await new Promise((r) => canvas.toBlob(r, 'image/webp', quality));
+    if (blob && blob.size <= VoxChatRules.MAX_IMAGE_BYTES) {
+      return { data: await blob.arrayBuffer(), type: 'image/webp', width: w, height: h };
+    }
+  }
+  throw new Error('A imagem ficou grande demais mesmo depois de reduzida.');
+}
+
+async function attachImage(file) {
+  if (!file) return;
+  if (!currentTextRoom) return;
+  try {
+    const prepared = await prepareImage(file);
+    clearAttachment();
+    pendingAttachment = { ...prepared, previewUrl: URL.createObjectURL(new Blob([prepared.data], { type: prepared.type })), name: file.name || 'Imagem colada' };
+    attachThumb.src = pendingAttachment.previewUrl;
+    attachName.textContent = `${pendingAttachment.name} · ${(prepared.data.byteLength / 1024).toFixed(0)} KB`;
+    attachPreview.classList.remove('hidden');
+    msgInput.focus();
+  } catch (e) {
+    showToast(e.message || 'Não foi possível usar essa imagem.');
+  }
+}
+
+function clearAttachment() {
+  if (pendingAttachment && pendingAttachment.previewUrl) URL.revokeObjectURL(pendingAttachment.previewUrl);
+  pendingAttachment = null;
+  attachPreview.classList.add('hidden');
+  attachThumb.removeAttribute('src');
+  attachInput.value = '';
+}
+
+attachBtn.addEventListener('click', () => attachInput.click());
+attachInput.addEventListener('change', () => attachImage(attachInput.files && attachInput.files[0]));
+attachRemove.addEventListener('click', clearAttachment);
+msgInput.addEventListener('paste', (e) => {
+  const item = [...(e.clipboardData ? e.clipboardData.items : [])].find((i) => i.kind === 'file' && i.type.startsWith('image/'));
+  if (!item) return;
+  e.preventDefault();
+  attachImage(item.getAsFile());
+});
+messagesEl.addEventListener('dragover', (e) => {
+  if ([...e.dataTransfer.types].includes('Files')) { e.preventDefault(); messagesEl.classList.add('drag-over'); }
+});
+messagesEl.addEventListener('dragleave', () => messagesEl.classList.remove('drag-over'));
+messagesEl.addEventListener('drop', (e) => {
+  messagesEl.classList.remove('drag-over');
+  const file = [...(e.dataTransfer.files || [])].find((f) => f.type.startsWith('image/'));
+  if (!file) return;
+  e.preventDefault();
+  attachImage(file);
+});
+
+function openImageViewer(src, alt) {
+  imageViewerImg.src = src;
+  imageViewerImg.alt = alt || '';
+  imageViewer.classList.remove('hidden');
+}
+function closeImageViewer() {
+  imageViewer.classList.add('hidden');
+  imageViewerImg.removeAttribute('src');
+}
+imageViewer.addEventListener('click', closeImageViewer);
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !imageViewer.classList.contains('hidden')) closeImageViewer();
+});
+
+/* ---------- Menções: sugestões ao digitar @ ---------- */
+let mentionMatches = [];
+let mentionIndex = 0;
+
+function mentionQuery() {
+  const pos = msgInput.selectionStart || 0;
+  const m = /(^|\s)@([\p{L}\p{N}_.-]*)$/u.exec(msgInput.value.slice(0, pos));
+  return m ? { query: m[2], start: pos - m[2].length - 1, end: pos } : null;
+}
+
+function hideMentionPopup() {
+  mentionMatches = [];
+  mentionPopup.classList.add('hidden');
+}
+
+function updateMentionPopup() {
+  const q = mentionQuery();
+  if (!q) return hideMentionPopup();
+  mentionMatches = memberNames()
+    .filter((n) => n !== currentUser && n.toLowerCase().startsWith(q.query.toLowerCase()))
+    .slice(0, 6);
+  if (!mentionMatches.length) return hideMentionPopup();
+  mentionIndex = Math.min(mentionIndex, mentionMatches.length - 1);
+  mentionPopup.innerHTML = '';
+  mentionMatches.forEach((name, i) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = i === mentionIndex ? 'active' : '';
+    btn.setAttribute('role', 'option');
+    btn.textContent = '@' + name;
+    btn.addEventListener('mousedown', (e) => { e.preventDefault(); insertMention(name); });
+    mentionPopup.appendChild(btn);
+  });
+  mentionPopup.classList.remove('hidden');
+}
+
+function insertMention(name) {
+  const q = mentionQuery();
+  if (!q) return;
+  const v = msgInput.value;
+  msgInput.value = v.slice(0, q.start) + '@' + name + ' ' + v.slice(q.end);
+  const caret = q.start + name.length + 2;
+  msgInput.setSelectionRange(caret, caret);
+  hideMentionPopup();
+}
+
+// Setas escolhem, Tab/Enter inserem, Esc fecha. Devolve true se tratou a tecla.
+function handleMentionKey(e) {
+  if (!mentionMatches.length) return false;
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    mentionIndex = (mentionIndex + (e.key === 'ArrowDown' ? 1 : -1) + mentionMatches.length) % mentionMatches.length;
+    updateMentionPopup();
+    return true;
+  }
+  if (e.key === 'Tab' || e.key === 'Enter') {
+    e.preventDefault();
+    insertMention(mentionMatches[mentionIndex]);
+    return true;
+  }
+  if (e.key === 'Escape') { hideMentionPopup(); return true; }
+  return false;
+}
+
+msgInput.addEventListener('input', () => { mentionIndex = 0; updateMentionPopup(); });
+msgInput.addEventListener('blur', () => setTimeout(hideMentionPopup, 100));
+
+/* ---------- Não lidas e notificações ---------- */
+let unread = {}; // room -> { count, mention }
+let notifyMode = localStorage.getItem('vox-notify-mode') || 'all';
+if (!['all', 'mentions', 'off'].includes(notifyMode)) notifyMode = 'all';
+notifyModeSelect.value = notifyMode;
+notifyModeSelect.addEventListener('change', () => {
+  notifyMode = notifyModeSelect.value;
+  localStorage.setItem('vox-notify-mode', notifyMode);
+});
+
+function renderUnread() {
+  let total = 0;
+  document.querySelectorAll('.channel:not(.voice)').forEach((el) => {
+    const u = unread[el.dataset.room];
+    let badge = el.querySelector('.unread-badge');
+    el.classList.toggle('has-unread', !!u);
+    if (!u) { if (badge) badge.remove(); return; }
+    total += u.count;
+    if (!badge) {
+      badge = document.createElement('span');
+      badge.className = 'unread-badge';
+      el.appendChild(badge);
+    }
+    badge.classList.toggle('mention', u.mention);
+    badge.textContent = u.mention ? '@' : (u.count > 99 ? '99+' : String(u.count));
+    badge.title = u.mention ? 'Você foi mencionado' : `${u.count} mensagem(ns) não lida(s)`;
+  });
+  document.title = total ? `(${total}) Vox` : 'Vox';
+}
+
+function notifyMessage(m, mention) {
+  const status = effectiveStatus();
+  const focused = document.hasFocus();
+  if (mention && status !== 'busy' && !(focused && m.room === currentTextRoom)) playSoundEffect('mention');
+  if (!VoxChatRules.shouldNotify({ mode: notifyMode, status, mention, focused, sameRoom: m.room === currentTextRoom })) return;
+  if (!focused) window.electronAPI.flashFrame(true);
+  if (typeof Notification === 'undefined') return;
+  const body = m.text ? m.text.slice(0, 140) : 'Enviou uma imagem';
+  const n = new Notification(`${m.user} em #${m.room}`, { body, silent: true });
+  n.onclick = () => {
+    window.electronAPI.focusWindow();
+    joinText(m.room);
+  };
+}
 
 socket.on('new-message', (m) => {
-  appendMessage(m.user, m.text, m.user === currentUser);
+  if (!m || !currentUser) return;
+  const own = m.user === currentUser;
+  const mention = !own && Array.isArray(m.mentions) && m.mentions.some((n) => sameName(n, currentUser));
+  if (m.room === currentTextRoom) {
+    appendMessage(m);
+    if (!own && !document.hasFocus()) { unread = VoxChatRules.addUnread(unread, m.room, mention); renderUnread(); }
+  } else if (!own) {
+    unread = VoxChatRules.addUnread(unread, m.room, mention);
+    renderUnread();
+  }
+  if (!own) notifyMessage(m, mention);
+});
+
+// Voltar para a janela marca o canal aberto como lido.
+window.addEventListener('focus', () => {
+  if (currentTextRoom && unread[currentTextRoom]) {
+    unread = VoxChatRules.clearUnread(unread, currentTextRoom);
+    renderUnread();
+  }
 });
 
 /* ================= SAIR DA VOZ ================= */
@@ -2716,16 +3383,29 @@ btnLeaveVoice.addEventListener('click', leaveVoice);
 
 function logout() {
   if (!window.confirm('Sair da conta?')) return;
+  socket.emit('logout');
+  endSession('');
+}
+
+// Volta para a tela de login (saída da conta ou sessão que não pôde ser retomada).
+function endSession(message) {
+  sessionToken = null;
+  unread = {};
+  renderUnread();
+  clearAttachment();
+  errorLogin.textContent = message || '';
   serverMembers = [];
   settingsModal.classList.add('hidden');
-  socket.emit('logout');
   leaveVoice();
   currentTextRoom = '';
   messagesEl.innerHTML = '';
+  messageRows.clear();
   updateActiveChannel();
   currentUser = '';
   voiceRooms = {};
   myName.textContent = '—';
+  myAvatar.classList.remove('has-image');
+  delete myAvatar.dataset.user;
   myAvatar.textContent = '?';
   myAvatar.style.background = '';
   myStatusEl.textContent = 'Online';

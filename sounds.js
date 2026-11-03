@@ -12,7 +12,9 @@
     join: { type: 'sine', notes: [{ freq: 659.25, start: 0, dur: 0.12 }, { freq: 880, start: 0.09, dur: 0.16 }] },
     leave: { type: 'sine', notes: [{ freq: 880, start: 0, dur: 0.12 }, { freq: 587.33, start: 0.09, dur: 0.18 }] },
     mute: { type: 'triangle', notes: [{ freq: 392, start: 0, dur: 0.06 }, { freq: 293.66, start: 0.06, dur: 0.09 }] },
-    unmute: { type: 'triangle', notes: [{ freq: 440, start: 0, dur: 0.06 }, { freq: 587.33, start: 0.06, dur: 0.09 }] }
+    unmute: { type: 'triangle', notes: [{ freq: 440, start: 0, dur: 0.06 }, { freq: 587.33, start: 0.06, dur: 0.09 }] },
+    // Menção no chat: duas notas agudas, bem diferentes das da voz.
+    mention: { type: 'sine', notes: [{ freq: 1046.5, start: 0, dur: 0.1 }, { freq: 1318.5, start: 0.08, dur: 0.18 }] }
   };
 
   // Padrão ligado: só '0' desliga.

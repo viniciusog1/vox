@@ -20,7 +20,7 @@ Caminhos no PC com Windows (a pasta do projeto lá ainda se chama `discord-clone
 Projeto:              C:\Users\Usuario\discord-clone-windows
 App instalado:        C:\Users\Usuario\AppData\Local\Programs\Vox\Vox.exe  (versões antigas: ...\Programs\Concord\Concord.exe)
 Dados do instalado:   C:\Users\Usuario\AppData\Roaming\Vox  (copiados de ...\Roaming\Concord na primeira execução)
-Instalador gerado:    C:\Users\Usuario\discord-clone-windows\dist\Vox Setup <versão>.exe
+Instalador gerado:    C:\Users\Usuario\discord-clone-windows\dist\Vox-Setup-<versão>.exe
 Ferramenta de túnel:  C:\Users\Usuario\discord-clone-windows\tools\cloudflared.exe
 Atalho do túnel:      C:\Users\Usuario\discord-clone-windows\IniciarTunelVox.bat
 ```
@@ -69,7 +69,7 @@ $env:Path = 'C:\Program Files\nodejs;' + $env:Path
 npm run dist
 ```
 
-Saída: `dist\Vox Setup <versão>.exe` (versão de `package.json`).
+Saída: `dist\Vox-Setup-<versão>.exe`, `.blockmap` e `latest.yml` (versão de `package.json`). Para a atualização automática, os três vão numa release publicada do GitHub com a tag `v<versão>` (passo a passo no README). O nome com hífens é de propósito: o GitHub troca espaços por pontos ao subir o arquivo e o `latest.yml` deixaria de achar o instalador.
 
 ### Instalar/testar o pacote
 
@@ -85,16 +85,24 @@ Saída: `dist\Vox Setup <versão>.exe` (versão de `package.json`).
 | `renderer.js` | Interface e lógica do cliente: login, canais, chat, WebRTC, estado da conexão e ping por pessoa, grade de tiles (`layoutTiles`), câmera/microfone, compartilhamento de tela, música, status, membros, configurações em abas. |
 | `themes.js` | Os 18 temas (paletas, id padrão `escuro`) e os grupos do seletor (`THEME_GROUPS`: Escuros, Neon, Anime, Claros; cada tema tem `group`), leitura/gravação em `localStorage['vox-theme']`, `applyTheme`, opção "Reduzir animações" (`vox-reduce-motion`, `data-reduce-motion` no `<html>`) e `migrateLegacyStorage` (copia `concord-*` → `vox-*`). Carregado no `<head>` antes do CSS para aplicar o tema antes da primeira pintura. Também é módulo Node (testes). |
 | `icons.js` | Ícones SVG do Lucide (lucide-static 0.460.0, licença ISC) usados na interface: `icon(name, size)`, `setIcon(el, name, text, size)` e `hydrate(root)`, que troca `<i data-icon="…">` pelo SVG. Só os ícones usados estão no arquivo; para um novo, copie de `lucide-static/icons/*.svg`. Também é módulo Node (testes). |
+| `mic-gate.js` | Sensibilidade do microfone: `createGate` (gate com nível RMS, histerese, espera e limite automático pelo ruído de fundo; roda dentro do AudioWorklet), `gateParams`, `meterPercent` e `clampNumber`. Usado por `renderer.js` (`VoxMicGate`). Também é módulo Node (testes). |
 | `speaking.js` | Detecção de "falando" com histerese (liga ≥ 0.12, desliga após 250 ms abaixo) para o anel do avatar. |
 | `sounds.js` | Efeitos sonoros gerados com Web Audio (sem arquivos): `SOUNDS` (`join`, `leave`, `mute`, `unmute`), `playSound`, `rosterSound` (decide o som pela diferença entre a lista anterior e a nova da voz) e `isEnabled` (`vox-sound-effects`). Usado por `renderer.js`. Também é módulo Node (testes). |
 | `channels.js` | Lista fixa de canais: `TEXT_CHANNELS` (`geral`, `jogos`, `musica`) e `VOICE_CHANNELS` (`voz-sala`, `voz-jogos`, `voz-musica`); padrões `geral` e `voz-sala`. Usado por `main.js` e `renderer.js`. Também é módulo Node (testes). |
-| `protocol.js` | `PROTOCOL_VERSION` (hoje `4`), mensagem de versão incompatível e `isCompatible`. Usado por `main.js` e `renderer.js`. Também é módulo Node (testes). |
+| `chat-state.js` | Regras puras do chat: `cleanText` (até 2000), imagens (`MAX_IMAGE_BYTES` 2 MB, `imageExtension`, `isUploadName`), `ensureIds`, `editMessage`/`deleteMessage` (só o autor), menções (`splitMentions`, `mentionsOf`), não lidas (`addUnread`, `clearUnread`) e `shouldNotify`. Usado por `main.js` e `renderer.js` (`VoxChat`). Também é módulo Node (testes). |
+| `sessions.js` | Tokens de reconexão: `createSessionStore` (`issue`, `resolve`, `revoke`, `prune`), grava só o hash em `sessions.json`, validade 7 dias. Usado por `main.js`. |
+| `tunnel.js` | Túnel do Cloudflare aberto pelo Vox: `createTunnel` (baixa o `cloudflared` se faltar, inicia, reabre se cair, para) e `parseTunnelUrl`. Usado por `main.js`. |
+| `protocol.js` | `PROTOCOL_VERSION` (hoje `5`), mensagem de versão incompatível e `isCompatible`. Usado por `main.js` e `renderer.js`. Também é módulo Node (testes). |
 | `youtube.js` | `parseYouTubeId` (aceita links `youtu.be`, `watch?v=`, `shorts`, `embed`), `thumbnailUrl` e `lookupVideo` (oEmbed público, sem chave, timeout de 4 s). Usado por `main.js`. Também é módulo Node (testes). |
 | `music-state.js` | Regras puras da fila de música: `MAX_QUEUE` (50), `SYNC_TOLERANCE_MS` (2000), `RESYNC_INTERVAL_MS` (15000), `SEEK_COOLDOWN_MS` (5000), `shouldCorrectSeek`, adicionar/remover, pular ou terminar só se o item ainda é o atual, alternar pausa e posição atual. Usado por `main.js` e `renderer.js`. Também é módulo Node (testes). |
 | `presence.js` | Regras de status: modo escolhido (`online`, `away`, `busy`, `invisible`), ausente automático só a partir de Online e atividade que desfaz só o automático. Também é módulo Node (testes). |
 | `room-state.js` | Estado público do usuário na sala de voz (`publicUser`, `applyStatePatch`: `muted`, `status`, `sharing`) e troca de canais (`joinVoiceRoom`, `leaveVoiceRoom`, `canUseTextRoom`, `socketRoomsToLeave`). Usado por `main.js`. |
-| `test/` | Testes `node:test` (`npm test`): paletas e contraste, CSS sem cores fixas, estrutura das configurações, estado da sala, canais, presença, protocolo, detecção de fala, YouTube, fila de música e efeitos sonoros. Fora do instalador. |
-| `preload.js` | Ponte segura `contextBridge` para o IPC do seletor de tela. Ainda expõe `minimize`/`maximize`/`close`, sem uso desde que a janela passou a usar os botões nativos. |
+| `test/` | Testes `node:test` (`npm test`): paletas e contraste, CSS sem cores fixas, estrutura das configurações, estado da sala, canais, presença, protocolo, detecção de fala, YouTube, fila de música, efeitos sonoros, chat (menções, editar/apagar, não lidas, notificações), sessões e endereço do túnel. Fora do instalador. |
+| `preload.js` | Ponte segura `contextBridge` para o IPC do seletor de tela, do túnel (`tunnelStart`/`tunnelStop`/`tunnelStatus`/`onTunnelStatus`), da atualização (`updateStatus`/`onUpdateStatus`/`installUpdate`) e das notificações (`focusWindow`, `flashFrame`). Ainda expõe `minimize`/`maximize`/`close`, sem uso desde que a janela passou a usar os botões nativos. |
+| `assets/icon.svg`, `assets/icon-small.svg`, `assets/icon.png` | Ícone do Vox: barras de equalizador roxas cujas pontas (rosa nas bordas, ciano no meio) formam um V. `icon-small.svg` é a versão de 3 barras usada até 24 px. `icon.png` (256 px, gerado) é o ícone da janela; `icon.svg` aparece na tela de login. |
+| `build/icon.ico` | Ícone do instalador e do `Vox.exe` (16 a 256 px, entradas BMP 32 bits), gerado por `scripts/gerar-icone.js`. Não editar à mão. |
+| `scripts/gerar-icone.js` | `npx electron scripts/gerar-icone.js`: desenha os SVGs num canvas escondido e grava `build/icon.ico` e `assets/icon.png`. Fora do instalador. |
+| `scripts/after-pack.js` | Hook `afterPack` do electron-builder: grava ícone e versão no `Vox.exe` com `rcedit` (necessário porque `signAndEditExecutable` está desligado). Fora do instalador. |
 | `index.html` | Layout e CSS de toda a interface; também contém os modais e a tela de login. |
 | `package.json` | Scripts, dependências e configuração do electron-builder. |
 | `socket.io.min.js` | Bundle do cliente Socket.io copiado pelo `postinstall`; **não editar à mão**. |
@@ -153,18 +161,22 @@ Saída: `dist\Vox Setup <versão>.exe` (versão de `package.json`).
 - Estado da conexão: `peerConn` guarda o estado de cada peer; a cada 2 s o RTT vem do par de candidatos ICE nomeado. A coluna Membros mostra "Conectando…", "Conectado · N ms", "Reconectando…" ou "Falhou" para quem está na mesma voz.
 - Grade da chamada: `layoutTiles()` calcula colunas e tamanho dos tiles (16:9, gap 12, largura mínima 260; tile da música com altura mínima 240) e grava `--grid-cols`, `--tile-w`, `--tile-h`. Roda num `ResizeObserver` e ao fim de `renderTiles`/`syncMusicTile`.
 - Membros: `server-members` traz todas as contas do servidor; `renderMembers` separa Online/Offline. Invisíveis aparecem como offline para os outros.
+- Avatares: `makeAvatar`/`applyAvatar` põem a foto (`<img class="avatar-img">` dentro do círculo; não usar background-image, o tema Mangá força o fundo com `!important`) ou as iniciais. Todo avatar tem `data-user`; quando `server-members` traz foto nova, `refreshAvatars()` atualiza todos na tela. Trocar/remover fica em Configurações → Conta.
 - Ícones: `VoxIcons.hydrate()` roda no início de `renderer.js`; ícones trocados em tempo de execução usam `VoxIcons.setIcon`.
 - Música (YouTube):
   - A fila aparece como primeiro tile da grade de chamada enquanto houver música; o botão do YouTube da barra superior (`#btn-music`, desabilitado sem voz) e o tile abrem o painel de música. O tile tem botão para abrir só o vídeo em tela cheia.
   - `music-rooms` diz quais canais de voz têm música; a lista de canais mostra o ícone do YouTube ao lado deles.
   - Quem está na voz controla a fila. Sair da voz interrompe a música só para quem saiu.
+  - O player usa `controls: 0`, mas o YouTube ainda mostra o botão central de pausar/tocar. Clicar nele vale para todos: `onMusicPlayerStateChange` vê PAUSED/PLAYING contrário ao estado compartilhado e manda `music-toggle` com `{ playing }` (o servidor ignora se já estiver assim). Mudanças até 2,5 s depois de um comando do próprio Vox (`markMusicCommand`) não contam como clique.
   - Nada é baixado: o player oficial do YouTube (IFrame API) toca em cada computador. Em tela cheia, o player vai para um canto dentro de `#fullscreen-view`.
   - Volume local em `localStorage['vox-music-volume']` (não é sincronizado).
   - Sincronização: o cliente estima a posição a partir de `positionMs`/`serverNow` e faz `seekTo` só se a diferença passar de `SYNC_TOLERANCE_MS`, respeitando `SEEK_COOLDOWN_MS`.
 - Áudio do microfone:
-  - Pipeline de redução de ruído: high-pass (85 Hz) → gate (AudioWorklet `vox-noise-gate` via Blob) → compressor → gain → `MediaStreamAudioDestination`.
+  - Cadeia (`rebuildMicProcessing`): microfone → volume (`vox-mic-gain`, 0–200%) → passa-alta (80 Hz; 100 Hz no Forte) → passa-baixa 9 kHz (só Forte) → gate (AudioWorklet `vox-mic-gate`) → compressor + ganho 1,25 → `MediaStreamAudioDestination`. No modo `off` ficam só volume e gate.
+  - Modos em `vox-noise-suppression`: `off` (pede `noiseSuppression: false` ao navegador), `browser` (Padrão) e `strong` (Forte). Trocar o modo reabre o microfone com `changeInputDevice(id, { stopFirst: true })`: **medido** que, com o mesmo dispositivo ainda aberto, o Chromium devolve a faixa nova com o processamento antigo.
+  - Gate = sensibilidade do microfone. A lógica fica em `mic-gate.js` (`createGate`, testada no Node; o worklet recebe o texto da função). Nível RMS em ~10 ms, histerese de 4 dB, espera de 250 ms antes de fechar, ataque 3 ms, soltura 120 ms. Automático (`vox-mic-auto`, padrão ligado): limite = ruído de fundo (mínimo dos últimos 2 s, sobe no máximo 3 dB/s) + 8 dB (12 dB no Forte), entre −65 e −25 dB. Manual: `vox-mic-threshold` (−70 a −10 dB). O worklet manda nível/limite/aberto ~20×/s para o medidor das configurações.
+  - **Medido** no gate antigo (limite fixo de pico ~−36 dBFS, sem espera): fala a −38 dB nunca abria (com `autoGainControl: false`, microfone baixo = pessoa muda) e pausas de 150 ms entre palavras abriam/fechavam 23 vezes em 5 s.
   - `micProcessedTrack` é a faixa enviada aos peers; `getOutboundAudioTracks()` decide entre processada e bruta.
-  - Modos em `vox-noise-suppression`: `off`, `browser`, `strong`. Intensidade em `vox-noise-gate-level`.
   - O monitor do próprio microfone toca a faixa processada.
 - Quem está falando aparece pelo anel no avatar da lista da voz (`speaking.js`), inclusive você. A antiga barra "Ninguém falando" foi removida.
 - Efeitos sonoros (`sounds.js` + `playSoundEffect`):
@@ -182,17 +194,28 @@ Saída: `dist\Vox Setup <versão>.exe` (versão de `package.json`).
 - `music-rooms` (servidor → clientes autenticados: lista de canais de voz com música)
 - `user-joined`, `user-left`
 - `update-state` (mudo/status/`sharing` — compartilhando tela)
-- `signal` (offer, answer, candidate)
-- `save-message`, `get-messages`, `new-message`, `messages-cleared`
-- `delete-my-messages`
+- `resume` ({ token, protocol }, callback): reconexão sem senha. `register`/`login`/`resume` respondem `{ success, username, token, protocol }`; o token vem de `sessions.js`
+- `signal` (offer, answer, candidate); só é repassado para sockets autenticados
+- `save-message` ({ room, text, image? }, callback → `{ success, id }`): o autor é **sempre** o usuário autenticado do socket (o campo `user` do cliente é ignorado). `image` = `{ data: ArrayBuffer, type, width, height }`, até 2 MB (`maxHttpBufferSize` 3 MB); o arquivo vai para `uploads/<uuid>.<ext>` e é servido em `GET /uploads/<nome>` pelo mesmo servidor HTTP
+- `new-message` (servidor → **todas** as pessoas logadas: `{ room, id, user, text, created_at, image?, mentions }`); o cliente mostra se `room` é o canal aberto e conta como não lida nos outros
+- `edit-message` / `delete-message` ({ room, id[, text] }, callback): só o autor; difundem `message-updated` ({ room, id, text, edited_at }) e `message-deleted` ({ room, id }) para todos os logados
+- `set-avatar` ({ data: ArrayBuffer, type } | null, callback): foto de perfil da conta do socket (até 512 KB; o cliente já manda 256×256 WebP com o centro recortado). Grava em `avatars/<uuid>.<ext>`, guarda o nome em `users[nome].avatar`, apaga a anterior e reenvia `server-members` (cada membro tem `avatar`, nome do arquivo ou `null`). Servida em `GET /avatars/<nome>`; fotos sem conta são apagadas ao iniciar (`pruneAvatars`).
+- `get-messages`, `messages-cleared`, `delete-my-messages`
 - `disconnect`
 - Música (`main.js`): cliente → servidor `music-add` (url, callback), `music-remove` (itemId), `music-skip` (itemId atual), `music-toggle`, `music-ended` (itemId), `music-error` ({ itemId, code }). Servidor → sala de voz: `music-state` (`queue`, `playing`, `positionMs`, `serverNow`) e `music-notice` (texto curto, ex.: "Não foi possível tocar"). `music-state` também vai para quem entra na voz.
 - Estado da música fica em `musicByRoom` (por sala de voz): é apagado quando a fila esvazia ou a sala fica vazia. Com música tocando, o servidor reenvia `music-state` a cada `RESYNC_INTERVAL_MS` (15 s).
 
 - `join-text` troca o canal de texto (sem mídia). `join-voice` entra numa voz (sai antes da anterior). `leave-voice` sai da voz. Só aceitam ids da lista em `channels.js`.
-- `save-message`, `get-messages` e `delete-my-messages` só funcionam para o canal de texto atual do socket (`canUseTextRoom`).
+- `save-message`, `edit-message`, `delete-message`, `get-messages` e `delete-my-messages` só funcionam para o canal de texto atual do socket (`canUseTextRoom`).
+- Cadastro: usuário com 2 a 24 letras, números, `.`, `-` ou `_`, sem repetir ignorando maiúsculas.
 
-O servidor atualmente confia no campo `user` enviado em `save-message`. Para endurecer a segurança, troque para o username autenticado do socket.
+### Reconexão
+
+- O Socket.io reconecta sozinho. O cliente guarda o token **só na memória** (`sessionToken`): fechar o app volta para o login (invariante "a primeira tela é o login").
+- No `connect` com usuário logado, o cliente manda `resume`, depois `update-state` (antes do `join-voice`, para invisível continuar invisível), `join-text` + `get-messages` e, se estava na voz, fecha os peers e manda `join-voice` de novo. A faixa `#conn-banner` fica visível enquanto estiver desconectado.
+- O servidor guarda só o hash SHA-256 dos tokens em `sessions.json` (validade 7 dias), então reiniciar o Vox do host não derruba quem está conectado. `logout` revoga o token.
+- `resume` recusado (token vencido, conta apagada) → `endSession` volta para o login com a mensagem.
+- A primeira `room-users` depois de reconectar não toca som (`soundRoster = undefined`).
 
 ### Canais de texto e de voz
 
@@ -205,7 +228,7 @@ O servidor atualmente confia no campo `user` enviado em `save-message`. Para end
 
 ### Versão do protocolo
 
-- `PROTOCOL_VERSION` em `protocol.js` é compartilhado por cliente e servidor. Hoje é `4` (a versão 1 usava `join-room`/`leave-room`; a 3 adicionou os eventos `music-*`; a 4 adicionou `server-members` e `music-rooms`).
+- `PROTOCOL_VERSION` em `protocol.js` é compartilhado por cliente e servidor. Hoje é `5` (a versão 1 usava `join-room`/`leave-room`; a 3 adicionou os eventos `music-*`; a 4 adicionou `server-members` e `music-rooms`; a 5 adicionou `resume`, ids nas mensagens, editar/apagar, imagens e `new-message` para todos os logados).
 - O cliente envia `protocol` em `register` e `login`; o servidor recusa versão diferente (inclusive cliente antigo, sem o campo) com a mensagem “Seu Vox está em uma versão diferente da do servidor. Atualize para entrar.”
 - **Suba `PROTOCOL_VERSION` sempre que um evento ou payload mudar de forma incompatível** (nome, campos obrigatórios, significado). Mudança compatível não exige.
 
@@ -222,6 +245,11 @@ O servidor atualmente confia no campo `user` enviado em `save-message`. Para end
 
 ### Chat e retenção
 
+- Regras puras em `chat-state.js` (`VoxChat` no renderer): texto até 2000 caracteres, menções (`splitMentions`/`mentionsOf`, nomes de contas do servidor, sem diferenciar maiúsculas), editar/apagar só do autor, contadores de não lidas e `shouldNotify`.
+- Mensagens antigas sem `id` recebem um na carga (`ensureIds`).
+- Não lidas: só no cliente (`unread`), zeram ao abrir o canal ou voltar o foco para a janela; badge `.unread-badge` (com `@` quando há menção) e contagem no título.
+- Notificações: `Notification` do HTML5 + `app.setAppUserModelId` (sem ele o Windows não mostra). Modo em `vox-notify-mode` (`all`, `mentions`, `off`); Ocupado não avisa. Menção toca o som `mention` (`sounds.js`). Com a janela sem foco, a barra de tarefas pisca (`flash-frame`).
+- Imagens: o cliente reduz para no máximo 1920 px e recomprime em WebP até caber em 2 MB (GIF vai sem mexer). Arquivos em `uploads/` somem com a mensagem (7 dias, limite de 200, apagar) e os órfãos são removidos ao iniciar.
 - Cada canal guarda no máximo **200 mensagens**.
 - Mensagens com mais de **7 dias** são removidas:
   - ao iniciar;
@@ -275,22 +303,27 @@ const DATA_DIR = app.isPackaged ? app.getPath('userData') : __dirname;
 ```json
 {
   "canal": [
-    { "user": "usuario", "text": "mensagem", "created_at": "ISO-8601" }
+    { "id": "uuid", "user": "usuario", "text": "mensagem", "created_at": "ISO-8601",
+      "edited_at": "ISO-8601 (opcional)", "image": { "file": "uuid.webp", "width": 1920, "height": 1080 } }
   ]
 }
 ```
+
+Em `users.json`, `avatar` (opcional) é o arquivo da foto em `avatars/`. `sessions.json`: `{ "<sha256 do token>": { "username": "usuario", "expires": 1700000000000 } }`. `uploads/`: imagens do chat. `avatars/`: fotos de perfil. Ficam ao lado de `users.json` e fora do Git e do instalador.
 
 ### Preferências no localStorage
 
 - `vox-server-url`
 - `audioInputId`, `audioOutputId`, `monitorEnabled`
-- `vox-noise-suppression`, `vox-noise-gate-level`
+- `vox-noise-suppression` (`off`, `browser`, `strong`; padrão `strong`)
+- `vox-mic-gain` (volume do microfone, 0–200, padrão 100), `vox-mic-auto` (`0` desliga a sensibilidade automática), `vox-mic-threshold` (sensibilidade manual em dB, −70 a −10, padrão −50). A antiga `vox-noise-gate-level` não é mais lida.
 - `vox-share-resolution`, `vox-share-fps`
 - `vox-peer-volumes` (volume de cada pessoa, só neste computador)
 - `vox-theme` (id do tema; inválido ou ausente → `escuro`)
 - `vox-reduce-motion` (`1` desliga as animações dos temas)
 - `vox-music-volume` (volume local do player de música, 0–100, padrão 50; só neste computador)
 - `vox-sound-effects` (`0` desliga os efeitos sonoros; ausente ou `1` = ligados)
+- `vox-notify-mode` (`all` padrão, `mentions` ou `off`)
 
 Ficam no perfil do Electron em `%APPDATA%\Vox` (no macOS em desenvolvimento: `~/Library/Application Support/vox`). Antes do Vox as chaves começavam com `concord-`; `migrateLegacyStorage` copia para `vox-*` sem sobrescrever.
 
@@ -305,7 +338,7 @@ Ficam no perfil do Electron em `%APPDATA%\Vox` (no macOS em desenvolvimento: `~/
 - Nunca apagar `users.json` ou `messages.json` sem autorização explícita.
 - Ao testar cadastro, remover a conta de teste depois e restaurar o estado.
 - Não usar PowerShell 5.1 `Set-Content -Encoding UTF8` para editar JSON: ele adiciona BOM. O leitor remove BOM, mas o ideal é gravar sem BOM com Node (`fs.writeFileSync`) ou com a ferramenta de edição.
-- O instalador não deve incluir dados de usuário, `tools/`, `AGENTS.md` nem o `.bat` do túnel.
+- O instalador não deve incluir dados de usuário (`users.json`, `messages.json`, `sessions.json`, `uploads/`, `avatars/`), `tools/`, `AGENTS.md` nem o `.bat` do túnel.
 
 ## 6. Invariantes do produto
 
@@ -350,7 +383,7 @@ No Windows sem privilégio de symlink, a extração do `winCodeSign` falha. Por 
 Não remova isso sem testar. Consequências atuais:
 
 - instalador **sem assinatura digital**;
-- ícone padrão do Electron;
+- o electron-builder não grava ícone nem versão no `Vox.exe`: quem faz isso é `scripts/after-pack.js` (hook `afterPack`, com o pacote `rcedit`). **Medido:** `Vox.exe` e `Vox-Setup-*.exe` saem com o ícone do Vox e versão no arquivo;
 - SmartScreen pode avisar.
 
 ### Porta 3000
@@ -375,6 +408,8 @@ Pare o app antes de copiar.
 
 - O túnel gratuito do Cloudflare muda de URL quando reinicia.
 - Não hardcodar a URL do túnel no código.
+- Botão "Abrir para amigos" (Configurações → Servidor): `tunnel.js` no processo principal roda `cloudflared tunnel --no-autoupdate --url http://127.0.0.1:3000`, lê o endereço do log (`parseTunnelUrl`, ignora `api.trycloudflare.com`), reabre sozinho se cair e fecha com o app. Procura o binário em `tools/` (desenvolvimento) e em `%APPDATA%\Vox\tools`; se não houver, baixa da release oficial da Cloudflare no GitHub. Só fica habilitado quando o servidor do cliente é `127.0.0.1`/`localhost`.
+- **Medido:** o endereço novo leva ~60 s para resolver no DNS deste PC (o túnel já está pronto antes disso).
 - O host continua usando `http://127.0.0.1:3000`; o amigo usa a URL pública.
 - O túnel carrega Socket.io (login, chat, presença, sinalização), **não** carrega áudio/vídeo.
 - Sem TURN, chamadas entre redes restritivas podem falhar.
@@ -436,11 +471,12 @@ Antes de considerar uma alteração concluída:
 
 ## 9. Estado atual conhecido
 
-- Versão em `package.json`: `1.3.0` (Electron 45.2.1). `PROTOCOL_VERSION` `4`.
+- Versão em `package.json`: `1.4.0` (Electron 45.2.1, electron-updater 6). `PROTOCOL_VERSION` `5`.
+- Atualização automática (`setupAutoUpdate` em `main.js`, só no app instalado): procura na release mais recente do GitHub ao abrir e a cada 4 h, baixa sozinha e mostra `#update-banner`; instala em "Reiniciar e atualizar" ou ao fechar. **Medido:** sem `latest.yml` na release (caso da v1.2.0 publicada hoje) só registra erro 404 no log, sem afetar o app. Versões até 1.3.0 não têm o atualizador: instalar a 1.4.0 à mão uma vez.
 - O pacote `electron` 45 não tem script de instalação: o `electron.exe` é baixado na primeira vez que `npm start` roda (ou com `node node_modules/electron/install.js`). Exige Node ≥ 22.12.
 - Instaladores antigos (ainda com o nome Concord) no PC com Windows: `dist\Concord Setup 1.0.0.exe`, `1.0.1.exe` e `1.0.2.exe`. Nenhum instalador foi gerado desde a troca de nome e as mudanças de temas, música, membros e conexão.
-- Instalador NSIS sem assinatura e com ícone padrão do Electron.
+- Instalador NSIS sem assinatura, com o ícone próprio do Vox.
 - No Windows, o app antigo está instalado como Concord (`%LOCALAPPDATA%\Programs\Concord`), com dados em `%APPDATA%\Concord` (conta `vinicius` e histórico de `geral`).
-- Pendências: testar no Windows o compartilhamento 1080p60 e o player do YouTube; servidor TURN; atualização automática.
+- Pendências: compartilhamento 1080p60 (captura limitada a ~32 fps com o Vox em segundo plano); servidor TURN; testar a atualização automática com uma release real (1.4.0 → seguinte); conferir as notificações do Windows no app instalado.
 - O app instalado e o de desenvolvimento podem estar em estados diferentes; sempre confirme qual está rodando.
 - O Cloudflare Tunnel pode estar ativo. A URL é temporária e não deve ser documentada como fixa.
