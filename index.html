@@ -346,8 +346,30 @@
   /* ================= CHAT ================= */
   #chat-wrap { flex: 1; display: flex; flex-direction: column; min-height: 0; overflow: hidden; position: relative; }
 
+  /* ================= SOUNDBOARD ================= */
+  .sound-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 8px; }
+  .sound-btn {
+    position: relative; min-height: 44px; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--border);
+    background: var(--bg-3); color: var(--text); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+    text-align: left; display: flex; align-items: center; gap: 8px; overflow: hidden;
+  }
+  .sound-btn:hover { border-color: var(--accent); background: var(--accent-soft); }
+  .sound-btn:disabled { opacity: .5; cursor: not-allowed; }
+  .sound-btn .sound-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sound-btn .sound-del { border: none; background: transparent; color: var(--muted); cursor: pointer; padding: 2px; border-radius: 4px; display: none; }
+  .sound-btn:hover .sound-del { display: flex; }
+  .sound-btn .sound-del:hover { color: var(--danger-text); }
+  .sound-btn.playing { border-color: var(--ok-text); box-shadow: 0 0 0 2px color-mix(in srgb, var(--ok-text) 35%, transparent); }
+  .sb-section { font-size: 11px; font-weight: 700; letter-spacing: .6px; text-transform: uppercase; color: var(--muted); margin: 6px 0 0; }
+  .soundboard-status { font-size: 12px; color: var(--muted); min-height: 16px; }
+  .soundboard-hint { font-size: 11px; color: var(--muted); margin: 0; }
+  .soundboard-add { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
+  .soundboard-add .btn-secondary { align-self: flex-start; height: 34px; padding: 0 12px; border: none; border-radius: 8px; cursor: pointer; font-weight: 700; font-size: 12px; display: inline-flex; align-items: center; gap: 6px; }
+  .soundboard-options { display: flex; flex-direction: column; gap: 4px; margin-top: auto; padding-top: 8px; border-top: 1px solid var(--border); }
+  #soundboard-volume { width: 140px; accent-color: var(--accent); cursor: pointer; }
+
   /* ================= PAINEL DA MÚSICA ================= */
-  #music-panel {
+  #music-panel, .side-panel {
     position: absolute; top: 0; right: 0; bottom: 0; z-index: 20;
     width: min(440px, 100%); overflow-y: auto;
     display: flex; flex-direction: column; gap: 10px;
@@ -1122,6 +1144,7 @@
         <button class="ctrl off" id="btn-cam" title="Câmera"><i data-icon="video-off"></i> Cam Off</button>
         <button class="ctrl off" id="btn-screen" title="Compartilhar tela"><i data-icon="monitor-up"></i> Tela</button>
         <button class="ctrl primary hidden" id="btn-dm-call" title="Ligar (voz, câmera e tela)" aria-label="Ligar"><i data-icon="phone"></i> Ligar</button>
+        <button class="ctrl off" id="btn-soundboard" title="Soundboard" aria-label="Soundboard" aria-expanded="false"><i data-icon="audio-lines"></i></button>
         <button class="ctrl off" id="btn-music" title="Música" aria-label="Música" aria-expanded="false"><svg class="yt-icon" viewBox="0 0 28 20" width="18" height="13" aria-hidden="true"><rect width="28" height="20" rx="5" fill="#FF0000"/><path d="M11 5.5v9l8-4.5z" fill="#FFFFFF"/></svg></button>
         <button class="ctrl danger" id="btn-hangup" title="Sair da chamada" aria-label="Sair da chamada"><i data-icon="phone-off"></i></button>
       </div>
@@ -1164,6 +1187,37 @@
         </div>
         <div id="music-queue"></div>
         <p id="music-empty">Nenhuma música na fila. Cole um link acima para começar.</p>
+      </div>
+      <!-- Soundboard: fica sobre o chat, como o painel da música -->
+      <div id="soundboard-panel" class="side-panel hidden" role="dialog" aria-label="Soundboard">
+        <div class="music-panel-head">
+          <h3><i data-icon="audio-lines" data-size="18"></i> Soundboard</h3>
+          <button id="soundboard-close" class="music-icon-btn" title="Fechar (Esc)" aria-label="Fechar"><i data-icon="x"></i></button>
+        </div>
+        <div id="soundboard-status" class="soundboard-status">Clique num som: todos na sua voz ouvem.</div>
+        <div class="sb-section">Sons do Vox</div>
+        <div id="soundboard-builtin" class="sound-grid"></div>
+        <div class="sb-section soundboard-server-title">Sons deste servidor</div>
+        <div id="soundboard-custom" class="sound-grid"></div>
+        <p id="soundboard-custom-empty" class="soundboard-hint hidden">Nenhum som ainda. Envie o primeiro!</p>
+        <div id="soundboard-add" class="soundboard-add">
+          <button type="button" id="soundboard-pick" class="btn-secondary"><i data-icon="upload" data-size="16"></i> Enviar som</button>
+          <input type="file" id="soundboard-file" accept="audio/mpeg,audio/ogg,audio/wav,audio/webm,.mp3,.ogg,.wav,.webm" hidden>
+          <div id="soundboard-form" class="friends-add-row hidden">
+            <input type="text" id="soundboard-name" maxlength="24" placeholder="Nome do som" autocomplete="off">
+            <button type="button" id="soundboard-send">Enviar</button>
+          </div>
+          <p class="soundboard-hint">MP3, OGG, WAV ou WebM, até 8 segundos e 1 MB.</p>
+          <div id="soundboard-error" class="auth-error"></div>
+        </div>
+        <div class="soundboard-options">
+          <label class="music-volume" title="Volume do soundboard (só para você)">
+            <i data-icon="volume-2" data-size="16"></i>
+            <input type="range" id="soundboard-volume" min="0" max="100" value="70">
+            <span id="soundboard-volume-value">70</span>
+          </label>
+          <label class="check-line"><input type="checkbox" id="soundboard-enabled" checked> Ouvir o soundboard</label>
+        </div>
       </div>
       <!-- Início sem conversa aberta: amigos e pedidos -->
       <div id="friends-panel">
@@ -1500,6 +1554,8 @@
 <script src="sounds.js"></script>
 <script src="chat-state.js"></script>
 <script src="mic-gate.js"></script>
+<script src="soundboard-state.js"></script>
+<script src="soundboard-synth.js"></script>
 <script src="renderer.js"></script>
 </body>
 </html>

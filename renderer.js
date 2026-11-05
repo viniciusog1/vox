@@ -67,6 +67,7 @@ const btnCam = document.getElementById('btn-cam');
 const btnScreen = document.getElementById('btn-screen');
 const btnHangup = document.getElementById('btn-hangup');
 const btnMusic = document.getElementById('btn-music');
+const btnSoundboard = document.getElementById('btn-soundboard');
 
 
 const sourceList = document.getElementById('source-list');
@@ -649,6 +650,9 @@ function updateControlButtons() {
 // Cam e Tela também ficam travados enquanto um pedido de câmera/tela está em andamento.
 function updateVoiceDependentControls() {
   const noVoice = !currentVoiceRoom;
+  btnSoundboard.disabled = noVoice;
+  btnSoundboard.title = noVoice ? 'Entre em um canal de voz' : 'Soundboard';
+  if (noVoice) closeSoundboard();
   [btnCam, btnScreen, btnMusic, btnHangup].forEach((btn) => {
     if (noVoice) btn.title = 'Entre em um canal de voz';
     else btn.title = btn.dataset.title || btn.title;
@@ -965,6 +969,7 @@ async function joinVoice(room) {
   voiceConnection.classList.remove('hidden');
   updateActiveChannel();
   updateVoiceDependentControls();
+  if (isSoundboardOpen()) loadSoundboard(); // a biblioteca é a do servidor da voz nova
 
   await ensureLocalMedia();
   if (token !== joinToken) {
@@ -1701,6 +1706,7 @@ function isMusicPanelOpen() {
 
 function openMusicPanel() {
   if (!currentVoiceRoom) return;
+  closeSoundboard(); // os dois painéis ocupam o mesmo lugar
   musicPanel.classList.remove('hidden');
   btnMusic.setAttribute('aria-expanded', 'true');
   btnMusic.classList.add('primary');
@@ -1981,18 +1987,24 @@ let soundDestination = null;
 let soundRoster = null; // ids da última lista da voz; null até a primeira depois de entrar
 const soundAudio = document.getElementById('sound-effects-audio');
 
+// Saída dos sons do app (efeitos e soundboard): contexto próprio no dispositivo de saída escolhido.
+function ensureSoundOutput() {
+  if (!soundContext) {
+    soundContext = new (window.AudioContext || window.webkitAudioContext)();
+    soundDestination = soundContext.createMediaStreamDestination();
+    soundAudio.srcObject = soundDestination.stream;
+    if (typeof soundAudio.setSinkId === 'function') soundAudio.setSinkId(audioOutputId || '').catch(() => {});
+  }
+  if (soundContext.state === 'suspended') soundContext.resume();
+  soundAudio.play().catch(() => {});
+  return { ctx: soundContext, dest: soundDestination };
+}
+
 function playSoundEffect(name) {
   if (!soundEffectsEnabled) return;
   try {
-    if (!soundContext) {
-      soundContext = new (window.AudioContext || window.webkitAudioContext)();
-      soundDestination = soundContext.createMediaStreamDestination();
-      soundAudio.srcObject = soundDestination.stream;
-      if (typeof soundAudio.setSinkId === 'function') soundAudio.setSinkId(audioOutputId || '').catch(() => {});
-    }
-    if (soundContext.state === 'suspended') soundContext.resume();
-    soundAudio.play().catch(() => {});
-    VoxSounds.playSound(soundContext, soundDestination, name);
+    const { ctx, dest } = ensureSoundOutput();
+    VoxSounds.playSound(ctx, dest, name);
   } catch (e) {
     console.error('Erro ao tocar efeito sonoro:', e);
   }
@@ -4334,6 +4346,214 @@ socket.on('call-ended', ({ room, reason } = {}) => {
     leaveVoice();
   }
 });
+
+/* ================= SOUNDBOARD ================= */
+// Sons de fábrica (soundboard-synth.js) e os enviados ao servidor da voz atual.
+// Tocar avisa a sala ('soundboard-play'); cada PC toca localmente ao receber 'soundboard-played'.
+const SB = window.VoxSoundboard;
+const SBSynth = window.VoxSoundboardSynth;
+let soundboardSounds = [];             // sons do servidor da voz atual
+let soundboardServerId = null;
+let soundboardVolume = clampNumber(localStorage.getItem('vox-soundboard-volume') ?? 70, 0, 100, 70);
+let soundboardEnabled = localStorage.getItem('vox-soundboard-enabled') !== '0';
+const soundBuffers = new Map();        // arquivo -> Promise<AudioBuffer>
+let pendingSoundFile = null;           // { data, type, duration }
+
+const $sb = (id) => document.getElementById(id);
+
+// Busca por id a cada chamada: roda também no começo, antes das constantes abaixo existirem.
+function closeSoundboard() {
+  const panel = $sb('soundboard-panel');
+  if (!panel || panel.classList.contains('hidden')) return;
+  panel.classList.add('hidden');
+  btnSoundboard.setAttribute('aria-expanded', 'false');
+  btnSoundboard.classList.remove('primary');
+  btnSoundboard.classList.add('off');
+}
+
+const isSoundboardOpen = () => !$sb('soundboard-panel').classList.contains('hidden');
+
+function voiceServerId() {
+  const info = channelInfo(currentVoiceRoom);
+  return info ? info.server.id : null;
+}
+
+function openSoundboard() {
+  if (!currentVoiceRoom) return;
+  closeMusicPanel();
+  $sb('soundboard-panel').classList.remove('hidden');
+  btnSoundboard.setAttribute('aria-expanded', 'true');
+  btnSoundboard.classList.add('primary');
+  btnSoundboard.classList.remove('off');
+  $sb('soundboard-volume').value = String(soundboardVolume);
+  $sb('soundboard-volume-value').textContent = String(soundboardVolume);
+  $sb('soundboard-enabled').checked = soundboardEnabled;
+  $sb('soundboard-error').textContent = '';
+  loadSoundboard();
+}
+
+function loadSoundboard() {
+  const serverId = voiceServerId();
+  soundboardServerId = serverId;
+  if (!serverId) { soundboardSounds = []; renderSoundboard(); return; }
+  socket.emit('soundboard-list', { serverId }, (res) => {
+    if (res && res.success && soundboardServerId === serverId) soundboardSounds = res.sounds || [];
+    renderSoundboard();
+  });
+  renderSoundboard();
+}
+
+function soundButton({ id, name, deletable }) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'sound-btn';
+  b.dataset.sound = id;
+  b.title = `Tocar "${name}" para todos na voz`;
+  b.appendChild(VoxIcons.icon('audio-lines', 14));
+  const label = document.createElement('span');
+  label.className = 'sound-name';
+  label.textContent = name;
+  b.appendChild(label);
+  if (deletable) {
+    const del = document.createElement('span');
+    del.className = 'sound-del';
+    del.setAttribute('role', 'button');
+    del.title = 'Apagar som';
+    del.appendChild(VoxIcons.icon('x', 12));
+    del.addEventListener('click', (e) => { e.stopPropagation(); deleteSound(id, name); });
+    b.appendChild(del);
+  }
+  b.addEventListener('click', () => playSoundboard(id));
+  return b;
+}
+
+function renderSoundboard() {
+  const panel = $sb('soundboard-panel');
+  if (!panel || panel.classList.contains('hidden')) return;
+  $sb('soundboard-builtin').replaceChildren(...SBSynth.BUILTIN.map((s) => soundButton({ id: s.id, name: s.name })));
+  const server = serverById(soundboardServerId);
+  const manager = server && ['owner', 'admin'].includes(server.role);
+  const inServer = !!soundboardServerId;
+  panel.querySelector('.soundboard-server-title').textContent = inServer ? `Sons de ${server ? server.name : 'este servidor'}` : 'Sons do servidor';
+  $sb('soundboard-custom').replaceChildren(...soundboardSounds.map((s) => soundButton({ id: s.id, name: s.name, deletable: manager || s.by === currentUser })));
+  const empty = $sb('soundboard-custom-empty');
+  empty.textContent = inServer ? 'Nenhum som ainda. Envie o primeiro!' : 'Na chamada direta só há os sons do Vox.';
+  empty.classList.toggle('hidden', soundboardSounds.length > 0);
+  $sb('soundboard-add').classList.toggle('hidden', !inServer);
+}
+
+function playSoundboard(id) {
+  socket.emit('soundboard-play', { soundId: id }, (res) => {
+    if (res && !res.success) $sb('soundboard-status').textContent = res.message || 'Não foi possível tocar.';
+  });
+}
+
+async function deleteSound(id, name) {
+  if (!window.confirm(`Apagar o som "${name}" do servidor?`)) return;
+  const res = await request('soundboard-delete', { serverId: soundboardServerId, soundId: id });
+  if (!res.success) $sb('soundboard-error').textContent = res.message || 'Não foi possível apagar.';
+}
+
+function soundBuffer(ctx, file) {
+  if (!soundBuffers.has(file)) {
+    const p = fetch(`${SERVER_URL}/soundboard/${encodeURIComponent(file)}`)
+      .then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.arrayBuffer(); })
+      .then((buf) => ctx.decodeAudioData(buf));
+    p.catch(() => soundBuffers.delete(file)); // tenta de novo na próxima vez
+    soundBuffers.set(file, p);
+  }
+  return soundBuffers.get(file);
+}
+
+socket.on('soundboard-played', async (p) => {
+  if (!p || !currentVoiceRoom) return;
+  $sb('soundboard-status').textContent = p.by ? `${p.by} tocou "${p.name}"` : `Tocou "${p.name}"`;
+  const btn = document.querySelector(`.sound-btn[data-sound="${CSS.escape(p.id)}"]`);
+  if (btn) { btn.classList.add('playing'); setTimeout(() => btn.classList.remove('playing'), 900); }
+  if (!soundboardEnabled || soundboardVolume === 0) return;
+  try {
+    const { ctx, dest } = ensureSoundOutput();
+    const volume = soundboardVolume / 100;
+    if (p.builtin) { SBSynth.playBuiltin(ctx, dest, p.id, volume); return; }
+    if (!SB.isSoundFile(p.file)) return;
+    const buffer = await soundBuffer(ctx, p.file);
+    const src = ctx.createBufferSource();
+    const gain = ctx.createGain();
+    src.buffer = buffer;
+    gain.gain.value = volume;
+    src.connect(gain).connect(dest);
+    src.start();
+  } catch (e) {
+    console.warn('Soundboard: não foi possível tocar', e);
+  }
+});
+
+socket.on('soundboard-updated', ({ serverId, sounds } = {}) => {
+  if (serverId !== soundboardServerId) return;
+  soundboardSounds = Array.isArray(sounds) ? sounds : [];
+  renderSoundboard();
+});
+
+btnSoundboard.addEventListener('click', () => (isSoundboardOpen() ? closeSoundboard() : openSoundboard()));
+$sb('soundboard-close').addEventListener('click', closeSoundboard);
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && isSoundboardOpen() && fullscreenView.classList.contains('hidden')) closeSoundboard();
+});
+
+$sb('soundboard-volume').addEventListener('input', (e) => {
+  soundboardVolume = clampNumber(e.target.value, 0, 100, 70);
+  $sb('soundboard-volume-value').textContent = String(soundboardVolume);
+  try { localStorage.setItem('vox-soundboard-volume', String(soundboardVolume)); } catch (err) {}
+});
+$sb('soundboard-enabled').addEventListener('change', (e) => {
+  soundboardEnabled = e.target.checked;
+  try { localStorage.setItem('vox-soundboard-enabled', soundboardEnabled ? '1' : '0'); } catch (err) {}
+});
+
+/* ---------- Enviar som ---------- */
+$sb('soundboard-pick').addEventListener('click', () => $sb('soundboard-file').click());
+
+$sb('soundboard-file').addEventListener('change', async (e) => {
+  const file = e.target.files && e.target.files[0];
+  e.target.value = '';
+  const err = $sb('soundboard-error');
+  err.textContent = '';
+  if (!file) return;
+  const type = file.type === 'audio/mp3' ? 'audio/mpeg' : file.type;
+  if (!SB.audioExtension(type)) { err.textContent = 'Use um arquivo MP3, OGG, WAV ou WebM.'; return; }
+  if (file.size > SB.MAX_BYTES) { err.textContent = 'O arquivo passa de 1 MB.'; return; }
+  try {
+    const data = await file.arrayBuffer();
+    const { ctx } = ensureSoundOutput();
+    const decoded = await ctx.decodeAudioData(data.slice(0)); // decodeAudioData consome o buffer
+    if (decoded.duration > SB.MAX_SECONDS + 0.25) {
+      err.textContent = `O som tem ${decoded.duration.toFixed(1)} s; o limite é ${SB.MAX_SECONDS} s.`;
+      return;
+    }
+    pendingSoundFile = { data, type, duration: decoded.duration };
+    $sb('soundboard-name').value = file.name.replace(/\.[^.]+$/, '').slice(0, SB.MAX_NAME);
+    $sb('soundboard-form').classList.remove('hidden');
+    $sb('soundboard-name').focus();
+    $sb('soundboard-name').select();
+  } catch (e2) {
+    err.textContent = 'Não consegui ler esse áudio.';
+  }
+});
+
+async function sendSound() {
+  if (!pendingSoundFile || !soundboardServerId) return;
+  const err = $sb('soundboard-error');
+  const btn = $sb('soundboard-send');
+  btn.disabled = true;
+  const res = await request('soundboard-add', { serverId: soundboardServerId, name: $sb('soundboard-name').value, ...pendingSoundFile });
+  btn.disabled = false;
+  if (!res.success) { err.textContent = res.message || 'Não foi possível enviar.'; return; }
+  pendingSoundFile = null;
+  $sb('soundboard-form').classList.add('hidden');
+  err.textContent = '';
+}
+$sb('soundboard-send').addEventListener('click', sendSound);
+$sb('soundboard-name').addEventListener('keydown', (e) => { if (e.key === 'Enter') sendSound(); });
 
 /* ================= DIAGNÓSTICO DE VÍDEO (Ctrl+Shift+D) ================= */
 // Mostra, por participante, o que sai e o que chega: fps, resolução, banda,
