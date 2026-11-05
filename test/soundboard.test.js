@@ -68,13 +68,33 @@ test('playBuiltin agenda as vozes num contexto de áudio', () => {
   const node = () => ({ connect(n) { return n; } });
   const ctx = {
     currentTime: 0, sampleRate: 8000,
-    createOscillator: () => ({ ...node(), frequency: param(), start() { started++; }, stop() {} }),
+    createOscillator: () => ({ ...node(), frequency: param(), detune: param(), start() { started++; }, stop() {} }),
     createBufferSource: () => ({ ...node(), start() { started++; }, stop() {} }),
     createBuffer: (ch, len, sr) => ({ sampleRate: sr, getChannelData: () => new Float32Array(len) }),
     createGain: () => ({ ...node(), gain: param() }),
-    createBiquadFilter: () => ({ ...node(), frequency: param() })
+    createBiquadFilter: () => ({ ...node(), frequency: param(), Q: param() })
   };
   for (const { id } of synth.BUILTIN) assert.equal(synth.playBuiltin(ctx, node(), id, 0.5), true);
   assert.ok(started > synth.BUILTIN.length);
   assert.equal(synth.playBuiltin(ctx, node(), 'nada'), false);
+});
+
+test('vozes de fábrica com volume, duração e frequências válidos', () => {
+  for (const s of synth.VOICES) {
+    for (const v of s.voices) {
+      assert.ok(v.gain > 0 && v.gain <= 1, `${s.id} gain ${v.gain}`);
+      assert.ok(v.dur > 0 && v.start >= 0, s.id);
+      assert.ok(!v.sustain || v.sustain <= v.dur, `${s.id} sustain`);
+      for (const f of [v.freq, v.to, v.filter && v.filter.freq, v.filter && v.filter.to].filter(Boolean)) {
+        assert.ok(f >= 20 && f <= 12000, `${s.id} ${f} Hz`);
+      }
+    }
+  }
+});
+
+test('aplausos saem sempre iguais (sorteio com semente)', () => {
+  delete require.cache[require.resolve('../soundboard-synth.js')];
+  const again = require('../soundboard-synth.js');
+  const pick = (m) => JSON.stringify(m.VOICES.find((s) => s.id === 'aplausos').voices);
+  assert.equal(pick(again), pick(synth));
 });
