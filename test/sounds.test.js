@@ -56,19 +56,45 @@ test('sons curtos (até 0,4 s)', () => {
   }
 });
 
-test('playSound agenda um oscilador por nota', () => {
-  const started = [];
+function fakeContext() {
+  const started = { osc: 0, noise: 0 };
   const param = () => ({ value: 0, setValueAtTime() {}, linearRampToValueAtTime() {}, exponentialRampToValueAtTime() {} });
   const node = () => ({ connect(n) { return n; } });
   const ctx = {
     currentTime: 1,
-    createOscillator: () => ({ ...node(), frequency: param(), start(t) { started.push(t); }, stop() {} }),
-    createGain: () => ({ ...node(), gain: param() })
+    sampleRate: 48000,
+    started,
+    destination: node(),
+    createOscillator: () => ({ ...node(), frequency: param(), start() { started.osc++; }, stop() {} }),
+    createBufferSource: () => ({ ...node(), start() { started.noise++; }, stop() {} }),
+    createBiquadFilter: () => ({ ...node(), frequency: param(), Q: param() }),
+    createGain: () => ({ ...node(), gain: param() }),
+    createBuffer: (ch, len) => ({ getChannelData: () => new Float32Array(len) })
   };
-  snd.playSound(ctx, node(), 'join');
-  assert.equal(started.length, snd.SOUNDS.join.notes.length);
-  snd.playSound(ctx, node(), 'inexistente');
-  assert.equal(started.length, snd.SOUNDS.join.notes.length);
+  return ctx;
+}
+
+test('playSound agenda um tom ou ruído por nota (e um LFO por vibrato)', () => {
+  for (const [name, s] of Object.entries(snd.SOUNDS)) {
+    const ctx = fakeContext();
+    snd.playSound(ctx, ctx.destination, name);
+    const noise = s.notes.filter((n) => n.noise).length;
+    const vibrato = s.notes.filter((n) => n.vibrato).length;
+    assert.equal(ctx.started.noise, noise, name);
+    assert.equal(ctx.started.osc, s.notes.length - noise + vibrato, name);
+  }
+  const ctx = fakeContext();
+  snd.playSound(ctx, ctx.destination, 'inexistente');
+  assert.deepEqual(ctx.started, { osc: 0, noise: 0 });
+});
+
+test('volume de cada nota fica entre 0 e 1 e frequências audíveis', () => {
+  for (const [name, s] of Object.entries(snd.SOUNDS)) {
+    for (const n of s.notes) {
+      assert.ok((n.gain ?? 1) > 0 && (n.gain ?? 1) <= 1, name);
+      for (const f of [n.freq, n.to].filter(Boolean)) assert.ok(f >= 40 && f <= 8000, `${name} ${f} Hz`);
+    }
+  }
 });
 
 test('opção na aba Áudio, ligada por padrão, e script carregado antes do renderer', () => {
