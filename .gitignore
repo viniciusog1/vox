@@ -12,6 +12,8 @@ messages.json
 sessions.json
 servers.json
 friends.json
+soundboard.json
+soundboard/
 uploads/
 avatars/
 

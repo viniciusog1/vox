@@ -23,6 +23,8 @@
       "!sessions.json",
       "!servers.json",
       "!friends.json",
+      "!soundboard.json",
+      "!soundboard/**",
       "!dist/**",
       "!README.md",
       "!AGENTS.md",

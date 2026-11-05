@@ -96,6 +96,8 @@ Saída: `dist\Vox-Setup-<versão>.exe`, `.blockmap` e `latest.yml` (versão de `
 | `protocol.js` | `PROTOCOL_VERSION` (hoje `6`), mensagem de versão incompatível e `isCompatible`. Usado por `main.js` e `renderer.js`. Também é módulo Node (testes). |
 | `youtube.js` | `parseYouTubeId` (aceita links `youtu.be`, `watch?v=`, `shorts`, `embed`), `thumbnailUrl` e `lookupVideo` (oEmbed público, sem chave, timeout de 4 s). Usado por `main.js`. Também é módulo Node (testes). |
 | `music-state.js` | Regras puras da fila de música: `MAX_QUEUE` (50), `SYNC_TOLERANCE_MS` (2000), `RESYNC_INTERVAL_MS` (15000), `SEEK_COOLDOWN_MS` (5000), `shouldCorrectSeek`, adicionar/remover, pular ou terminar só se o item ainda é o atual, alternar pausa e posição atual. Usado por `main.js` e `renderer.js`. Também é módulo Node (testes). |
+| `soundboard-state.js` | Soundboard por servidor: `addSound` (qualquer membro; nome até 24, arquivo até 1 MB, até 8 s, 40 sons por servidor), `deleteSound` (quem enviou ou dono/admin), `dropServer`, `canPlay` (1,5 s entre toques da mesma pessoa), `audioExtension` (MP3, OGG, WAV, WebM) e `isSoundFile`. Gravado em `soundboard.json`; arquivos em `soundboard/`. Usado por `main.js` e `renderer.js` (`VoxSoundboard`). Também é módulo Node (testes). |
+| `soundboard-synth.js` | Sons de fábrica do soundboard, sintetizados com Web Audio (sem arquivos nem direitos autorais): Buzina, Ba dum tss, Tchan tchan tchaaan, Aplausos, Vitória 8-bit, Trombone triste, Sino e Boing. `BUILTIN`, `isBuiltin`, `durationOf` e `playBuiltin(ctx, dest, id, volume)`. Usado por `main.js` e `renderer.js` (`VoxSoundboardSynth`). Também é módulo Node (testes). |
 | `presence.js` | Regras de status: modo escolhido (`online`, `away`, `busy`, `invisible`), ausente automático só a partir de Online e atividade que desfaz só o automático. Também é módulo Node (testes). |
 | `room-state.js` | Estado público do usuário na sala de voz (`publicUser`, `applyStatePatch`: `muted`, `status`, `sharing`) e troca de canais (`joinVoiceRoom`, `leaveVoiceRoom`, `canUseTextRoom`, `socketRoomsToLeave`); `canUseTextRoom` não depende de lista de canais (quem decide o acesso é `main.js`). Usado por `main.js`. |
 | `test/` | Testes `node:test` (`npm test`): paletas e contraste, CSS sem cores fixas, estrutura das configurações, estado da sala, servidores (`servers-state`), amigos (`friends-state`), presença, protocolo, detecção de fala, YouTube, fila de música, efeitos sonoros, chat (menções, editar/apagar, não lidas, notificações), sessões e endereço do túnel. Fora do instalador. |
@@ -210,6 +212,7 @@ Saída: `dist\Vox-Setup-<versão>.exe`, `.blockmap` e `latest.yml` (versão de `
 - Amigos e chamadas diretas: `friend-request`, `friend-accept`, `friend-drop`, `friend-remove`, `call-start`, `call-decline`. Servidor → cliente: `call-incoming` (toca por 45 s) e `call-ended` (`reason`: `declined`, `missed`, `cancelled`, `answered`).
 - Música (`main.js`): cliente → servidor `music-add` (url, callback), `music-remove` (itemId), `music-skip` (itemId atual), `music-toggle`, `music-ended` (itemId), `music-error` ({ itemId, code }). Servidor → sala de voz: `music-state` (`queue`, `playing`, `positionMs`, `serverNow`) e `music-notice` (texto curto, ex.: "Não foi possível tocar"). `music-state` também vai para quem entra na voz.
 - Estado da música fica em `musicByRoom` (por sala de voz): é apagado quando a fila esvazia ou a sala fica vazia. Com música tocando, o servidor reenvia `music-state` a cada `RESYNC_INTERVAL_MS` (15 s).
+- Soundboard (cliente → servidor, com callback): `soundboard-list` ({ serverId }), `soundboard-add` ({ serverId, name, type, duration, data }), `soundboard-delete` ({ serverId, soundId }), `soundboard-play` ({ soundId }: som de fábrica em qualquer voz, inclusive chamada direta; som enviado só na voz de um canal do mesmo servidor; 1,5 s entre toques por pessoa). Servidor → cliente: `soundboard-played` (para a sala de voz: { id, builtin, name, file?, by }) e `soundboard-updated` (para os membros: { serverId, sounds }). Cada PC toca o som localmente (`ensureSoundOutput`, o mesmo contexto dos efeitos sonoros), com volume próprio e opção de não ouvir. Arquivos servidos em `GET /soundboard/<uuid>.<ext>`; apagados junto com o som ou o servidor, e os órfãos ao iniciar (`pruneSoundFiles`).
 
 - `join-text` troca o canal de texto (sem mídia). `join-voice` entra numa voz (sai antes da anterior). `leave-voice` sai da voz. Só aceitam ids de canais de servidores dos quais a pessoa é membro (`canUseText`/`canUseVoice`); conversa direta usa a chave `dm:a|b` em `join-text`/`save-message`.
 - Acesso por sala: `new-message`, `message-updated`, `message-deleted`, `voice-rooms`, `music-rooms` e a sala de voz em `server-members` só vão para quem tem acesso à sala (`roomAudience`/`canSeeRoom`).
@@ -347,6 +350,7 @@ Em `users.json`, `avatar` (opcional) é o arquivo da foto em `avatars/`. `sessio
 - `vox-music-volume` (volume local do player de música, 0–100, padrão 50; só neste computador)
 - `vox-sound-effects` (`0` desliga os efeitos sonoros; ausente ou `1` = ligados)
 - `vox-notify-mode` (`all` padrão, `mentions` ou `off`)
+- `vox-soundboard-volume` (0–100, padrão 70) e `vox-soundboard-enabled` (`0` = não ouvir o soundboard); só neste computador
 
 Ficam no perfil do Electron em `%APPDATA%\Vox` (no macOS em desenvolvimento: `~/Library/Application Support/vox`). Antes do Vox as chaves começavam com `concord-`; `migrateLegacyStorage` copia para `vox-*` sem sobrescrever.
 
@@ -361,7 +365,7 @@ Ficam no perfil do Electron em `%APPDATA%\Vox` (no macOS em desenvolvimento: `~/
 - Nunca apagar `users.json`, `messages.json`, `servers.json` ou `friends.json` sem autorização explícita.
 - Ao testar cadastro, remover a conta de teste depois e restaurar o estado.
 - Não usar PowerShell 5.1 `Set-Content -Encoding UTF8` para editar JSON: ele adiciona BOM. O leitor remove BOM, mas o ideal é gravar sem BOM com Node (`fs.writeFileSync`) ou com a ferramenta de edição.
-- O instalador não deve incluir dados de usuário (`users.json`, `messages.json`, `servers.json`, `friends.json`, `sessions.json`, `uploads/`, `avatars/`), `tools/`, `AGENTS.md` nem o `.bat` do túnel.
+- O instalador não deve incluir dados de usuário (`users.json`, `messages.json`, `servers.json`, `friends.json`, `sessions.json`, `music-history.json`, `soundboard.json`, `uploads/`, `avatars/`, `soundboard/`), `tools/`, `AGENTS.md` nem o `.bat` do túnel.
 
 ## 6. Invariantes do produto
 
