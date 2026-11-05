@@ -82,7 +82,9 @@ test('playBuiltin agenda as vozes num contexto de áudio', () => {
 test('vozes de fábrica com volume, duração e frequências válidos', () => {
   for (const s of synth.VOICES) {
     for (const v of s.voices) {
-      assert.ok(v.gain > 0 && v.gain <= 1, `${s.id} gain ${v.gain}`);
+      // Ruído em passa-banda estreito precisa de ganho acima de 1 (aplausos)
+      const max = v.wave === 'noise' ? 2 : 1;
+      assert.ok(v.gain > 0 && v.gain <= max, `${s.id} gain ${v.gain}`);
       assert.ok(v.dur > 0 && v.start >= 0, s.id);
       assert.ok(!v.sustain || v.sustain <= v.dur, `${s.id} sustain`);
       for (const f of [v.freq, v.to, v.filter && v.filter.freq, v.filter && v.filter.to].filter(Boolean)) {
