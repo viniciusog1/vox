@@ -40,24 +40,30 @@
   function applause() {
     const rand = seeded(7);
     const voices = [];
-    // 9 pessoas batendo palmas ~4 vezes por segundo, fora de sincronia, sumindo no fim
-    for (let p = 0; p < 9; p++) {
-      const tone = 900 + rand() * 1400;
-      let t = rand() * 0.25;
-      while (t < 1.9) {
-        const fade = t > 1.3 ? 1 - (t - 1.3) / 0.7 : 1;
-        // Cada palma são dois estalos colados (as mãos não batem de uma vez só)
-        for (const [off, g] of [[0, 1], [0.008 + rand() * 0.006, 0.6]]) {
-          voices.push({
-            wave: 'noise', start: t + off, dur: 0.035 + rand() * 0.02, gain: 0.9 * g * fade * (0.6 + rand() * 0.4),
-            attack: 0.001, filter: { type: 'bandpass', freq: tone * (0.9 + rand() * 0.2), q: 0.9 }
-          });
-        }
-        t += 0.2 + rand() * 0.12;
+    // Ganho acima de 1 de propósito: o passa-banda estreito come quase toda a
+    // energia do ruído (medido: com 0,55 ficava 13 dB abaixo dos outros sons).
+    // Plateia: 24 pessoas, cada uma no próprio ritmo (3,5 a 5 palmas/s, com variação
+    // a cada palma). Cada palma é um estalo seco de ~25 ms, com o "oco" das mãos
+    // de cada pessoa (passa-banda de 700 a 2200 Hz). O ruído de cada estalo começa
+    // num trecho diferente (playBuiltin), então nenhum é igual ao outro.
+    for (let p = 0; p < 24; p++) {
+      const hands = 700 + rand() * 1500;
+      const q = 0.8 + rand() * 1.2;
+      const loud = 0.5 + rand() * 0.5;
+      const period = 1 / (3.5 + rand() * 1.5);
+      // Uns começam um pouco depois, e uns param antes
+      let t = rand() * 0.35;
+      const stop = 1.5 + rand() * 0.6;
+      while (t < stop) {
+        // Começa forte e vai minguando no fim
+        const swell = Math.min(1, 0.55 + t * 1.5) * (t > 1.3 ? Math.max(0.15, 1 - (t - 1.3) / 0.8) : 1);
+        voices.push({
+          wave: 'noise', start: t, dur: 0.02 + rand() * 0.015, gain: 2 * loud * swell * (0.7 + rand() * 0.3),
+          attack: 0.0008, filter: { type: 'bandpass', freq: hands * (0.92 + rand() * 0.16), q }
+        });
+        t += period * (0.85 + rand() * 0.3);
       }
     }
-    // Ruído de plateia ao fundo
-    voices.push({ wave: 'noise', start: 0, dur: 2.1, gain: 0.15, attack: 0.15, sustain: 0.6, filter: { type: 'bandpass', freq: 1500, q: 0.6 } });
     return voices;
   }
 
@@ -207,7 +213,9 @@
         last = last.connect(f);
       }
       last.connect(env).connect(destination);
-      src.start(start);
+      // Ruído começa num trecho sorteado: estalos curtos não saem todos idênticos
+      if (v.wave === 'noise') src.start(start, Math.random() * 0.9);
+      else src.start(start);
       src.stop(end + 0.05);
     }
     return true;
