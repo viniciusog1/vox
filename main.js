@@ -8,6 +8,7 @@ const crypto = require('crypto');
 const { publicUser, applyStatePatch, joinVoiceRoom, leaveVoiceRoom, canUseTextRoom, socketRoomsToLeave } = require('./room-state');
 const srv = require('./servers-state');
 const fr = require('./friends-state');
+const musicHistory = require('./music-history');
 const sb = require('./soundboard-state');
 const sbSynth = require('./soundboard-synth');
 const { parseYouTubeId, lookupVideo } = require('./youtube');
@@ -55,6 +56,7 @@ const USERS_PATH = path.join(DATA_DIR, 'users.json');
 const SESSIONS_PATH = path.join(DATA_DIR, 'sessions.json');
 const SERVERS_PATH = path.join(DATA_DIR, 'servers.json');
 const FRIENDS_PATH = path.join(DATA_DIR, 'friends.json');
+const MUSIC_HISTORY_PATH = path.join(DATA_DIR, 'music-history.json');
 const UPLOADS_DIR = path.join(DATA_DIR, 'uploads');
 const AVATARS_DIR = path.join(DATA_DIR, 'avatars');
 const SOUNDBOARD_DIR = path.join(DATA_DIR, 'soundboard');
@@ -93,6 +95,14 @@ const serversDb = { ...srv.emptyDb(), ...readJsonFile(SERVERS_PATH) };
 const friendsDb = { ...fr.emptyDb(), ...readJsonFile(FRIENDS_PATH) };
 function saveServers() { fs.writeFileSync(SERVERS_PATH, JSON.stringify(serversDb, null, 2)); }
 function saveFriends() { fs.writeFileSync(FRIENDS_PATH, JSON.stringify(friendsDb, null, 2)); }
+
+// Histórico de músicas por servidor (sugestões). Chamada direta usa a própria sala.
+const musicHistoryDb = { ...musicHistory.emptyDb(), ...readJsonFile(MUSIC_HISTORY_PATH) };
+function saveMusicHistory() { fs.writeFileSync(MUSIC_HISTORY_PATH, JSON.stringify(musicHistoryDb)); }
+function musicScope(room) {
+  const found = srv.findChannel(serversDb, room);
+  return found ? found.server.id : room;
+}
 if (srv.migrateLegacy(serversDb, users) | srv.ensureLegacyAutoJoin(serversDb)) saveServers();
 
 const randHex = (n) => crypto.randomBytes(Math.ceil(n / 2)).toString('hex').slice(0, n);
@@ -746,8 +756,20 @@ app.whenReady().then(() => {
       const result = addTrack(state, item, Date.now());
       if (!result.ok) return reply({ ok: false, message: 'A fila está cheia (50 músicas).' });
       musicByRoom.set(room, state);
+      musicHistory.recordRequest(musicHistoryDb, musicScope(room), item, new Date().toISOString());
+      saveMusicHistory();
       reply({ ok: true });
       broadcastMusic(room);
+    });
+
+    // Aba Sugestões: histórico do servidor da voz atual (ou da chamada direta).
+    socket.on('music-suggestions', (callback) => {
+      if (typeof callback !== 'function') return;
+      const room = requireVoice(callback);
+      if (!room) return;
+      const state = musicByRoom.get(room);
+      const queued = state ? state.queue.map((t) => t.videoId) : [];
+      callback({ ok: true, ...musicHistory.suggestionsFor(musicHistoryDb, musicScope(room), queued) });
     });
 
     // Aplica uma função da fila ao estado da sala e difunde se algo mudou.
@@ -847,6 +869,7 @@ app.whenReady().then(() => {
       saveServers();
       evictFromRooms((room) => rooms.has(room));
       deleteRoomData(rooms);
+      if (musicHistory.dropScope(musicHistoryDb, r.server.id)) saveMusicHistory();
       const gone = sb.dropServer(soundboardDb, r.server.id);
       if (gone.length) { gone.forEach(removeSoundFile); saveSoundboard(); }
       notifyMembers(r.server);

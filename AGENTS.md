@@ -96,6 +96,7 @@ Saída: `dist\Vox-Setup-<versão>.exe`, `.blockmap` e `latest.yml` (versão de `
 | `protocol.js` | `PROTOCOL_VERSION` (hoje `6`), mensagem de versão incompatível e `isCompatible`. Usado por `main.js` e `renderer.js`. Também é módulo Node (testes). |
 | `youtube.js` | `parseYouTubeId` (aceita links `youtu.be`, `watch?v=`, `shorts`, `embed`), `thumbnailUrl` e `lookupVideo` (oEmbed público, sem chave, timeout de 4 s). Usado por `main.js`. Também é módulo Node (testes). |
 | `music-state.js` | Regras puras da fila de música: `MAX_QUEUE` (50), `SYNC_TOLERANCE_MS` (2000), `RESYNC_INTERVAL_MS` (15000), `SEEK_COOLDOWN_MS` (5000), `shouldCorrectSeek`, adicionar/remover, pular ou terminar só se o item ainda é o atual, alternar pausa e posição atual. Usado por `main.js` e `renderer.js`. Também é módulo Node (testes). |
+| `music-history.js` | Histórico de músicas pedidas por servidor (ou por chamada direta) para a aba Sugestões: `recordRequest` (até 300 por servidor), `suggestionsFor` (`recent` sem repetir e `top` com 2+ pedidos, 12 cada, marcando `inQueue`) e `dropScope`. Gravado em `music-history.json` (fora do Git e do instalador; apagado junto com o servidor). Usado por `main.js` (evento `music-suggestions`). Também é módulo Node (testes). |
 | `soundboard-state.js` | Soundboard por servidor: `addSound` (qualquer membro; nome até 24, arquivo até 1 MB, até 8 s, 40 sons por servidor), `deleteSound` (quem enviou ou dono/admin), `dropServer`, `canPlay` (1,5 s entre toques da mesma pessoa), `audioExtension` (MP3, OGG, WAV, WebM) e `isSoundFile`. Gravado em `soundboard.json`; arquivos em `soundboard/`. Usado por `main.js` e `renderer.js` (`VoxSoundboard`). Também é módulo Node (testes). |
 | `soundboard-synth.js` | Sons de fábrica do soundboard, sintetizados com Web Audio (sem arquivos nem direitos autorais): Buzina, Ba dum tss, Tchan tchan tchaaan, Aplausos, Vitória 8-bit, Trombone triste, Sino e Boing. `BUILTIN`, `isBuiltin`, `durationOf` e `playBuiltin(ctx, dest, id, volume)`. Usado por `main.js` e `renderer.js` (`VoxSoundboardSynth`). Também é módulo Node (testes). |
 | `presence.js` | Regras de status: modo escolhido (`online`, `away`, `busy`, `invisible`), ausente automático só a partir de Online e atividade que desfaz só o automático. Também é módulo Node (testes). |
@@ -385,7 +386,7 @@ Manter estas decisões, salvo pedido explícito do usuário:
 - Compartilhamento de tela com seletor de janela/tela.
 - Sem participantes fantasma.
 - Mensagens apagadas após 7 dias e limite de 200 por canal.
-- Música: sem download; o player oficial do YouTube toca em cada pessoa; fila de até 50 músicas por sala de voz; sair da voz para a música de quem saiu.
+- Música: sem download; o player oficial do YouTube toca em cada pessoa; fila de até 50 músicas por sala de voz; sair da voz para a música de quem saiu. O painel tem as abas Fila e Sugestões; as sugestões vêm só do histórico do próprio servidor (sem API nem raspagem do YouTube).
 - Ícones SVG (Lucide) em vez de emojis, para ficar igual em qualquer sistema.
 - A janela usa os botões nativos do sistema (sem minimizar/maximizar/fechar próprios).
 - Efeitos de tema nunca ficam por cima dos vídeos nem do player do YouTube (os termos do YouTube proíbem cobrir o player).
