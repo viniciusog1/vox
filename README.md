@@ -85,6 +85,7 @@
 - ⬆️ **Atualização automática** pelas releases do GitHub
 - 🌍 Botão **Abrir para amigos**: túnel da Cloudflare com o endereço para copiar
 - 🔔 Notificações do Windows (todas, só menções ou nunca)
+- 🕐 Fica **ao lado do relógio** do Windows: fechar a janela não derruba a voz nem o servidor (dá para desligar em Configurações → Conta)
 
 ---
 
@@ -153,7 +154,7 @@ Engrenagem ao lado do seu nome, no canto inferior esquerdo.
 | Aba | O que tem |
 | --- | --- |
 | 🎙️ **Áudio** | Microfone e saída, redução de ruído, volume e sensibilidade do microfone, ouvir o próprio microfone, sons |
-| 👤 **Conta** | Foto de perfil e sair da conta |
+| 👤 **Conta** | Foto de perfil, manter o Vox ao lado do relógio ao fechar e sair da conta |
 | 🎨 **Aparência** | 18 temas e reduzir animações |
 | 🔔 **Notificações** | Avisar de todas as mensagens, só de menções ou nunca |
 | 🌍 **Servidor** | Abrir o túnel para os amigos e copiar o endereço |
