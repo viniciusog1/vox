@@ -57,7 +57,6 @@ const imageViewer = document.getElementById('image-viewer');
 const imageViewerImg = document.getElementById('image-viewer-img');
 const connBanner = document.getElementById('conn-banner');
 const updateBanner = document.getElementById('update-banner');
-const updateText = document.getElementById('update-text');
 const updateInstall = document.getElementById('update-install');
 const notifyModeSelect = document.getElementById('notify-mode');
 const tunnelToggle = document.getElementById('tunnel-toggle');
@@ -2802,16 +2801,45 @@ window.electronAPI.onAddressStatus(renderAddress);
 window.electronAPI.addressStatus().then(renderAddress);
 
 /* ================= ATUALIZAÇÃO AUTOMÁTICA ================= */
-function renderUpdate(s) {
-  if (!s || (s.state !== 'downloading' && s.state !== 'ready')) { updateBanner.classList.add('hidden'); return; }
-  updateBanner.classList.remove('hidden');
+// A faixa aparece na tela principal e, no login, uma cópia dela no cartão de entrada.
+const authUpdate = document.getElementById('auth-update');
+const UPDATE_STATES = ['downloading', 'ready', 'installing', 'error'];
+
+function formatMB(bytes) {
+  return (bytes / (1024 * 1024)).toLocaleString('pt-BR', { maximumFractionDigits: bytes < 10 * 1024 * 1024 ? 1 : 0 });
+}
+
+function updateMessage(s) {
+  const v = s.version ? `o Vox ${s.version}` : 'a atualização';
   if (s.state === 'downloading') {
-    updateText.textContent = `Baixando o Vox ${s.version || ''}… ${s.percent || 0}%`;
-    updateInstall.classList.add('hidden');
-  } else {
-    updateText.textContent = `O Vox ${s.version || ''} está pronto. Ele instala ao reiniciar (ou quando você fechar o app).`;
-    updateInstall.classList.remove('hidden');
+    const pct = Math.floor(s.percent || 0);
+    const parts = [`Baixando ${v}… ${pct}%`];
+    if (s.total) parts.push(`${formatMB(s.transferred || 0)} de ${formatMB(s.total)} MB`);
+    if (s.bytesPerSecond) parts.push(`${formatMB(s.bytesPerSecond)} MB/s`);
+    return parts.join(' · ');
   }
+  if (s.state === 'ready') return `Pronto: ${v} instala ao reiniciar (ou quando você fechar o app).`;
+  if (s.state === 'installing') return `Instalando ${v}… o Vox fecha e abre de novo sozinho.`;
+  return `Não foi possível baixar ${v}. O Vox tenta de novo mais tarde.`;
+}
+
+function renderUpdate(s) {
+  const show = !!s && UPDATE_STATES.includes(s.state);
+  updateBanner.classList.toggle('hidden', !show);
+  authUpdate.classList.toggle('hidden', !show);
+  if (!show) return;
+  const text = updateMessage(s);
+  // Barra: avança no download, cheia quando pronto ou instalando, some no erro.
+  const percent = s.state === 'downloading' ? (s.percent || 0) : 100;
+  for (const box of [updateBanner, authUpdate]) {
+    box.classList.toggle('warn', s.state === 'error');
+    box.querySelector('[data-update-text]').textContent = text;
+    const bar = box.querySelector('[data-update-progress]');
+    bar.classList.toggle('hidden', s.state === 'error');
+    bar.setAttribute('aria-valuenow', String(Math.floor(percent)));
+    bar.querySelector('.update-progress-fill').style.width = `${percent}%`;
+  }
+  updateInstall.classList.toggle('hidden', s.state !== 'ready');
 }
 updateInstall.addEventListener('click', () => {
   const hosting = IS_LOCAL_SERVER && serverMembers.some((m) => m.online && m.username !== currentUser);

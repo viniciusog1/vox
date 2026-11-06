@@ -534,10 +534,26 @@ function setupAutoUpdate() {
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
   autoUpdater.on('update-available', (info) => set({ state: 'downloading', version: info.version, percent: 0 }));
-  autoUpdater.on('download-progress', (p) => set({ ...updateStatus, state: 'downloading', percent: Math.round(p.percent) }));
+  autoUpdater.on('download-progress', (p) => set({
+    ...updateStatus,
+    state: 'downloading',
+    percent: Math.min(100, Math.max(0, Math.round(p.percent * 10) / 10)),
+    transferred: p.transferred,
+    total: p.total,
+    bytesPerSecond: p.bytesPerSecond
+  }));
   autoUpdater.on('update-downloaded', (info) => set({ state: 'ready', version: info.version }));
-  autoUpdater.on('error', (e) => console.error('[UPDATE]', e.message));
-  ipcMain.on('update-install', () => { quitting = true; autoUpdater.quitAndInstall(); });
+  autoUpdater.on('error', (e) => {
+    console.error('[UPDATE]', e.message);
+    // Só avisa se caiu no meio do download; falha ao procurar (sem internet) fica no log.
+    if (updateStatus && updateStatus.state === 'downloading') set({ state: 'error', version: updateStatus.version });
+  });
+  ipcMain.on('update-install', () => {
+    set({ ...updateStatus, state: 'installing' });
+    quitting = true;
+    // Um instante para a faixa mostrar "Instalando…" antes de a janela fechar.
+    setTimeout(() => autoUpdater.quitAndInstall(), 400);
+  });
   const check = () => autoUpdater.checkForUpdates().catch((e) => console.error('[UPDATE]', e.message));
   check();
   setInterval(check, 4 * 60 * 60 * 1000);
