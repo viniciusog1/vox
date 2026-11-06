@@ -6,7 +6,7 @@
 
 **Chat, voz, vídeo e tela compartilhada para jogar e conversar com os amigos — rodando no seu próprio PC.**
 
-![Versão](https://img.shields.io/badge/vers%C3%A3o-1.5.2-7c4dff)
+![Versão](https://img.shields.io/badge/vers%C3%A3o-1.5.3-7c4dff)
 ![Windows 11](https://img.shields.io/badge/Windows-11-0078D4?logo=windows11&logoColor=white)
 ![Electron](https://img.shields.io/badge/Electron-45-47848F?logo=electron&logoColor=white)
 ![Node.js](https://img.shields.io/badge/Node.js-%E2%89%A5%2022.12-339933?logo=nodedotjs&logoColor=white)
@@ -204,7 +204,7 @@ Sai em `dist/`: `Vox-Setup-<versão>.exe`, `.blockmap` e `latest.yml`.
 ### 🚀 Publicar uma versão
 
 1. 🔢 Suba `version` em `package.json` e rode `npm run dist`.
-2. 🏷️ Crie uma release no GitHub com a tag `v<versão>` (ex.: `v1.5.2`).
+2. 🏷️ Crie uma release no GitHub com a tag `v<versão>` (ex.: `v1.5.3`).
 3. 📎 Anexe **os três arquivos** de `dist/`.
 4. ✅ Publique (rascunho não vale) — os Vox instalados avisam para atualizar.
 

@@ -826,6 +826,14 @@
   .settings-hint {
     font-size: 11px; color: var(--muted); line-height: 1.5; margin-bottom: 10px;
   }
+  .settings-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+  .app-version { font-size: 11px; color: var(--muted); }
+  /* Acima do login (z-index 100) e abaixo das janelas (150+); não captura cliques. */
+  #app-version-corner {
+    position: fixed; right: 12px; bottom: 8px; z-index: 110;
+    font-size: 10px; opacity: .75; pointer-events: none; user-select: none;
+  }
+  #members { padding-bottom: 30px; }
   .settings-actions {
     display: flex; justify-content: space-between; gap: 10px; margin-top: 18px;
   }
@@ -1334,6 +1342,9 @@
   </div>
 </div>
 
+<!-- Versão no canto inferior direito: aparece no login e na tela principal -->
+<div id="app-version-corner" class="app-version" data-app-version aria-hidden="true"></div>
+
 <!-- Seletor de tela -->
 <div id="source-picker" class="hidden">
   <div class="source-card">
@@ -1370,7 +1381,10 @@
 <!-- Configurações de áudio -->
 <div id="settings-modal" class="hidden">
   <div class="settings-card">
-    <h3>Configurações</h3>
+    <div class="settings-head">
+      <h3>Configurações</h3>
+      <span class="app-version" data-app-version></span>
+    </div>
 
     <div class="settings-tabs" role="tablist" aria-label="Seções das configurações">
       <button type="button" class="settings-tab active" role="tab" id="settings-tabbtn-audio" aria-selected="true" aria-controls="settings-tab-audio" data-tab="audio">Áudio</button>
