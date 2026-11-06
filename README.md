@@ -69,6 +69,12 @@
 - 🔊 Volume da música só no seu PC
 - ▶️ Player oficial do YouTube: nada é baixado
 
+### 🔊 Soundboard
+- 🎺 8 sons de fábrica: buzina, ba dum tss, tchan tchan, aplausos, vitória 8-bit e mais
+- 📤 Qualquer membro envia sons para o servidor (MP3, OGG, WAV ou WebM, até 8 s)
+- 👂 Todos na voz ouvem — mesmo com o microfone mutado
+- 🎚️ Volume do soundboard só no seu PC, ou desligue se preferir
+
 ### 🎨 Aparência e perfil
 - 🌈 **18 temas** em 4 grupos: Escuros, Neon, Anime e Claros
 - ✨ Temas Anime com efeitos animados (dá para reduzir as animações)
@@ -213,6 +219,7 @@ Sai em `dist/`: `Vox-Setup-<versão>.exe`, `.blockmap` e `latest.yml`.
 | 👥 `friends.json` | Amizades e pedidos |
 | 🔑 `sessions.json` | Sessões para reconectar sem senha |
 | 🖼️ `uploads/` · `avatars/` | Imagens do chat e fotos de perfil |
+| 🔊 `soundboard.json` · `soundboard/` | Sons enviados ao soundboard de cada servidor |
 
 - 🧹 Imagens somem junto com a mensagem (7 dias, limite de 200, ou quando o autor apaga)
 - 🔐 Fechar o Vox pede login de novo na próxima abertura

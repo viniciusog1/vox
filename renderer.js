@@ -67,6 +67,7 @@ const btnCam = document.getElementById('btn-cam');
 const btnScreen = document.getElementById('btn-screen');
 const btnHangup = document.getElementById('btn-hangup');
 const btnMusic = document.getElementById('btn-music');
+const btnSoundboard = document.getElementById('btn-soundboard');
 
 
 const sourceList = document.getElementById('source-list');
@@ -649,6 +650,9 @@ function updateControlButtons() {
 // Cam e Tela também ficam travados enquanto um pedido de câmera/tela está em andamento.
 function updateVoiceDependentControls() {
   const noVoice = !currentVoiceRoom;
+  btnSoundboard.disabled = noVoice;
+  btnSoundboard.title = noVoice ? 'Entre em um canal de voz' : 'Soundboard';
+  if (noVoice) closeSoundboard();
   [btnCam, btnScreen, btnMusic, btnHangup].forEach((btn) => {
     if (noVoice) btn.title = 'Entre em um canal de voz';
     else btn.title = btn.dataset.title || btn.title;
@@ -893,20 +897,25 @@ function createPeer(id) {
 
   setPeerConn(id, 'connecting');
   pc.onconnectionstatechange = () => {
+    if (peers.get(id) !== pc) return; // conexão já substituída
     const st = pc.connectionState;
-    if (st === 'connected') setPeerConn(id, 'connected');
-    else if (st === 'failed') setPeerConn(id, 'failed');
-    else if (st === 'disconnected') setPeerConn(id, 'reconnecting');
-    else if (st === 'closed') { peerConn.delete(id); updateConnLabel(id); }
-    else setPeerConn(id, 'connecting');
-    if (['failed', 'closed', 'disconnected'].includes(pc.connectionState)) {
-      if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
-        remoteStreams.delete(id);
-        removeScreenAudio(id);
-        analysers.delete(id);
-        peers.delete(id);
-        renderTiles();
-      }
+    if (st === 'connected') {
+      setPeerConn(id, 'connected');
+      clearRecovery(id);
+    } else if (st === 'disconnected') {
+      // Pela internet (sem TURN) a rota cai de vez em quando: espera um pouco e renegocia.
+      setPeerConn(id, 'reconnecting');
+      scheduleRecovery(id, pc, RECOVERY_GRACE_MS);
+    } else if (st === 'failed') {
+      // Antes a conexão era apagada aqui e só voltava saindo e entrando no canal.
+      setPeerConn(id, 'reconnecting');
+      scheduleRecovery(id, pc, 0);
+    } else if (st === 'closed') {
+      peerConn.delete(id);
+      updateConnLabel(id);
+      dropPeer(id);
+    } else {
+      setPeerConn(id, 'connecting');
     }
     renderTiles();
   };
@@ -914,8 +923,89 @@ function createPeer(id) {
   return pc;
 }
 
+/* ---------- Recuperação de conexão entre os PCs ---------- */
+// Sem TURN, a rota direta entre dois PCs pela internet às vezes cai. Quem tem o
+// menor id de socket conduz a recuperação (os dois nunca renegociam juntos):
+// 1º reinicia o ICE na mesma conexão; se em RECOVERY_RESTART_MS não voltar,
+// refaz a conexão do zero (oferta com fresh). O outro lado pede a reconstrução.
+const RECOVERY_GRACE_MS = 4000;
+const RECOVERY_RESTART_MS = 8000;
+const peerRecovery = new Map(); // id -> { timer, attempt }
+
+const leadsRecovery = (id) => socket.id < id;
+
+function scheduleRecovery(id, pc, delay) {
+  const r = peerRecovery.get(id) || { timer: null, attempt: 0 };
+  if (r.timer) return;
+  r.timer = setTimeout(() => { r.timer = null; recoverPeer(id, pc); }, delay);
+  peerRecovery.set(id, r);
+}
+
+function clearRecovery(id) {
+  const r = peerRecovery.get(id);
+  if (r) clearTimeout(r.timer);
+  peerRecovery.delete(id);
+}
+
+async function recoverPeer(id, pc) {
+  if (peers.get(id) !== pc || !currentVoiceRoom || !userMap.has(id) || effectiveStatus() === 'invisible') return;
+  if (pc.connectionState === 'connected') { clearRecovery(id); return; }
+  const r = peerRecovery.get(id) || { timer: null, attempt: 0 };
+  r.attempt += 1;
+  peerRecovery.set(id, r);
+  console.warn(`[voz] conexão com ${id} em "${pc.connectionState}", tentativa ${r.attempt}`);
+  if (!leadsRecovery(id)) {
+    socket.emit('signal', { to: id, data: { rebuild: true } });
+    scheduleRecovery(id, pc, RECOVERY_RESTART_MS);
+    return;
+  }
+  if (r.attempt === 1 && pc.signalingState === 'stable') {
+    try {
+      const offer = await pc.createOffer({ iceRestart: true });
+      await pc.setLocalDescription(offer);
+      socket.emit('signal', { to: id, data: { offer, restart: true } });
+      scheduleRecovery(id, pc, RECOVERY_RESTART_MS);
+      return;
+    } catch (e) {
+      console.warn('[voz] reinício do ICE falhou; refazendo a conexão', e);
+    }
+  }
+  await rebuildPeer(id);
+}
+
+// Tira a conexão da lista e limpa o que era dela (sem mexer no pc em si).
+function dropPeer(id) {
+  clearRecovery(id);
+  peers.delete(id);
+  remoteStreams.delete(id);
+  removeScreenAudio(id);
+  analysers.delete(id);
+}
+
+// Fecha a conexão velha e faz uma nova oferta do zero.
+async function rebuildPeer(id) {
+  const old = peers.get(id);
+  dropPeer(id);
+  if (old) { old.onconnectionstatechange = null; try { old.close(); } catch (e) {} }
+  await offerTo(id, { fresh: true });
+}
+
+async function offerTo(id, extra = {}) {
+  try {
+    const pc = createPeer(id);
+    preferVideoCodecs(pc);
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    socket.emit('signal', { to: id, data: { offer, ...extra } });
+  } catch (e) {
+    console.error('Erro ao criar oferta:', e);
+  }
+}
+
 function closeAllPeers() {
-  peers.forEach((pc) => { try { pc.close(); } catch (e) {} });
+  peerRecovery.forEach((r) => clearTimeout(r.timer));
+  peerRecovery.clear();
+  peers.forEach((pc) => { pc.onconnectionstatechange = null; try { pc.close(); } catch (e) {} });
   peers.clear();
   peerConn.clear();
   remoteStreams.clear();
@@ -965,6 +1055,7 @@ async function joinVoice(room) {
   voiceConnection.classList.remove('hidden');
   updateActiveChannel();
   updateVoiceDependentControls();
+  if (isSoundboardOpen()) loadSoundboard(); // a biblioteca é a do servidor da voz nova
 
   await ensureLocalMedia();
   if (token !== joinToken) {
@@ -994,15 +1085,14 @@ function updateActiveChannel() {
 /* ================= SINALIZAÇÃO ================= */
 socket.on('user-joined', async (id) => {
   if (effectiveStatus() === 'invisible') return;
-  try {
-    const pc = createPeer(id);
-    preferVideoCodecs(pc);
-    const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
-    socket.emit('signal', { to: id, data: { offer } });
-  } catch (e) {
-    console.error('Erro ao criar oferta:', e);
+  // fresh: se o outro lado ainda tiver uma conexão velha comigo, troca pela nova.
+  if (peers.has(id)) {
+    const old = peers.get(id);
+    dropPeer(id);
+    old.onconnectionstatechange = null;
+    try { old.close(); } catch (e) {}
   }
+  await offerTo(id, { fresh: true });
 });
 
 async function flushCandidates(pc) {
@@ -1017,8 +1107,32 @@ async function flushCandidates(pc) {
 socket.on('signal', async ({ from, data }) => {
   if (effectiveStatus() === 'invisible') return;
   try {
+    // O outro lado não conseguiu recuperar a conexão: quem conduz refaz do zero.
+    if (data.rebuild) {
+      if (leadsRecovery(from) && currentVoiceRoom && userMap.has(from)) await rebuildPeer(from);
+      return;
+    }
+
     let pc = peers.get(from);
-    if (!pc) pc = createPeer(from);
+    const unusable = !pc || ['closed', 'failed'].includes(pc.connectionState);
+    // Reinício de ICE para uma conexão que aqui já não existe: pede para refazer.
+    if (data.offer && data.restart && unusable) {
+      socket.emit('signal', { to: from, data: { rebuild: true } });
+      return;
+    }
+    // Oferta de conexão nova: descarta a velha (outro certificado; não dá para reaproveitar).
+    if (data.offer && data.fresh && pc) {
+      dropPeer(from);
+      pc.onconnectionstatechange = null;
+      try { pc.close(); } catch (e) {}
+      pc = null;
+    }
+    if (!pc) {
+      if (!data.offer) return; // resposta ou candidato de uma conexão que já não existe
+      pc = createPeer(from);
+    } else if (pc.signalingState === 'closed') {
+      return; // sobra da conexão que caiu; a recuperação refaz uma nova
+    }
 
     if (data.offer) {
       await pc.setRemoteDescription(withVideoBitrateHints(data.offer));
@@ -1073,12 +1187,11 @@ socket.on('room-users', (list) => {
   const ids = new Set(list.map((u) => u.id));
   [...peers.keys()].forEach((id) => {
     if (!ids.has(id)) {
-      try { peers.get(id).close(); } catch (e) {}
-      peers.delete(id);
+      const pc = peers.get(id);
+      dropPeer(id);
       peerConn.delete(id);
-      remoteStreams.delete(id);
-      removeScreenAudio(id);
-      analysers.delete(id);
+      pc.onconnectionstatechange = null;
+      try { pc.close(); } catch (e) {}
       removed = true;
     }
   });
@@ -1701,6 +1814,7 @@ function isMusicPanelOpen() {
 
 function openMusicPanel() {
   if (!currentVoiceRoom) return;
+  closeSoundboard(); // os dois painéis ocupam o mesmo lugar
   musicPanel.classList.remove('hidden');
   btnMusic.setAttribute('aria-expanded', 'true');
   btnMusic.classList.add('primary');
@@ -2072,18 +2186,24 @@ let soundDestination = null;
 let soundRoster = null; // ids da última lista da voz; null até a primeira depois de entrar
 const soundAudio = document.getElementById('sound-effects-audio');
 
+// Saída dos sons do app (efeitos e soundboard): contexto próprio no dispositivo de saída escolhido.
+function ensureSoundOutput() {
+  if (!soundContext) {
+    soundContext = new (window.AudioContext || window.webkitAudioContext)();
+    soundDestination = soundContext.createMediaStreamDestination();
+    soundAudio.srcObject = soundDestination.stream;
+    if (typeof soundAudio.setSinkId === 'function') soundAudio.setSinkId(audioOutputId || '').catch(() => {});
+  }
+  if (soundContext.state === 'suspended') soundContext.resume();
+  soundAudio.play().catch(() => {});
+  return { ctx: soundContext, dest: soundDestination };
+}
+
 function playSoundEffect(name) {
   if (!soundEffectsEnabled) return;
   try {
-    if (!soundContext) {
-      soundContext = new (window.AudioContext || window.webkitAudioContext)();
-      soundDestination = soundContext.createMediaStreamDestination();
-      soundAudio.srcObject = soundDestination.stream;
-      if (typeof soundAudio.setSinkId === 'function') soundAudio.setSinkId(audioOutputId || '').catch(() => {});
-    }
-    if (soundContext.state === 'suspended') soundContext.resume();
-    soundAudio.play().catch(() => {});
-    VoxSounds.playSound(soundContext, soundDestination, name);
+    const { ctx, dest } = ensureSoundOutput();
+    VoxSounds.playSound(ctx, dest, name);
   } catch (e) {
     console.error('Erro ao tocar efeito sonoro:', e);
   }
@@ -4425,6 +4545,214 @@ socket.on('call-ended', ({ room, reason } = {}) => {
     leaveVoice();
   }
 });
+
+/* ================= SOUNDBOARD ================= */
+// Sons de fábrica (soundboard-synth.js) e os enviados ao servidor da voz atual.
+// Tocar avisa a sala ('soundboard-play'); cada PC toca localmente ao receber 'soundboard-played'.
+const SB = window.VoxSoundboard;
+const SBSynth = window.VoxSoundboardSynth;
+let soundboardSounds = [];             // sons do servidor da voz atual
+let soundboardServerId = null;
+let soundboardVolume = clampNumber(localStorage.getItem('vox-soundboard-volume') ?? 70, 0, 100, 70);
+let soundboardEnabled = localStorage.getItem('vox-soundboard-enabled') !== '0';
+const soundBuffers = new Map();        // arquivo -> Promise<AudioBuffer>
+let pendingSoundFile = null;           // { data, type, duration }
+
+const $sb = (id) => document.getElementById(id);
+
+// Busca por id a cada chamada: roda também no começo, antes das constantes abaixo existirem.
+function closeSoundboard() {
+  const panel = $sb('soundboard-panel');
+  if (!panel || panel.classList.contains('hidden')) return;
+  panel.classList.add('hidden');
+  btnSoundboard.setAttribute('aria-expanded', 'false');
+  btnSoundboard.classList.remove('primary');
+  btnSoundboard.classList.add('off');
+}
+
+const isSoundboardOpen = () => !$sb('soundboard-panel').classList.contains('hidden');
+
+function voiceServerId() {
+  const info = channelInfo(currentVoiceRoom);
+  return info ? info.server.id : null;
+}
+
+function openSoundboard() {
+  if (!currentVoiceRoom) return;
+  closeMusicPanel();
+  $sb('soundboard-panel').classList.remove('hidden');
+  btnSoundboard.setAttribute('aria-expanded', 'true');
+  btnSoundboard.classList.add('primary');
+  btnSoundboard.classList.remove('off');
+  $sb('soundboard-volume').value = String(soundboardVolume);
+  $sb('soundboard-volume-value').textContent = String(soundboardVolume);
+  $sb('soundboard-enabled').checked = soundboardEnabled;
+  $sb('soundboard-error').textContent = '';
+  loadSoundboard();
+}
+
+function loadSoundboard() {
+  const serverId = voiceServerId();
+  soundboardServerId = serverId;
+  if (!serverId) { soundboardSounds = []; renderSoundboard(); return; }
+  socket.emit('soundboard-list', { serverId }, (res) => {
+    if (res && res.success && soundboardServerId === serverId) soundboardSounds = res.sounds || [];
+    renderSoundboard();
+  });
+  renderSoundboard();
+}
+
+function soundButton({ id, name, deletable }) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'sound-btn';
+  b.dataset.sound = id;
+  b.title = `Tocar "${name}" para todos na voz`;
+  b.appendChild(VoxIcons.icon('audio-lines', 14));
+  const label = document.createElement('span');
+  label.className = 'sound-name';
+  label.textContent = name;
+  b.appendChild(label);
+  if (deletable) {
+    const del = document.createElement('span');
+    del.className = 'sound-del';
+    del.setAttribute('role', 'button');
+    del.title = 'Apagar som';
+    del.appendChild(VoxIcons.icon('x', 12));
+    del.addEventListener('click', (e) => { e.stopPropagation(); deleteSound(id, name); });
+    b.appendChild(del);
+  }
+  b.addEventListener('click', () => playSoundboard(id));
+  return b;
+}
+
+function renderSoundboard() {
+  const panel = $sb('soundboard-panel');
+  if (!panel || panel.classList.contains('hidden')) return;
+  $sb('soundboard-builtin').replaceChildren(...SBSynth.BUILTIN.map((s) => soundButton({ id: s.id, name: s.name })));
+  const server = serverById(soundboardServerId);
+  const manager = server && ['owner', 'admin'].includes(server.role);
+  const inServer = !!soundboardServerId;
+  panel.querySelector('.soundboard-server-title').textContent = inServer ? `Sons de ${server ? server.name : 'este servidor'}` : 'Sons do servidor';
+  $sb('soundboard-custom').replaceChildren(...soundboardSounds.map((s) => soundButton({ id: s.id, name: s.name, deletable: manager || s.by === currentUser })));
+  const empty = $sb('soundboard-custom-empty');
+  empty.textContent = inServer ? 'Nenhum som ainda. Envie o primeiro!' : 'Na chamada direta só há os sons do Vox.';
+  empty.classList.toggle('hidden', soundboardSounds.length > 0);
+  $sb('soundboard-add').classList.toggle('hidden', !inServer);
+}
+
+function playSoundboard(id) {
+  socket.emit('soundboard-play', { soundId: id }, (res) => {
+    if (res && !res.success) $sb('soundboard-status').textContent = res.message || 'Não foi possível tocar.';
+  });
+}
+
+async function deleteSound(id, name) {
+  if (!window.confirm(`Apagar o som "${name}" do servidor?`)) return;
+  const res = await request('soundboard-delete', { serverId: soundboardServerId, soundId: id });
+  if (!res.success) $sb('soundboard-error').textContent = res.message || 'Não foi possível apagar.';
+}
+
+function soundBuffer(ctx, file) {
+  if (!soundBuffers.has(file)) {
+    const p = fetch(`${SERVER_URL}/soundboard/${encodeURIComponent(file)}`)
+      .then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.arrayBuffer(); })
+      .then((buf) => ctx.decodeAudioData(buf));
+    p.catch(() => soundBuffers.delete(file)); // tenta de novo na próxima vez
+    soundBuffers.set(file, p);
+  }
+  return soundBuffers.get(file);
+}
+
+socket.on('soundboard-played', async (p) => {
+  if (!p || !currentVoiceRoom) return;
+  $sb('soundboard-status').textContent = p.by ? `${p.by} tocou "${p.name}"` : `Tocou "${p.name}"`;
+  const btn = document.querySelector(`.sound-btn[data-sound="${CSS.escape(p.id)}"]`);
+  if (btn) { btn.classList.add('playing'); setTimeout(() => btn.classList.remove('playing'), 900); }
+  if (!soundboardEnabled || soundboardVolume === 0) return;
+  try {
+    const { ctx, dest } = ensureSoundOutput();
+    const volume = soundboardVolume / 100;
+    if (p.builtin) { SBSynth.playBuiltin(ctx, dest, p.id, volume); return; }
+    if (!SB.isSoundFile(p.file)) return;
+    const buffer = await soundBuffer(ctx, p.file);
+    const src = ctx.createBufferSource();
+    const gain = ctx.createGain();
+    src.buffer = buffer;
+    gain.gain.value = volume;
+    src.connect(gain).connect(dest);
+    src.start();
+  } catch (e) {
+    console.warn('Soundboard: não foi possível tocar', e);
+  }
+});
+
+socket.on('soundboard-updated', ({ serverId, sounds } = {}) => {
+  if (serverId !== soundboardServerId) return;
+  soundboardSounds = Array.isArray(sounds) ? sounds : [];
+  renderSoundboard();
+});
+
+btnSoundboard.addEventListener('click', () => (isSoundboardOpen() ? closeSoundboard() : openSoundboard()));
+$sb('soundboard-close').addEventListener('click', closeSoundboard);
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && isSoundboardOpen() && fullscreenView.classList.contains('hidden')) closeSoundboard();
+});
+
+$sb('soundboard-volume').addEventListener('input', (e) => {
+  soundboardVolume = clampNumber(e.target.value, 0, 100, 70);
+  $sb('soundboard-volume-value').textContent = String(soundboardVolume);
+  try { localStorage.setItem('vox-soundboard-volume', String(soundboardVolume)); } catch (err) {}
+});
+$sb('soundboard-enabled').addEventListener('change', (e) => {
+  soundboardEnabled = e.target.checked;
+  try { localStorage.setItem('vox-soundboard-enabled', soundboardEnabled ? '1' : '0'); } catch (err) {}
+});
+
+/* ---------- Enviar som ---------- */
+$sb('soundboard-pick').addEventListener('click', () => $sb('soundboard-file').click());
+
+$sb('soundboard-file').addEventListener('change', async (e) => {
+  const file = e.target.files && e.target.files[0];
+  e.target.value = '';
+  const err = $sb('soundboard-error');
+  err.textContent = '';
+  if (!file) return;
+  const type = file.type === 'audio/mp3' ? 'audio/mpeg' : file.type;
+  if (!SB.audioExtension(type)) { err.textContent = 'Use um arquivo MP3, OGG, WAV ou WebM.'; return; }
+  if (file.size > SB.MAX_BYTES) { err.textContent = 'O arquivo passa de 1 MB.'; return; }
+  try {
+    const data = await file.arrayBuffer();
+    const { ctx } = ensureSoundOutput();
+    const decoded = await ctx.decodeAudioData(data.slice(0)); // decodeAudioData consome o buffer
+    if (decoded.duration > SB.MAX_SECONDS + 0.25) {
+      err.textContent = `O som tem ${decoded.duration.toFixed(1)} s; o limite é ${SB.MAX_SECONDS} s.`;
+      return;
+    }
+    pendingSoundFile = { data, type, duration: decoded.duration };
+    $sb('soundboard-name').value = file.name.replace(/\.[^.]+$/, '').slice(0, SB.MAX_NAME);
+    $sb('soundboard-form').classList.remove('hidden');
+    $sb('soundboard-name').focus();
+    $sb('soundboard-name').select();
+  } catch (e2) {
+    err.textContent = 'Não consegui ler esse áudio.';
+  }
+});
+
+async function sendSound() {
+  if (!pendingSoundFile || !soundboardServerId) return;
+  const err = $sb('soundboard-error');
+  const btn = $sb('soundboard-send');
+  btn.disabled = true;
+  const res = await request('soundboard-add', { serverId: soundboardServerId, name: $sb('soundboard-name').value, ...pendingSoundFile });
+  btn.disabled = false;
+  if (!res.success) { err.textContent = res.message || 'Não foi possível enviar.'; return; }
+  pendingSoundFile = null;
+  $sb('soundboard-form').classList.add('hidden');
+  err.textContent = '';
+}
+$sb('soundboard-send').addEventListener('click', sendSound);
+$sb('soundboard-name').addEventListener('keydown', (e) => { if (e.key === 'Enter') sendSound(); });
 
 /* ================= DIAGNÓSTICO DE VÍDEO (Ctrl+Shift+D) ================= */
 // Mostra, por participante, o que sai e o que chega: fps, resolução, banda,

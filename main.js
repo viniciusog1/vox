@@ -9,6 +9,8 @@ const { publicUser, applyStatePatch, joinVoiceRoom, leaveVoiceRoom, canUseTextRo
 const srv = require('./servers-state');
 const fr = require('./friends-state');
 const musicHistory = require('./music-history');
+const sb = require('./soundboard-state');
+const sbSynth = require('./soundboard-synth');
 const { parseYouTubeId, lookupVideo } = require('./youtube');
 const { RESYNC_INTERVAL_MS, createMusicState, addTrack, removeTrack, advanceIfCurrent, endedIfCurrent, togglePause, toPublic } = require('./music-state');
 const { PROTOCOL_VERSION, VERSION_MISMATCH_MESSAGE, isCompatible } = require('./protocol');
@@ -57,6 +59,9 @@ const FRIENDS_PATH = path.join(DATA_DIR, 'friends.json');
 const MUSIC_HISTORY_PATH = path.join(DATA_DIR, 'music-history.json');
 const UPLOADS_DIR = path.join(DATA_DIR, 'uploads');
 const AVATARS_DIR = path.join(DATA_DIR, 'avatars');
+const SOUNDBOARD_DIR = path.join(DATA_DIR, 'soundboard');
+const SOUNDBOARD_PATH = path.join(DATA_DIR, 'soundboard.json');
+fs.mkdirSync(SOUNDBOARD_DIR, { recursive: true });
 fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 fs.mkdirSync(AVATARS_DIR, { recursive: true });
 
@@ -154,15 +159,37 @@ function pruneAvatars() {
   }
 }
 
-const UPLOAD_TYPES = { jpg: 'image/jpeg', png: 'image/png', webp: 'image/webp', gif: 'image/gif' };
+// Soundboard: biblioteca por servidor (soundboard-state.js) e arquivos em soundboard/.
+const soundboardDb = { ...sb.emptyDb(), ...readJsonFile(SOUNDBOARD_PATH) };
+function saveSoundboard() { fs.writeFileSync(SOUNDBOARD_PATH, JSON.stringify(soundboardDb, null, 2)); }
+function removeSoundFile(sound) {
+  if (sound && sb.isSoundFile(sound.file)) fs.rm(path.join(SOUNDBOARD_DIR, sound.file), { force: true }, () => {});
+}
+// Arquivos sem som cadastrado (servidor apagado com o app fechado etc.).
+function pruneSoundFiles() {
+  const used = new Set(Object.values(soundboardDb).flat().map((s) => s.file));
+  for (const name of fs.readdirSync(SOUNDBOARD_DIR)) {
+    if (!used.has(name)) fs.rm(path.join(SOUNDBOARD_DIR, name), { force: true }, () => {});
+  }
+}
 
-// GET /uploads/<uuid>.<ext> e /avatars/<uuid>.<ext>: nomes aleatórios, só leitura, sem listar a pasta.
+const UPLOAD_TYPES = {
+  jpg: 'image/jpeg', png: 'image/png', webp: 'image/webp', gif: 'image/gif',
+  mp3: 'audio/mpeg', ogg: 'audio/ogg', wav: 'audio/wav', webm: 'audio/webm'
+};
+const SERVED_DIRS = {
+  uploads: { dir: UPLOADS_DIR, valid: (n) => chat.isUploadName(n) },
+  avatars: { dir: AVATARS_DIR, valid: (n) => chat.isAvatarName(n) },
+  soundboard: { dir: SOUNDBOARD_DIR, valid: (n) => sb.isSoundFile(n) }
+};
+
+// GET /uploads/, /avatars/ e /soundboard/<uuid>.<ext>: nomes aleatórios, só leitura, sem listar a pasta.
 function handleHttp(req, res) {
-  const m = /^\/(uploads|avatars)\/([^/?#]+)$/.exec(req.url || '');
+  const m = /^\/(uploads|avatars|soundboard)\/([^/?#]+)$/.exec(req.url || '');
   if (req.method !== 'GET' || !m) return false;
-  const isAvatar = m[1] === 'avatars';
-  if (isAvatar ? !chat.isAvatarName(m[2]) : !chat.isUploadName(m[2])) return false;
-  const file = path.join(isAvatar ? AVATARS_DIR : UPLOADS_DIR, m[2]);
+  const served = SERVED_DIRS[m[1]];
+  if (!served.valid(m[2])) return false;
+  const file = path.join(served.dir, m[2]);
   fs.readFile(file, (err, data) => {
     if (err) { res.writeHead(404); return res.end(); }
     res.writeHead(200, {
@@ -180,6 +207,7 @@ const authenticated = new Map(); // socket.id -> username
 const roomUsers = new Map();     // room -> Map(socket.id -> { username, muted })
 
 const musicByRoom = new Map();   // sala de voz -> estado da fila de música
+const lastSoundAt = new Map();   // username -> último toque do soundboard (ms), para o intervalo mínimo
 
 let mainWindow = null;
 let io = null;
@@ -319,6 +347,7 @@ function purgeOldMessages() {
 purgeOldMessages();
 pruneUploads();
 pruneAvatars();
+pruneSoundFiles();
 sessions.prune();
 setInterval(() => { purgeOldMessages(); sessions.prune(); }, 60 * 60 * 1000);
 
@@ -841,9 +870,74 @@ app.whenReady().then(() => {
       evictFromRooms((room) => rooms.has(room));
       deleteRoomData(rooms);
       if (musicHistory.dropScope(musicHistoryDb, r.server.id)) saveMusicHistory();
+      const gone = sb.dropServer(soundboardDb, r.server.id);
+      if (gone.length) { gone.forEach(removeSoundFile); saveSoundboard(); }
       notifyMembers(r.server);
       refreshVisibility();
       return r;
+    }));
+
+    // ---------- Soundboard ----------
+    const memberServer = (serverId, user) => {
+      const server = serversDb.servers[serverId];
+      return server && server.members.includes(user) ? server : null;
+    };
+    const sendSoundboard = (server) => {
+      for (const m of server.members) emitToUser(m, 'soundboard-updated', { serverId: server.id, sounds: sb.soundsOf(soundboardDb, server.id) });
+    };
+
+    socket.on('soundboard-list', ({ serverId } = {}, callback) => act(callback, (user) => {
+      if (!memberServer(serverId, user)) return { ok: false, error: 'Você não está nesse servidor.' };
+      return { ok: true, reply: { sounds: sb.soundsOf(soundboardDb, serverId) } };
+    }));
+
+    // Qualquer membro envia sons (até 1 MB e 8 s; a duração vem do cliente, que decodifica o áudio).
+    socket.on('soundboard-add', ({ serverId, name, type, duration, data } = {}, callback) => act(callback, (user) => {
+      const server = memberServer(serverId, user);
+      if (!server) return { ok: false, error: 'Você não está nesse servidor.' };
+      const ext = sb.audioExtension(type);
+      if (!ext || !Buffer.isBuffer(data)) return { ok: false, error: 'Use um arquivo MP3, OGG, WAV ou WebM.' };
+      const file = `${crypto.randomUUID()}.${ext}`;
+      const r = sb.addSound(soundboardDb, serverId, {
+        id: crypto.randomUUID(), name, file, by: user, at: new Date().toISOString(), duration, bytes: data.length
+      });
+      if (!r.ok) return r;
+      fs.writeFileSync(path.join(SOUNDBOARD_DIR, file), data);
+      saveSoundboard();
+      sendSoundboard(server);
+      return r;
+    }));
+
+    socket.on('soundboard-delete', ({ serverId, soundId } = {}, callback) => act(callback, (user) => {
+      const server = memberServer(serverId, user);
+      if (!server) return { ok: false, error: 'Você não está nesse servidor.' };
+      const r = sb.deleteSound(soundboardDb, serverId, soundId, user, srv.isManager(server, user));
+      if (!r.ok) return r;
+      removeSoundFile(r.sound);
+      saveSoundboard();
+      sendSoundboard(server);
+      return r;
+    }));
+
+    // Toca para todos da sala de voz: cada PC toca o som localmente.
+    socket.on('soundboard-play', ({ soundId } = {}, callback) => act(callback, (user) => {
+      const room = socket.data.voiceRoom;
+      if (!room) return { ok: false, error: 'Entre num canal de voz para usar o soundboard.' };
+      const now = Date.now();
+      if (!sb.canPlay(lastSoundAt.get(user), now)) return { ok: false, error: 'Calma! Espere um instante entre um som e outro.' };
+      let payload;
+      if (sbSynth.isBuiltin(soundId)) {
+        payload = { id: soundId, builtin: true, name: sbSynth.BUILTIN.find((s) => s.id === soundId).name };
+      } else {
+        const found = srv.findChannel(serversDb, room);
+        const sound = found && sb.soundsOf(soundboardDb, found.server.id).find((s) => s.id === soundId);
+        if (!sound) return { ok: false, error: 'Som não encontrado neste servidor.' };
+        payload = { id: sound.id, builtin: false, name: sound.name, file: sound.file };
+      }
+      lastSoundAt.set(user, now);
+      payload.by = socket.data.status === 'invisible' ? null : user;
+      io.to(room).emit('soundboard-played', payload);
+      return { ok: true };
     }));
 
     socket.on('channel-create', ({ serverId, type, name } = {}, callback) => act(callback, (user) => {

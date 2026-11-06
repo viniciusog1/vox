@@ -24,6 +24,8 @@
       "!servers.json",
       "!friends.json",
       "!music-history.json",
+      "!soundboard.json",
+      "!soundboard/**",
       "!dist/**",
       "!README.md",
       "!AGENTS.md",
