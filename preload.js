@@ -22,6 +22,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   tunnelStatus: () => ipcRenderer.invoke('tunnel-status'),
   onTunnelStatus: (cb) => ipcRenderer.on('tunnel-status', (event, s) => cb(s)),
 
+  addressStatus: () => ipcRenderer.invoke('address-status'),
+  addressConnect: (token) => ipcRenderer.invoke('address-connect', String(token || '')),
+  addressDisconnect: () => ipcRenderer.invoke('address-disconnect'),
+  setAutoTunnel: (on) => ipcRenderer.invoke('address-auto-tunnel', !!on),
+  openTokenPage: () => ipcRenderer.send('address-token-page'),
+  onAddressStatus: (cb) => ipcRenderer.on('address-status', (event, s) => cb(s)),
+
   updateStatus: () => ipcRenderer.invoke('update-status'),
   onUpdateStatus: (cb) => ipcRenderer.on('update-status', (event, s) => cb(s)),
   installUpdate: () => ipcRenderer.send('update-install')

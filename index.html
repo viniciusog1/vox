@@ -513,10 +513,19 @@
   .tunnel-state { font-size: 12px; color: var(--muted); }
   .tunnel-state[data-state="on"] { color: var(--ok-text); }
   .tunnel-state[data-state="error"] { color: var(--danger-text); }
-  #tunnel-url {
+  #tunnel-url, .tunnel-input {
     flex: 1; min-width: 0; height: 38px; padding: 0 10px; border-radius: 8px;
     border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 13px;
   }
+  .tunnel-row .btn-secondary:disabled { opacity: .5; cursor: default; }
+  .address-steps { margin: 8px 0 4px 20px; font-size: 12px; color: var(--muted); line-height: 1.7; }
+  .address-steps b { color: var(--text); }
+  .link-btn {
+    border: none; background: none; padding: 0; font: inherit; color: var(--link);
+    text-decoration: underline; cursor: pointer;
+  }
+  .address-disconnect { margin-left: auto; font-size: 12px; }
+  .address-error { font-size: 12px; color: var(--danger-text); min-height: 14px; }
 
   /* ================= PARTICIPANTES ================= */
   #members {
@@ -1293,11 +1302,11 @@
     <div class="server-box">
       <label for="server-url">Servidor</label>
       <div class="server-row">
-        <input type="text" id="server-url" placeholder="http://127.0.0.1:3000">
+        <input type="text" id="server-url" placeholder="http://127.0.0.1:3000 ou link fixo do host">
         <button id="server-apply" title="Aplicar endereço do servidor">Aplicar</button>
       </div>
       <div id="server-status" class="server-status">Conectando ao servidor...</div>
-      <p class="server-hint">Para testar com um amigo, use o IP da sua máquina (ex.: http://192.168.0.10:3000) ou um túnel.</p>
+      <p class="server-hint">Cole o link fixo que o host mandou (gist.github.com/…) uma única vez, ou o endereço do servidor.</p>
     </div>
   </div>
 </div>
@@ -1371,6 +1380,34 @@
         <button type="button" id="tunnel-copy" class="btn-secondary" title="Copiar endereço"><i data-icon="copy" data-size="16"></i> Copiar</button>
       </div>
       <p class="settings-hint">Seu amigo cola esse endereço no campo Servidor da tela de login e clica em Aplicar. Um endereço novo pode levar cerca de 1 minuto para começar a funcionar. O túnel fecha junto com o Vox; se cair sozinho, reabre com outro endereço.</p>
+      <label class="toggle-row">
+        <input type="checkbox" id="tunnel-auto">
+        <span>Abrir para amigos sempre que o Vox iniciar</span>
+      </label>
+
+      <div class="settings-section">Link fixo para os amigos</div>
+      <p class="settings-hint">Para não mandar um endereço novo toda vez, o Vox grava o endereço atual num Gist secreto do seu GitHub (grátis). Seus amigos colam o link fixo no campo Servidor uma única vez e o Vox deles acha o endereço novo sozinho.</p>
+      <div id="address-setup">
+        <ol class="address-steps">
+          <li><button type="button" id="address-token-page" class="link-btn">Criar um token no GitHub</button>: deixe marcada só a caixa <b>gist</b> e, em Expiration, escolha <b>No expiration</b>.</li>
+          <li>Copie o token gerado, cole aqui e clique em Conectar.</li>
+        </ol>
+        <div class="tunnel-row">
+          <input type="password" id="address-token" class="tunnel-input" placeholder="ghp_…" autocomplete="off" spellcheck="false" aria-label="Token do GitHub">
+          <button type="button" id="address-connect" class="btn-secondary">Conectar</button>
+        </div>
+        <div id="address-error" class="address-error"></div>
+      </div>
+      <div id="address-ready" class="hidden">
+        <div class="tunnel-row">
+          <input type="text" id="address-link" class="tunnel-input" readonly aria-label="Link fixo para os amigos">
+          <button type="button" id="address-copy" class="btn-secondary" title="Copiar link fixo"><i data-icon="copy" data-size="16"></i> Copiar</button>
+        </div>
+        <div class="tunnel-row">
+          <span id="address-state" class="tunnel-state"></span>
+          <button type="button" id="address-disconnect" class="link-btn address-disconnect">Desconectar</button>
+        </div>
+      </div>
     </div>
 
     <div class="settings-panel hidden" id="settings-tab-aparencia" role="tabpanel" aria-labelledby="settings-tabbtn-aparencia">
@@ -1566,6 +1603,7 @@
 <script src="mic-gate.js"></script>
 <script src="soundboard-state.js"></script>
 <script src="soundboard-synth.js"></script>
+<script src="fixed-address.js"></script>
 <script src="renderer.js"></script>
 </body>
 </html>

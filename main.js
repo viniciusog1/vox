@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, session, desktopCapturer, Tray, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, session, desktopCapturer, Tray, Menu, safeStorage, shell } = require('electron');
 const path = require('path');
 const http = require('http');
 const { Server } = require('socket.io');
@@ -16,6 +16,8 @@ const { PROTOCOL_VERSION, VERSION_MISMATCH_MESSAGE, isCompatible } = require('./
 const chat = require('./chat-state');
 const { createSessionStore } = require('./sessions');
 const { createTunnel } = require('./tunnel');
+const { createAddressPublisher } = require('./address-publisher');
+const { TOKEN_PAGE } = require('./fixed-address');
 
 // ---------- Dados do antigo Concord ----------
 // O app se chamava Concord. Na primeira execução como Vox, copia a pasta de dados
@@ -1284,16 +1286,49 @@ app.whenReady().then(() => {
     }
   });
 
+  // ---------- Link fixo (endereço do túnel num Gist do host) ----------
+  const address = createAddressPublisher({
+    file: path.join(app.getPath('userData'), 'link-fixo.json'),
+    fetchImpl: (...args) => fetch(...args),
+    encrypt: (text) => {
+      if (!safeStorage.isEncryptionAvailable()) throw new Error('Não foi possível guardar o token com segurança neste PC.');
+      return safeStorage.encryptString(text).toString('base64');
+    },
+    decrypt: (b64) => safeStorage.decryptString(Buffer.from(b64, 'base64')),
+    onStatus: (s) => sendToWindow('address-status', s)
+  });
+
   // ---------- Túnel (abrir para amigos) ----------
   const tunnel = createTunnel({
     binDirs: [path.join(__dirname, 'tools'), path.join(app.getPath('userData'), 'tools')],
     downloadDir: path.join(app.getPath('userData'), 'tools'),
-    onStatus: (s) => sendToWindow('tunnel-status', s)
+    onStatus: (s) => {
+      sendToWindow('tunnel-status', s);
+      if (s.state === 'on' && s.url) address.publish(s.url);
+    }
   });
   ipcMain.handle('tunnel-start', () => tunnel.start());
   ipcMain.handle('tunnel-stop', () => { tunnel.stop(); return tunnel.status(); });
   ipcMain.handle('tunnel-status', () => tunnel.status());
-  app.on('before-quit', () => tunnel.stop());
+  app.on('before-quit', () => { tunnel.stop(); address.stop(); });
+
+  ipcMain.handle('address-status', () => address.status());
+  ipcMain.handle('address-connect', async (event, token) => {
+    try {
+      const current = tunnel.status();
+      return { ok: true, status: await address.connect(token, current.state === 'on' ? current.url : null) };
+    } catch (e) {
+      return { ok: false, message: e.message, status: address.status() };
+    }
+  });
+  ipcMain.handle('address-disconnect', () => address.disconnect());
+  ipcMain.handle('address-auto-tunnel', (event, on) => address.setAutoTunnel(on));
+  ipcMain.on('address-token-page', () => shell.openExternal(TOKEN_PAGE));
+  // Com o link fixo, o túnel abre sozinho junto com o Vox (inclusive ao iniciar com o Windows).
+  if (address.autoTunnel()) {
+    server.once('listening', () => tunnel.start());
+    if (server.listening) tunnel.start();
+  }
 
   // ---------- Bandeja ----------
   createTray();

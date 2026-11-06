@@ -1,8 +1,12 @@
 // Ícones estáticos do index.html (<i data-icon>) viram SVG
 VoxIcons.hydrate();
 
-const SERVER_URL = localStorage.getItem('vox-server-url') || 'http://127.0.0.1:3000';
-const socket = io(SERVER_URL);
+// O campo Servidor aceita o endereço direto ou o link fixo (Gist) do host.
+const SERVER_INPUT = localStorage.getItem('vox-server-url') || 'http://127.0.0.1:3000';
+const GIST_REF = VoxAddress.parseGistRef(SERVER_INPUT);
+// Endereço real do servidor. Com link fixo, vem do Gist e muda quando o túnel do host reabre.
+let SERVER_URL = GIST_REF ? '' : SERVER_INPUT;
+const socket = io(GIST_REF ? 'http://127.0.0.1:3000' : SERVER_INPUT, { autoConnect: !GIST_REF });
 
 /* ================= REFERÊNCIAS DOM ================= */
 const authScreen = document.getElementById('auth-screen');
@@ -454,10 +458,89 @@ document.querySelectorAll('.tab-btn').forEach((btn) => {
 });
 
 /* ================= SERVIDOR ================= */
-serverUrlInput.value = SERVER_URL;
+serverUrlInput.value = SERVER_INPUT;
+
+function serverLabel() {
+  return GIST_REF ? `Conectado pelo link fixo (${SERVER_URL})` : `Conectado: ${SERVER_URL}`;
+}
+
+/* ---------- Link fixo: lê no Gist do host o endereço atual do túnel ---------- */
+const RESOLVE_MIN_GAP_MS = 20000;
+let lastResolveAt = 0;
+let resolving = null;
+
+async function fetchWithTimeout(url, ms = 6000) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), ms);
+  try {
+    return await fetch(url, { cache: 'no-store', signal: ctrl.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function readFixedAddress() {
+  try {
+    const res = await fetchWithTimeout(VoxAddress.apiUrl(GIST_REF.id));
+    if (res.ok) {
+      const url = VoxAddress.readGistResponse(await res.json());
+      if (url) return url;
+    }
+  } catch (e) {}
+  // Reserva: a API do GitHub limita leituras sem login (60 por hora).
+  const raw = VoxAddress.rawUrl(GIST_REF.owner, GIST_REF.id, Date.now());
+  if (!raw) return null;
+  try {
+    const res = await fetchWithTimeout(raw);
+    if (res.ok) return VoxAddress.readPayloadText(await res.text());
+  } catch (e) {}
+  return null;
+}
+
+// Atualiza o endereço do socket; a próxima tentativa de reconexão já usa o novo.
+function refreshServerAddress(force) {
+  if (!GIST_REF) return Promise.resolve(SERVER_URL);
+  if (resolving) return resolving;
+  if (!force && Date.now() - lastResolveAt < RESOLVE_MIN_GAP_MS) return Promise.resolve(SERVER_URL);
+  lastResolveAt = Date.now();
+  resolving = readFixedAddress().then((url) => {
+    resolving = null;
+    if (url) {
+      try { localStorage.setItem('vox-server-resolved', url); } catch (e) {}
+    } else {
+      url = SERVER_URL || localStorage.getItem('vox-server-resolved') || '';
+    }
+    if (url && url !== SERVER_URL) {
+      SERVER_URL = url;
+      socket.io.uri = url;
+    }
+    return SERVER_URL;
+  });
+  return resolving;
+}
+
+function startFixedAddress() {
+  serverStatus.textContent = 'Procurando o servidor pelo link fixo...';
+  serverStatus.style.color = 'var(--muted)';
+  refreshServerAddress(true).then((url) => {
+    if (url) return socket.connect();
+    serverStatus.textContent = 'Não foi possível ler o link fixo. Confira o link e a internet; tentando de novo...';
+    serverStatus.style.color = 'var(--danger-text)';
+    setTimeout(startFixedAddress, RESOLVE_MIN_GAP_MS);
+  });
+}
 
 function applyServerUrl() {
   let url = serverUrlInput.value.trim();
+  const gist = VoxAddress.parseGistRef(url);
+  if (gist) {
+    localStorage.setItem('vox-server-url', VoxAddress.gistLink(gist.owner, gist.id));
+    localStorage.removeItem('vox-server-resolved');
+    serverStatus.textContent = 'Conectando...';
+    serverStatus.style.color = 'var(--muted)';
+    location.reload();
+    return;
+  }
   if (!url) url = 'http://127.0.0.1:3000';
   if (!/^https?:\/\//i.test(url)) url = 'http://' + url;
   url = url.replace(/\/+$/, '');
@@ -480,13 +563,17 @@ serverApply.addEventListener('click', applyServerUrl);
 serverUrlInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') applyServerUrl(); });
 
 socket.on('connect', () => {
-  serverStatus.textContent = `Conectado: ${SERVER_URL}`;
+  serverStatus.textContent = serverLabel();
   serverStatus.style.color = 'var(--ok-text)';
   if (currentUser && sessionToken) resumeSession();
 });
 socket.on('connect_error', () => {
-  serverStatus.textContent = 'Sem conexão. Confira o endereço do servidor.';
+  serverStatus.textContent = GIST_REF
+    ? 'Sem conexão. O host pode estar desligado ou com o túnel reabrindo; tentando de novo...'
+    : 'Sem conexão. Confira o endereço do servidor.';
   serverStatus.style.color = 'var(--danger-text)';
+  // O túnel do host pode ter reaberto com outro endereço: relê o link fixo.
+  refreshServerAddress(false);
 });
 socket.on('disconnect', () => {
   serverStatus.textContent = 'Desconectado do servidor.';
@@ -524,8 +611,10 @@ function resumeSession() {
   });
 }
 
-if (socket.connected) {
-  serverStatus.textContent = `Conectado: ${SERVER_URL}`;
+if (GIST_REF) {
+  startFixedAddress();
+} else if (socket.connected) {
+  serverStatus.textContent = serverLabel();
   serverStatus.style.color = 'var(--ok-text)';
 } else {
   serverStatus.textContent = 'Conectando ao servidor...';
@@ -2390,7 +2479,7 @@ avatarRemoveBtn.addEventListener('click', () => {
 
 /* ================= TÚNEL (ABRIR PARA AMIGOS) ================= */
 // Só faz sentido no PC que hospeda: o túnel aponta para o servidor deste processo.
-const IS_LOCAL_SERVER = /^https?:\/\/(127\.0\.0\.1|localhost)(:3000)?$/i.test(SERVER_URL);
+const IS_LOCAL_SERVER = !GIST_REF && /^https?:\/\/(127\.0\.0\.1|localhost)(:3000)?$/i.test(SERVER_INPUT);
 let tunnelState = { state: 'off', url: null };
 
 function renderTunnel(s) {
@@ -2427,6 +2516,84 @@ tunnelCopy.addEventListener('click', async () => {
 });
 window.electronAPI.onTunnelStatus(renderTunnel);
 window.electronAPI.tunnelStatus().then(renderTunnel);
+
+/* ---------- Link fixo (host): grava o endereço do túnel num Gist ---------- */
+const tunnelAuto = document.getElementById('tunnel-auto');
+const addressSetup = document.getElementById('address-setup');
+const addressReady = document.getElementById('address-ready');
+const addressToken = document.getElementById('address-token');
+const addressConnectBtn = document.getElementById('address-connect');
+const addressError = document.getElementById('address-error');
+const addressLinkInput = document.getElementById('address-link');
+const addressStateEl = document.getElementById('address-state');
+let addressState = null;
+
+function formatTime(ms) {
+  return new Date(ms).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+}
+
+function renderAddress(s) {
+  addressState = s || addressState;
+  if (!addressState) return;
+  const local = IS_LOCAL_SERVER;
+  tunnelAuto.checked = !!addressState.autoTunnel;
+  tunnelAuto.disabled = !local;
+  addressSetup.classList.toggle('hidden', addressState.connected);
+  addressReady.classList.toggle('hidden', !addressState.connected);
+  addressToken.disabled = !local;
+  addressConnectBtn.disabled = !local;
+  addressLinkInput.value = addressState.link || '';
+  const p = addressState.publish || { state: 'idle' };
+  const labels = {
+    idle: 'Esperando o túnel abrir para gravar o endereço.',
+    publishing: 'Gravando o endereço atual no Gist…',
+    ok: p.at ? `Endereço atual gravado às ${formatTime(p.at)}.` : 'Endereço atual gravado.',
+    error: p.message || 'Não foi possível gravar o endereço.'
+  };
+  addressStateEl.textContent = labels[p.state] || '';
+  addressStateEl.dataset.state = p.state === 'ok' ? 'on' : p.state;
+}
+
+tunnelAuto.addEventListener('change', async () => {
+  renderAddress(await window.electronAPI.setAutoTunnel(tunnelAuto.checked));
+});
+document.getElementById('address-token-page').addEventListener('click', () => window.electronAPI.openTokenPage());
+async function connectAddress() {
+  addressError.textContent = '';
+  addressConnectBtn.disabled = true;
+  addressConnectBtn.textContent = 'Conectando…';
+  const res = await window.electronAPI.addressConnect(addressToken.value);
+  addressConnectBtn.textContent = 'Conectar';
+  addressConnectBtn.disabled = false;
+  if (!res.ok) {
+    addressError.textContent = res.message;
+    return;
+  }
+  addressToken.value = '';
+  renderAddress(res.status);
+  showToast('Link fixo pronto. Mande para os seus amigos uma única vez.');
+  if (res.status.autoTunnel && !['downloading', 'starting', 'on'].includes(tunnelState.state)) {
+    renderTunnel({ state: 'starting', url: null });
+    window.electronAPI.tunnelStart();
+  }
+}
+addressConnectBtn.addEventListener('click', connectAddress);
+addressToken.addEventListener('keydown', (e) => { if (e.key === 'Enter') connectAddress(); });
+document.getElementById('address-copy').addEventListener('click', async () => {
+  if (!addressState || !addressState.link) return;
+  try {
+    await navigator.clipboard.writeText(addressState.link);
+    showToast('Link fixo copiado. Seu amigo cola no campo Servidor do login.');
+  } catch (e) {
+    addressLinkInput.select();
+  }
+});
+document.getElementById('address-disconnect').addEventListener('click', async () => {
+  if (!window.confirm('Desconectar o link fixo? O Vox para de atualizar o Gist e seus amigos voltam a precisar do endereço novo toda vez que o túnel abrir.')) return;
+  renderAddress(await window.electronAPI.addressDisconnect());
+});
+window.electronAPI.onAddressStatus(renderAddress);
+window.electronAPI.addressStatus().then(renderAddress);
 
 /* ================= ATUALIZAÇÃO AUTOMÁTICA ================= */
 function renderUpdate(s) {
