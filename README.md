@@ -230,6 +230,7 @@ Sai em `dist/`: `Vox-Setup-<versão>.exe`, `.blockmap` e `latest.yml`.
 | 🏠 `servers.json` | Servidores, canais, cargos e convites |
 | 👥 `friends.json` | Amizades e pedidos |
 | 🔑 `sessions.json` | Sessões para reconectar sem senha |
+| 🎵 `music-history.json` | Músicas pedidas em cada servidor (aba **Sugestões**) |
 | 🖼️ `uploads/` · `avatars/` | Imagens do chat e fotos de perfil |
 | 🔊 `soundboard.json` · `soundboard/` | Sons enviados ao soundboard de cada servidor |
 

@@ -14,15 +14,15 @@ Guia para agentes de IA que forem alterar este projeto. Leia antes de editar.
 - Repositório: https://github.com/viniciusog1/vox (público). Trabalho em branch própria a partir da `main` atualizada e entra por PR; antes de cada push, confira se o PR da branch ainda está aberto (PRs já foram juntados antes de commits chegarem).
 - Desenvolvimento acontece também no macOS (`~/Documents/vox`); o Windows é o alvo do instalador.
 
-Caminhos no PC com Windows (a pasta do projeto lá ainda se chama `discord-clone-windows`):
+Caminhos no PC com Windows (`C:\Users\Usuario\discord-clone-windows` é uma cópia antiga, parada no Concord 1.1.0: não use):
 
 ```text
-Projeto:              C:\Users\Usuario\discord-clone-windows
+Projeto:              C:\Users\Usuario\Documents\vox
 App instalado:        C:\Users\Usuario\AppData\Local\Programs\Vox\Vox.exe  (versões antigas: ...\Programs\Concord\Concord.exe)
 Dados do instalado:   C:\Users\Usuario\AppData\Roaming\Vox  (copiados de ...\Roaming\Concord na primeira execução)
-Instalador gerado:    C:\Users\Usuario\discord-clone-windows\dist\Vox-Setup-<versão>.exe
-Ferramenta de túnel:  C:\Users\Usuario\discord-clone-windows\tools\cloudflared.exe
-Atalho do túnel:      C:\Users\Usuario\discord-clone-windows\IniciarTunelVox.bat
+Instalador gerado:    C:\Users\Usuario\Documents\vox\dist\Vox-Setup-<versão>.exe
+Ferramenta de túnel:  C:\Users\Usuario\Documents\vox\tools\cloudflared.exe
+Atalho do túnel:      C:\Users\Usuario\Documents\vox\IniciarTunelVox.bat
 ```
 
 ## 2. Comandos rápidos
@@ -36,7 +36,7 @@ $env:Path = 'C:\Program Files\nodejs;' + $env:Path
 ### Rodar em desenvolvimento
 
 ```powershell
-cd C:\Users\Usuario\discord-clone-windows
+cd C:\Users\Usuario\Documents\vox
 $env:Path = 'C:\Program Files\nodejs;' + $env:Path
 npm start
 ```
@@ -44,8 +44,8 @@ npm start
 Alternativa sem `npm`:
 
 ```powershell
-Start-Process -FilePath 'C:\Users\Usuario\discord-clone-windows\node_modules\electron\dist\electron.exe' `
-  -ArgumentList '.' -WorkingDirectory 'C:\Users\Usuario\discord-clone-windows'
+Start-Process -FilePath 'C:\Users\Usuario\Documents\vox\node_modules\electron\dist\electron.exe' `
+  -ArgumentList '.' -WorkingDirectory 'C:\Users\Usuario\Documents\vox'
 ```
 
 ### Testes
@@ -64,7 +64,7 @@ npm test
 ### Gerar instalador
 
 ```powershell
-cd C:\Users\Usuario\discord-clone-windows
+cd C:\Users\Usuario\Documents\vox
 $env:Path = 'C:\Program Files\nodejs;' + $env:Path
 npm run dist
 ```
@@ -150,8 +150,10 @@ Saída: `dist\Vox-Setup-<versão>.exe`, `.blockmap` e `latest.yml` (versão de `
 
 - Conexão Socket.io no topo:
   ```js
-  const SERVER_URL = localStorage.getItem('vox-server-url') || 'http://127.0.0.1:3000';
-  const socket = io(SERVER_URL);
+  const SERVER_INPUT = localStorage.getItem('vox-server-url') || 'http://127.0.0.1:3000';
+  const GIST_REF = VoxAddress.parseGistRef(SERVER_INPUT); // link fixo?
+  let SERVER_URL = GIST_REF ? '' : SERVER_INPUT;           // com link fixo, vem do Gist
+  const socket = io(GIST_REF ? 'http://127.0.0.1:3000' : SERVER_INPUT, { autoConnect: !GIST_REF });
   ```
 - Campos da tela de login: `#server-url`, `#server-apply`, `#server-status`.
 - WebRTC:
@@ -296,10 +298,10 @@ Saída: `dist\Vox-Setup-<versão>.exe`, `.blockmap` e `latest.yml` (versão de `
 Em desenvolvimento (`app.isPackaged === false`):
 
 ```text
-C:\Users\Usuario\discord-clone-windows\users.json
-C:\Users\Usuario\discord-clone-windows\messages.json
-C:\Users\Usuario\discord-clone-windows\servers.json
-C:\Users\Usuario\discord-clone-windows\friends.json
+C:\Users\Usuario\Documents\vox\users.json
+C:\Users\Usuario\Documents\vox\messages.json
+C:\Users\Usuario\Documents\vox\servers.json
+C:\Users\Usuario\Documents\vox\friends.json
 ```
 
 No app instalado:
@@ -351,7 +353,7 @@ Em `users.json`, `avatar` (opcional) é o arquivo da foto em `avatars/`. `sessio
 
 ### Preferências no localStorage
 
-- `vox-server-url`
+- `vox-server-url` (endereço do servidor ou link fixo `https://gist.github.com/<dono>/<id>`), `vox-server-resolved` (último endereço lido do link fixo)
 - `vox-last-server` (último servidor aberto), `vox-last-channels` (último canal por servidor)
 - `audioInputId`, `audioOutputId`, `monitorEnabled`
 - `vox-noise-suppression` (`off`, `browser`, `strong`; padrão `strong`)
@@ -456,7 +458,7 @@ Pare o app antes de copiar.
 - O host continua usando `http://127.0.0.1:3000`; o amigo usa a URL pública ou o link fixo.
 - **Link fixo** (Configurações → Servidor): o host conecta um token do GitHub (só a permissão `gist`); `address-publisher.js` grava o endereço do túnel no Gist sempre que ele muda (`onStatus` do túnel com `state: 'on'`). O amigo cola o link do Gist no campo Servidor: o renderer cria o socket com `autoConnect: false`, lê o Gist pela API (`api.github.com/gists/<id>`, reserva no link raw com `?t=`) e conecta; a cada `connect_error` relê o Gist (no máximo a cada 20 s) e troca `socket.io.uri`, que a próxima tentativa de reconexão já usa. **Medido** com duas instâncias e Gist falso via CDP: troca de endereço reconectou em ~23 s.
 - `autoTunnel` (opção *Abrir para amigos sempre que o Vox iniciar*, ligada ao conectar o link fixo): `main.js` abre o túnel quando o servidor começa a escutar, inclusive no início escondido com o Windows. **Medido:** com `--hidden` o túnel abriu sozinho.
-- **Não verificado:** criar e atualizar um Gist de verdade (precisa de token real). O GitHub real recusou um token falso com 401, mostrado na tela.
+- **Medido com o GitHub real:** conectar criou um Gist secreto com o endereço atual do túnel, e um Vox isolado só com o link fixo conectou pelo túnel em 2 s. Token falso: o GitHub recusou com 401, mostrado na tela. **Não verificado com o túnel real:** a troca de endereço (fechar e reabrir o túnel) com amigos conectados.
 - O túnel carrega Socket.io (login, chat, presença, sinalização), **não** carrega áudio/vídeo.
 - Sem TURN, chamadas entre redes restritivas podem falhar.
 
@@ -517,12 +519,12 @@ Antes de considerar uma alteração concluída:
 
 ## 9. Estado atual conhecido
 
-- Versão em `package.json`: `1.5.0` (Electron 45.2.1, electron-updater 6). `PROTOCOL_VERSION` `6` (a 5 era a 1.4.0). Servidores, amigos, mensagens e chamadas diretas já implementados e testados; quem usa o 1.4.0 precisa atualizar para entrar.
+- Versão em `package.json`: `1.5.0` (Electron 45.2.1, electron-updater 6), mas a release `v1.5.1` já foi publicada (gerada fora do Git): a próxima versão precisa ser `1.5.2` ou maior, senão o atualizador não oferece. A `v1.5.1` só tem o `.exe` (sem `latest.yml` nem `.blockmap`), então o atualizador não a encontra. `PROTOCOL_VERSION` `6` (a 5 era a 1.4.0). Servidores, amigos, mensagens e chamadas diretas já implementados e testados; quem usa o 1.4.0 precisa atualizar para entrar.
 - Atualização automática (`setupAutoUpdate` em `main.js`, só no app instalado): procura na release mais recente do GitHub ao abrir e a cada 4 h, baixa sozinha e mostra `#update-banner`; instala em "Reiniciar e atualizar" ou ao fechar. **Medido:** sem `latest.yml` na release (caso da v1.2.0 publicada hoje) só registra erro 404 no log, sem afetar o app. Versões até 1.3.0 não têm o atualizador: instalar a 1.4.0 à mão uma vez.
 - O pacote `electron` 45 não tem script de instalação: o `electron.exe` é baixado na primeira vez que `npm start` roda (ou com `node node_modules/electron/install.js`). Exige Node ≥ 22.12.
-- Instaladores antigos (ainda com o nome Concord) no PC com Windows: `dist\Concord Setup 1.0.0.exe`, `1.0.1.exe` e `1.0.2.exe`. Nenhum instalador foi gerado desde a troca de nome e as mudanças de temas, música, membros e conexão.
+- Instaladores gerados neste PC: `dist\Vox-Setup-1.5.0.exe` e `dist\Vox-Setup-1.5.1.exe`. Depois da 1.5.1 entraram na `main`: recuperação da chamada, abas Fila/Sugestões da música, bandeja, início com o Windows e link fixo.
 - Instalador NSIS sem assinatura, com o ícone próprio do Vox.
-- No Windows, o app antigo está instalado como Concord (`%LOCALAPPDATA%\Programs\Concord`), com dados em `%APPDATA%\Concord` (conta `vinicius` e histórico de `geral`, que na versão nova vira o canal `geral` do servidor `casa`).
-- Pendências: compartilhamento 1080p60 (captura limitada a ~32 fps com o Vox em segundo plano); servidor TURN; testar a atualização automática com uma release real (1.4.0 → seguinte); conferir as notificações do Windows no app instalado.
+- Neste PC o Vox ainda não está instalado; o app antigo segue instalado como Concord (`%LOCALAPPDATA%\Programs\Concord`), com dados em `%APPDATA%\Concord` (conta `vinicius` e histórico de `geral`, que na versão nova vira o canal `geral` do servidor `casa`).
+- Pendências: compartilhamento 1080p60 (captura limitada a ~32 fps com o Vox em segundo plano); servidor TURN; testar a atualização automática com uma release real (com os três arquivos); conferir no app instalado as notificações do Windows, o início com o Windows e a bandeja.
 - O app instalado e o de desenvolvimento podem estar em estados diferentes; sempre confirme qual está rodando.
 - O Cloudflare Tunnel pode estar ativo. A URL é temporária e não deve ser documentada como fixa.
