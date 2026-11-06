@@ -1,6 +1,14 @@
 // Ícones estáticos do index.html (<i data-icon>) viram SVG
 VoxIcons.hydrate();
 
+// Versão do app no login e nas Configurações.
+(function showAppVersion() {
+  const v = window.electronAPI && window.electronAPI.appVersion;
+  if (!v || !v.version) return;
+  const text = `Vox ${v.version}${v.packaged ? '' : ' (desenvolvimento)'}`;
+  document.querySelectorAll('[data-app-version]').forEach((el) => { el.textContent = text; });
+})();
+
 // O campo Servidor aceita o endereço direto ou o link fixo (Gist) do host.
 const SERVER_INPUT = localStorage.getItem('vox-server-url') || 'http://127.0.0.1:3000';
 const GIST_REF = VoxAddress.parseGistRef(SERVER_INPUT);

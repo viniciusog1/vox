@@ -520,6 +520,12 @@ function sendToWindow(channel, payload) {
 // Procura versão nova nas releases do GitHub (só no app instalado). Baixa sozinho
 // e avisa a interface; instala ao clicar em "Reiniciar" ou ao fechar o Vox.
 let updateStatus = { state: 'idle' };
+// Versão mostrada no login e nas Configurações. Síncrona (o preload expõe como valor),
+// por isso fica registrada antes de qualquer janela abrir.
+ipcMain.on('app-version', (event) => {
+  event.returnValue = { version: app.getVersion(), packaged: app.isPackaged };
+});
+
 function setupAutoUpdate() {
   ipcMain.handle('update-status', () => updateStatus);
   if (!app.isPackaged) return;

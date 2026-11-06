@@ -29,6 +29,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openTokenPage: () => ipcRenderer.send('address-token-page'),
   onAddressStatus: (cb) => ipcRenderer.on('address-status', (event, s) => cb(s)),
 
+  appVersion: ipcRenderer.sendSync('app-version'),
   updateStatus: () => ipcRenderer.invoke('update-status'),
   onUpdateStatus: (cb) => ipcRenderer.on('update-status', (event, s) => cb(s)),
   installUpdate: () => ipcRenderer.send('update-install')
