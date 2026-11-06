@@ -2818,7 +2818,7 @@ function updateMessage(s) {
     if (s.bytesPerSecond) parts.push(`${formatMB(s.bytesPerSecond)} MB/s`);
     return parts.join(' · ');
   }
-  if (s.state === 'ready') return `Pronto: ${v} instala ao reiniciar (ou quando você fechar o app).`;
+  if (s.state === 'ready') return `Pronto: clique em Reiniciar e atualizar para instalar ${v}.`;
   if (s.state === 'installing') return `Instalando ${v}… o Vox fecha e abre de novo sozinho.`;
   return `Não foi possível baixar ${v}. O Vox tenta de novo mais tarde.`;
 }
