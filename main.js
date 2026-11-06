@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, session, desktopCapturer, Tray, Menu, safeStorage, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, session, desktopCapturer, Tray, Menu, safeStorage, shell, dialog } = require('electron');
 const path = require('path');
 const http = require('http');
 const { Server } = require('socket.io');
@@ -532,7 +532,10 @@ function setupAutoUpdate() {
   const { autoUpdater } = require('electron-updater');
   const set = (s) => { updateStatus = s; sendToWindow('update-status', s); };
   autoUpdater.autoDownload = true;
-  autoUpdater.autoInstallOnAppQuit = true;
+  // Instala só pelo botão "Reiniciar e atualizar". Instalar ao fechar rodava escondido
+  // (~30 s); se a pessoa abrisse o Vox nesse meio tempo, a versão antiga disparava um
+  // segundo instalador e aparecia "Falha ao desinstalar os arquivos do aplicativo antigo: 2".
+  autoUpdater.autoInstallOnAppQuit = false;
   autoUpdater.on('update-available', (info) => set({ state: 'downloading', version: info.version, percent: 0 }));
   autoUpdater.on('download-progress', (p) => set({
     ...updateStatus,
@@ -552,7 +555,8 @@ function setupAutoUpdate() {
     set({ ...updateStatus, state: 'installing' });
     quitting = true;
     // Um instante para a faixa mostrar "Instalando…" antes de a janela fechar.
-    setTimeout(() => autoUpdater.quitAndInstall(), 400);
+    // Silencioso (sem as telas do instalador) e abre o Vox de novo no fim.
+    setTimeout(() => autoUpdater.quitAndInstall(true, true), 400);
   });
   const check = () => autoUpdater.checkForUpdates().catch((e) => console.error('[UPDATE]', e.message));
   check();
@@ -629,8 +633,34 @@ function autostartFirstRun() {
 if (!app.requestSingleInstanceLock()) app.exit(0);
 app.on('second-instance', showWindow);
 
+// Instalador do Vox rodando agora (atualização em andamento)? Só no Windows instalado.
+function updateInstallerRunning() {
+  if (!app.isPackaged || process.platform !== 'win32') return false;
+  try {
+    const out = require('child_process').execFileSync('tasklist', ['/FO', 'CSV', '/NH', '/FI', 'IMAGENAME eq Vox-Setup*'], {
+      encoding: 'utf8', windowsHide: true, timeout: 3000
+    });
+    return /"Vox-Setup[^"]*\.exe"/i.test(out);
+  } catch (e) {
+    return false;
+  }
+}
+
 // ---------- App ----------
 app.whenReady().then(() => {
+  // Aberto no meio de uma atualização: a versão antiga não pode disparar outro instalador.
+  // O próprio instalador reabre o Vox no fim (com --updated, que passa direto daqui).
+  if (!process.argv.includes('--updated') && updateInstallerRunning()) {
+    dialog.showMessageBoxSync({
+      type: 'info',
+      title: 'Vox',
+      message: 'O Vox está sendo atualizado.',
+      detail: 'Ele abre sozinho quando a instalação terminar, em cerca de 30 segundos.'
+    });
+    app.exit(0);
+    return;
+  }
+
   // O player do YouTube recusa (erro 153) páginas file:// sem Referer; injeta o do projeto.
   session.defaultSession.webRequest.onBeforeSendHeaders(
     { urls: ['https://www.youtube.com/*', 'https://*.youtube.com/*', 'https://*.googlevideo.com/*'] },
