@@ -897,20 +897,25 @@ function createPeer(id) {
 
   setPeerConn(id, 'connecting');
   pc.onconnectionstatechange = () => {
+    if (peers.get(id) !== pc) return; // conexão já substituída
     const st = pc.connectionState;
-    if (st === 'connected') setPeerConn(id, 'connected');
-    else if (st === 'failed') setPeerConn(id, 'failed');
-    else if (st === 'disconnected') setPeerConn(id, 'reconnecting');
-    else if (st === 'closed') { peerConn.delete(id); updateConnLabel(id); }
-    else setPeerConn(id, 'connecting');
-    if (['failed', 'closed', 'disconnected'].includes(pc.connectionState)) {
-      if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
-        remoteStreams.delete(id);
-        removeScreenAudio(id);
-        analysers.delete(id);
-        peers.delete(id);
-        renderTiles();
-      }
+    if (st === 'connected') {
+      setPeerConn(id, 'connected');
+      clearRecovery(id);
+    } else if (st === 'disconnected') {
+      // Pela internet (sem TURN) a rota cai de vez em quando: espera um pouco e renegocia.
+      setPeerConn(id, 'reconnecting');
+      scheduleRecovery(id, pc, RECOVERY_GRACE_MS);
+    } else if (st === 'failed') {
+      // Antes a conexão era apagada aqui e só voltava saindo e entrando no canal.
+      setPeerConn(id, 'reconnecting');
+      scheduleRecovery(id, pc, 0);
+    } else if (st === 'closed') {
+      peerConn.delete(id);
+      updateConnLabel(id);
+      dropPeer(id);
+    } else {
+      setPeerConn(id, 'connecting');
     }
     renderTiles();
   };
@@ -918,8 +923,89 @@ function createPeer(id) {
   return pc;
 }
 
+/* ---------- Recuperação de conexão entre os PCs ---------- */
+// Sem TURN, a rota direta entre dois PCs pela internet às vezes cai. Quem tem o
+// menor id de socket conduz a recuperação (os dois nunca renegociam juntos):
+// 1º reinicia o ICE na mesma conexão; se em RECOVERY_RESTART_MS não voltar,
+// refaz a conexão do zero (oferta com fresh). O outro lado pede a reconstrução.
+const RECOVERY_GRACE_MS = 4000;
+const RECOVERY_RESTART_MS = 8000;
+const peerRecovery = new Map(); // id -> { timer, attempt }
+
+const leadsRecovery = (id) => socket.id < id;
+
+function scheduleRecovery(id, pc, delay) {
+  const r = peerRecovery.get(id) || { timer: null, attempt: 0 };
+  if (r.timer) return;
+  r.timer = setTimeout(() => { r.timer = null; recoverPeer(id, pc); }, delay);
+  peerRecovery.set(id, r);
+}
+
+function clearRecovery(id) {
+  const r = peerRecovery.get(id);
+  if (r) clearTimeout(r.timer);
+  peerRecovery.delete(id);
+}
+
+async function recoverPeer(id, pc) {
+  if (peers.get(id) !== pc || !currentVoiceRoom || !userMap.has(id) || effectiveStatus() === 'invisible') return;
+  if (pc.connectionState === 'connected') { clearRecovery(id); return; }
+  const r = peerRecovery.get(id) || { timer: null, attempt: 0 };
+  r.attempt += 1;
+  peerRecovery.set(id, r);
+  console.warn(`[voz] conexão com ${id} em "${pc.connectionState}", tentativa ${r.attempt}`);
+  if (!leadsRecovery(id)) {
+    socket.emit('signal', { to: id, data: { rebuild: true } });
+    scheduleRecovery(id, pc, RECOVERY_RESTART_MS);
+    return;
+  }
+  if (r.attempt === 1 && pc.signalingState === 'stable') {
+    try {
+      const offer = await pc.createOffer({ iceRestart: true });
+      await pc.setLocalDescription(offer);
+      socket.emit('signal', { to: id, data: { offer, restart: true } });
+      scheduleRecovery(id, pc, RECOVERY_RESTART_MS);
+      return;
+    } catch (e) {
+      console.warn('[voz] reinício do ICE falhou; refazendo a conexão', e);
+    }
+  }
+  await rebuildPeer(id);
+}
+
+// Tira a conexão da lista e limpa o que era dela (sem mexer no pc em si).
+function dropPeer(id) {
+  clearRecovery(id);
+  peers.delete(id);
+  remoteStreams.delete(id);
+  removeScreenAudio(id);
+  analysers.delete(id);
+}
+
+// Fecha a conexão velha e faz uma nova oferta do zero.
+async function rebuildPeer(id) {
+  const old = peers.get(id);
+  dropPeer(id);
+  if (old) { old.onconnectionstatechange = null; try { old.close(); } catch (e) {} }
+  await offerTo(id, { fresh: true });
+}
+
+async function offerTo(id, extra = {}) {
+  try {
+    const pc = createPeer(id);
+    preferVideoCodecs(pc);
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    socket.emit('signal', { to: id, data: { offer, ...extra } });
+  } catch (e) {
+    console.error('Erro ao criar oferta:', e);
+  }
+}
+
 function closeAllPeers() {
-  peers.forEach((pc) => { try { pc.close(); } catch (e) {} });
+  peerRecovery.forEach((r) => clearTimeout(r.timer));
+  peerRecovery.clear();
+  peers.forEach((pc) => { pc.onconnectionstatechange = null; try { pc.close(); } catch (e) {} });
   peers.clear();
   peerConn.clear();
   remoteStreams.clear();
@@ -999,15 +1085,14 @@ function updateActiveChannel() {
 /* ================= SINALIZAÇÃO ================= */
 socket.on('user-joined', async (id) => {
   if (effectiveStatus() === 'invisible') return;
-  try {
-    const pc = createPeer(id);
-    preferVideoCodecs(pc);
-    const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
-    socket.emit('signal', { to: id, data: { offer } });
-  } catch (e) {
-    console.error('Erro ao criar oferta:', e);
+  // fresh: se o outro lado ainda tiver uma conexão velha comigo, troca pela nova.
+  if (peers.has(id)) {
+    const old = peers.get(id);
+    dropPeer(id);
+    old.onconnectionstatechange = null;
+    try { old.close(); } catch (e) {}
   }
+  await offerTo(id, { fresh: true });
 });
 
 async function flushCandidates(pc) {
@@ -1022,8 +1107,32 @@ async function flushCandidates(pc) {
 socket.on('signal', async ({ from, data }) => {
   if (effectiveStatus() === 'invisible') return;
   try {
+    // O outro lado não conseguiu recuperar a conexão: quem conduz refaz do zero.
+    if (data.rebuild) {
+      if (leadsRecovery(from) && currentVoiceRoom && userMap.has(from)) await rebuildPeer(from);
+      return;
+    }
+
     let pc = peers.get(from);
-    if (!pc) pc = createPeer(from);
+    const unusable = !pc || ['closed', 'failed'].includes(pc.connectionState);
+    // Reinício de ICE para uma conexão que aqui já não existe: pede para refazer.
+    if (data.offer && data.restart && unusable) {
+      socket.emit('signal', { to: from, data: { rebuild: true } });
+      return;
+    }
+    // Oferta de conexão nova: descarta a velha (outro certificado; não dá para reaproveitar).
+    if (data.offer && data.fresh && pc) {
+      dropPeer(from);
+      pc.onconnectionstatechange = null;
+      try { pc.close(); } catch (e) {}
+      pc = null;
+    }
+    if (!pc) {
+      if (!data.offer) return; // resposta ou candidato de uma conexão que já não existe
+      pc = createPeer(from);
+    } else if (pc.signalingState === 'closed') {
+      return; // sobra da conexão que caiu; a recuperação refaz uma nova
+    }
 
     if (data.offer) {
       await pc.setRemoteDescription(withVideoBitrateHints(data.offer));
@@ -1078,12 +1187,11 @@ socket.on('room-users', (list) => {
   const ids = new Set(list.map((u) => u.id));
   [...peers.keys()].forEach((id) => {
     if (!ids.has(id)) {
-      try { peers.get(id).close(); } catch (e) {}
-      peers.delete(id);
+      const pc = peers.get(id);
+      dropPeer(id);
       peerConn.delete(id);
-      remoteStreams.delete(id);
-      removeScreenAudio(id);
-      analysers.delete(id);
+      pc.onconnectionstatechange = null;
+      try { pc.close(); } catch (e) {}
       removed = true;
     }
   });
