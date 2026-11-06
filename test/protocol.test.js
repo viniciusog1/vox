@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const pr = require('../protocol.js');
+const pr = require('../src/shared/protocol.js');
 
 test('versão e mensagem', () => {
   assert.equal(pr.PROTOCOL_VERSION, 6);

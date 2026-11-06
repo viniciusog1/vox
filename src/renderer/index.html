@@ -1131,7 +1131,7 @@
 <div id="app">
   <!-- Rail de servidores -->
   <nav id="server-rail">
-    <button type="button" class="rail-btn rail-server rail-home" id="rail-home" title="Início: amigos e mensagens diretas" aria-label="Início"><img src="assets/icon.svg" alt=""></button>
+    <button type="button" class="rail-btn rail-server rail-home" id="rail-home" title="Início: amigos e mensagens diretas" aria-label="Início"><img src="../../assets/icon.svg" alt=""></button>
     <div class="rail-sep"></div>
     <div id="server-list"></div>
     <button type="button" class="rail-btn rail-add" id="rail-add" title="Criar um servidor ou entrar com convite" aria-label="Criar ou entrar em servidor"><i data-icon="plus" data-size="22"></i></button>
@@ -1321,7 +1321,7 @@
 <div id="auth-screen">
   <div class="overlay-card">
     <div class="brand">
-      <img class="brand-logo" src="assets/icon.svg" alt="">
+      <img class="brand-logo" src="../../assets/icon.svg" alt="">
       <h1>Vox</h1>
     </div>
     <div id="auth-update" class="auth-update hidden" role="status" aria-live="polite">
@@ -1642,7 +1642,7 @@
 <audio id="sound-effects-audio" autoplay></audio>
 <div id="toast" class="hidden" role="status" aria-live="polite"></div>
 
-<script src="./socket.io.min.js"></script>
+<script src="vendor/socket.io.min.js"></script>
 <script>
   if (typeof io === 'undefined') {
     document.write('<script src="https://cdn.socket.io/4.7.2/socket.io.min.js"><\/script>');
@@ -1650,18 +1650,18 @@
 </script>
 <script src="icons.js"></script>
 <script src="speaking.js"></script>
-<script src="presence.js"></script>
-<script src="servers-state.js"></script>
-<script src="friends-state.js"></script>
-<script src="protocol.js"></script>
-<script src="youtube.js"></script>
-<script src="music-state.js"></script>
+<script src="../shared/presence.js"></script>
+<script src="../shared/servers-state.js"></script>
+<script src="../shared/friends-state.js"></script>
+<script src="../shared/protocol.js"></script>
+<script src="../shared/youtube.js"></script>
+<script src="../shared/music-state.js"></script>
 <script src="sounds.js"></script>
-<script src="chat-state.js"></script>
+<script src="../shared/chat-state.js"></script>
 <script src="mic-gate.js"></script>
-<script src="soundboard-state.js"></script>
-<script src="soundboard-synth.js"></script>
-<script src="fixed-address.js"></script>
+<script src="../shared/soundboard-state.js"></script>
+<script src="../shared/soundboard-synth.js"></script>
+<script src="../shared/fixed-address.js"></script>
 <script src="renderer.js"></script>
 </body>
 </html>

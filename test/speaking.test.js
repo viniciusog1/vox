@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const sp = require('../speaking.js');
+const sp = require('../src/renderer/speaking.js');
 
 test('constantes da spec', () => {
   assert.equal(sp.SPEAK_ON_LEVEL, 0.12);

@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const mg = require('../mic-gate.js');
+const mg = require('../src/renderer/mic-gate.js');
 
 const SR = 48000;
 const BLOCK = 128;

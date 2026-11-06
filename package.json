@@ -3,10 +3,10 @@
   "version": "1.5.4",
   "description": "Vox - chat, voz, vídeo e compartilhamento de tela para Windows 11",
   "author": "Vox",
-  "main": "main.js",
+  "main": "src/main/main.js",
   "scripts": {
     "start": "electron .",
-    "postinstall": "node -e \"const fs=require('fs'),path=require('path'); const src=path.join(process.cwd(),'node_modules','socket.io','client-dist','socket.io.min.js'); if(fs.existsSync(src)) fs.copyFileSync(src, path.join(process.cwd(),'socket.io.min.js'));\"",
+    "postinstall": "node -e \"const fs=require('fs'),path=require('path'); const src=path.join(process.cwd(),'node_modules','socket.io','client-dist','socket.io.min.js'); if(fs.existsSync(src)) fs.copyFileSync(src, path.join(process.cwd(),'src','renderer','vendor','socket.io.min.js'));\"",
     "dist": "electron-builder --publish never",
     "test": "node --test \"test/*.test.js\""
   },

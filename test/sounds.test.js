@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const snd = require('../sounds.js');
+const snd = require('../src/renderer/sounds.js');
 
 test('chave e padrão ligado', () => {
   assert.equal(snd.STORAGE_KEY, 'vox-sound-effects');
@@ -98,7 +98,7 @@ test('volume de cada nota fica entre 0 e 1 e frequências audíveis', () => {
 });
 
 test('opção na aba Áudio, ligada por padrão, e script carregado antes do renderer', () => {
-  const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+  const html = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'index.html'), 'utf8');
   const audioTab = html.slice(html.indexOf('id="settings-tab-audio"'));
   assert.match(audioTab, /<input type="checkbox" id="sound-effects-toggle" checked>/);
   assert.ok(html.indexOf('<script src="sounds.js"></script>') < html.indexOf('<script src="renderer.js"></script>'));

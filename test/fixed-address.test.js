@@ -3,8 +3,8 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const addr = require('../fixed-address.js');
-const { createAddressPublisher } = require('../address-publisher.js');
+const addr = require('../src/shared/fixed-address.js');
+const { createAddressPublisher } = require('../src/main/address-publisher.js');
 
 const ID = 'aa11bb22cc33dd44ee55ff6677889900';
 

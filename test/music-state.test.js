@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const M = require('../music-state.js');
+const M = require('../src/shared/music-state.js');
 
 const item = (id) => ({ id, videoId: 'v' + id, title: 'T' + id, thumbnail: 't', addedBy: null });
 

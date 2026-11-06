@@ -190,6 +190,12 @@ npm install
 npm start
 ```
 
+### 🗂️ Onde fica cada coisa
+- 🖥️ `src/main/`: processo principal (janela, servidor, túnel, link fixo)
+- 🎨 `src/renderer/`: a interface (`index.html`, `renderer.js`, temas, ícones, sons)
+- 🧩 `src/shared/`: regras usadas pelos dois lados e pelos testes
+- 🧪 `test/` · 🖼️ `assets/` · 🛠️ `scripts/` · 📦 `build/`
+
 - 🧪 Testes: `npm test`
 - ⬇️ Na primeira vez, o `npm start` baixa o Electron sozinho
 

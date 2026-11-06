@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const sb = require('../soundboard-state.js');
-const synth = require('../soundboard-synth.js');
+const sb = require('../src/shared/soundboard-state.js');
+const synth = require('../src/shared/soundboard-synth.js');
 
 const base = { id: 's1', name: 'Buzina da Ana', file: '0b6c3f7e-1f2a-4b5c-8d9e-0123456789ab.mp3', by: 'ana', at: 't', duration: 2.34, bytes: 5000 };
 
@@ -95,8 +95,8 @@ test('sons de fábrica só usam ondas de console 8-bit, com valores válidos', (
 });
 
 test('aplausos saem sempre iguais (sorteio com semente)', () => {
-  delete require.cache[require.resolve('../soundboard-synth.js')];
-  const again = require('../soundboard-synth.js');
+  delete require.cache[require.resolve('../src/shared/soundboard-synth.js')];
+  const again = require('../src/shared/soundboard-synth.js');
   const pick = (m) => JSON.stringify(m.VOICES.find((s) => s.id === 'aplausos').voices);
   assert.equal(pick(again), pick(synth));
 });

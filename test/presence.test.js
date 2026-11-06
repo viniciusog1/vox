@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { STATUS_MODES, effectiveStatus, onIdle, onActivity } = require('../presence.js');
+const { STATUS_MODES, effectiveStatus, onIdle, onActivity } = require('../src/shared/presence.js');
 
 test('STATUS_MODES exato', () => {
   assert.deepEqual(STATUS_MODES, ['online', 'away', 'busy', 'invisible']);

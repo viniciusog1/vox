@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { createSessionStore, hashToken } = require('../sessions.js');
+const { createSessionStore, hashToken } = require('../src/main/sessions.js');
 
 test('emite, resolve e revoga; grava só o hash do token', () => {
   let saved = null;
