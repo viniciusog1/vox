@@ -256,7 +256,7 @@ Saída: `dist\Vox-Setup-<versão>.exe`, `.blockmap` e `latest.yml` (versão de `
 - Texto e voz são independentes: a pessoa está sempre em **exatamente 1** canal de texto e em **no máximo 1** canal de voz.
 - Trocar de canal de texto nunca mexe em mídia nem na chamada; trocar ou sair da voz não mexe no chat.
 - Canais de texto não abrem microfone nem WebRTC. Canais de voz não têm chat.
-- Login: abre o último servidor usado (`vox-last-server`, canal em `vox-last-channels`) e entra no primeiro canal de voz dele com o microfone aberto; sem servidores, abre o Início.
+- Login: abre o último servidor usado (`vox-last-server`, canal em `vox-last-channels`) **sem entrar em canal de voz**: a pessoa escolhe a voz (o microfone abre ligado ao entrar). Sem servidores, abre o Início. Até a 1.5.3 o login entrava sozinho no primeiro canal de voz; com todos entrando ao mesmo tempo, às vezes alguém ficava sem ouvir o outro até sair e entrar de novo.
 - Não existe mais tela “Entrar em um canal”.
 - Câmera e compartilhamento de tela só funcionam com voz conectada; os botões Cam, Tela e ✕ ficam desabilitados sem voz.
 
@@ -390,10 +390,10 @@ Manter estas decisões, salvo pedido explícito do usuário:
 - A primeira tela é o login/cadastro.
 - O layout do chat não pode crescer com o histórico; use grids/flex com altura fixa e scroll interno.
 - Câmera começa **desligada**; o usuário liga manualmente.
-- Microfone começa ligado.
+- Microfone começa ligado ao entrar num canal de voz.
 - Status Online/Ausente/Ocupado/Invisível; Ausente automático após 5 minutos (só a partir de Online) e manual pelo menu.
 - Sempre exatamente 1 canal de texto ativo (ou conversa direta); no máximo 1 canal de voz.
-- Login abre o último servidor usado e entra no primeiro canal de voz dele com microfone aberto; sem servidores, abre o Início. Sem tela de “Entrar em um canal”.
+- Login abre o último servidor usado, sem entrar em voz (a pessoa escolhe o canal de voz); sem servidores, abre o Início. Sem tela de “Entrar em um canal”.
 - Contas novas entram na Casa dos Amigos (`autoJoin`) sem convite; os demais servidores exigem código. Escrever e ligar para alguém exige amizade.
 - Cam e Tela só com voz conectada.
 - Configurações de entrada/saída de áudio e monitoramento do próprio microfone.

@@ -421,8 +421,9 @@ function hideOverlays() {
 }
 
 // Login ou cadastro concluído. O servidor manda 'servers' logo em seguida; ao chegar a
-// primeira lista, abre o último servidor usado (ou o primeiro) e entra no primeiro
-// canal de voz dele com o microfone aberto. Sem servidores, abre o Início.
+// primeira lista, abre o último servidor usado (ou o primeiro), sem entrar em voz:
+// a pessoa escolhe o canal de voz. Sem servidores, abre o Início.
+// (Entrar todos na voz ao mesmo tempo no login deixava às vezes alguém sem ouvir o outro.)
 let pendingAutoJoin = false;
 function enterApp(username, token) {
   sessionToken = token || null;
@@ -441,8 +442,6 @@ function autoJoinAfterLogin() {
   const server = serverById(last) || servers[0];
   if (!server) { openHome(); return; }
   selectServer(server.id);
-  const voice = server.channels.find((c) => c.type === 'voice');
-  if (voice) joinVoice(voice.id);
 }
 
 // Servidor em outra versão: a resposta de sucesso não traz a mesma versão do protocolo.
