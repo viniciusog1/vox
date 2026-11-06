@@ -137,9 +137,19 @@ Use o perfil `Public` só durante o teste e numa rede confiável.
 
 > [!NOTE]
 > - ⏳ Um endereço novo leva cerca de **1 minuto** para começar a funcionar.
-> - 🔁 O endereço muda toda vez que o túnel abre — mande o novo para os amigos.
+> - 🔁 O endereço muda toda vez que o túnel abre. Para não mandar um novo toda vez, use o **link fixo** (abaixo).
 > - 📦 Na primeira vez, o Vox baixa o `cloudflared` oficial (~60 MB).
 > - 🖥️ O host continua usando `http://127.0.0.1:3000`.
+
+#### 🔗 Link fixo (mande uma vez só)
+
+O Vox grava o endereço atual do túnel num **Gist secreto** do GitHub do host (grátis), e o Vox dos amigos lê esse Gist sozinho. Os amigos não instalam nada além do Vox.
+
+1. ⚙️ **Host:** Configurações → **Servidor** → **Criar um token no GitHub**. Deixe marcada só a caixa **gist** e, em *Expiration*, escolha **No expiration**.
+2. 📋 Cole o token, clique em **Conectar** e depois em **Copiar** para pegar o link fixo (`https://gist.github.com/…`).
+3. 🧑‍🤝‍🧑 **Amigo:** cola o link fixo no campo **Servidor** do login, **uma única vez**.
+
+Com o link fixo, o túnel abre sozinho junto com o Vox (dá para desligar em *Abrir para amigos sempre que o Vox iniciar*). Se o túnel reabrir com outro endereço, o Vox dos amigos acha o novo e reconecta sozinho, em cerca de 1 minuto. O token fica guardado cifrado pelo Windows neste PC.
 
 ### 🎟️ Convidar para outros servidores
 
@@ -159,7 +169,7 @@ Engrenagem ao lado do seu nome, no canto inferior esquerdo.
 | 👤 **Conta** | Foto de perfil, abrir com o Windows, manter o Vox ao lado do relógio ao fechar e sair da conta |
 | 🎨 **Aparência** | 18 temas e reduzir animações |
 | 🔔 **Notificações** | Avisar de todas as mensagens, só de menções ou nunca |
-| 🌍 **Servidor** | Abrir o túnel para os amigos e copiar o endereço |
+| 🌍 **Servidor** | Abrir o túnel para os amigos, copiar o endereço e configurar o link fixo |
 
 🗑️ No rodapé: **Apagar minhas mensagens deste canal**.
 
