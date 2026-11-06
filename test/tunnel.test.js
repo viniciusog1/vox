@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { parseTunnelUrl } = require('../tunnel.js');
+const { parseTunnelUrl } = require('../src/main/tunnel.js');
 
 test('acha o endereço do trycloudflare no log', () => {
   const line = '2026-11-02T22:10:58Z INF |  https://coupons-sake-lawn-clinical.trycloudflare.com                                |';

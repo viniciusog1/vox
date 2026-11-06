@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { parseYouTubeId, thumbnailUrl, lookupVideo } = require('../youtube.js');
+const { parseYouTubeId, thumbnailUrl, lookupVideo } = require('../src/shared/youtube.js');
 
 const ID = 'dQw4w9WgXcQ';
 

@@ -1,7 +1,7 @@
 // Lado do host do link fixo: guarda o token do GitHub (cifrado pelo Windows) e
 // grava o endereço atual do túnel no Gist sempre que ele muda. Usado por main.js.
 const fs = require('fs');
-const addr = require('./fixed-address');
+const addr = require('../shared/fixed-address');
 
 const API = 'https://api.github.com';
 const RETRY_MS = 60 * 1000;

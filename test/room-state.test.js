@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { publicUser, applyStatePatch, joinVoiceRoom, leaveVoiceRoom, canUseTextRoom, socketRoomsToLeave } = require('../room-state.js');
+const { publicUser, applyStatePatch, joinVoiceRoom, leaveVoiceRoom, canUseTextRoom, socketRoomsToLeave } = require('../src/shared/room-state.js');
 
 test('publicUser preenche padrões', () => {
   assert.deepEqual(publicUser('a', { username: 'ana' }),

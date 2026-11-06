@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const S = require('../servers-state.js');
+const S = require('../src/shared/servers-state.js');
 
 // Geradores determinísticos.
 function makeDeps() {

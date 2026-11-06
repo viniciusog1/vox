@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const themes = require('../themes.js');
+const themes = require('../src/renderer/themes.js');
 
 const IDS = ['escuro', 'grafite', 'dracula', 'nord', 'aquatico', 'natureza', 'por-do-sol',
   'cyberpunk', 'neon-verde', 'neon-vermelho', 'neon-azul',

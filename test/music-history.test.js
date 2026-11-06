@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const H = require('../music-history.js');
+const H = require('../src/shared/music-history.js');
 
 const at = (n) => `2026-11-03T10:00:${String(n).padStart(2, '0')}.000Z`;
 

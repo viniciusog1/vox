@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+const html = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'index.html'), 'utf8');
 
 function styleBlocks() {
   return [...html.matchAll(/<style>([\s\S]*?)<\/style>/g)].map((m) => m[1].replace(/\/\*[\s\S]*?\*\//g, '')).join('\n');
@@ -24,7 +24,7 @@ test('themes.js carrega no <head> antes do <style>', () => {
   assert.ok(script < head.indexOf('<style>'), 'themes.js precisa vir antes do <style>');
 });
 
-const renderer = fs.readFileSync(path.join(__dirname, '..', 'renderer.js'), 'utf8');
+const renderer = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'renderer.js'), 'utf8');
 
 test('texto de status usa os tokens de texto legível', () => {
   const css = styleBlocks();

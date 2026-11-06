@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const F = require('../friends-state.js');
+const F = require('../src/shared/friends-state.js');
 
 const contas = new Set(['ana', 'bia', 'caio']);
 const deps = { exists: (u) => contas.has(u), now: '2026-01-01T00:00:00.000Z' };

@@ -5,20 +5,20 @@ const { Server } = require('socket.io');
 const fs = require('fs');
 const os = require('os');
 const crypto = require('crypto');
-const { publicUser, applyStatePatch, joinVoiceRoom, leaveVoiceRoom, canUseTextRoom, socketRoomsToLeave } = require('./room-state');
-const srv = require('./servers-state');
-const fr = require('./friends-state');
-const musicHistory = require('./music-history');
-const sb = require('./soundboard-state');
-const sbSynth = require('./soundboard-synth');
-const { parseYouTubeId, lookupVideo } = require('./youtube');
-const { RESYNC_INTERVAL_MS, createMusicState, addTrack, removeTrack, advanceIfCurrent, endedIfCurrent, togglePause, toPublic } = require('./music-state');
-const { PROTOCOL_VERSION, VERSION_MISMATCH_MESSAGE, isCompatible } = require('./protocol');
-const chat = require('./chat-state');
+const { publicUser, applyStatePatch, joinVoiceRoom, leaveVoiceRoom, canUseTextRoom, socketRoomsToLeave } = require('../shared/room-state');
+const srv = require('../shared/servers-state');
+const fr = require('../shared/friends-state');
+const musicHistory = require('../shared/music-history');
+const sb = require('../shared/soundboard-state');
+const sbSynth = require('../shared/soundboard-synth');
+const { parseYouTubeId, lookupVideo } = require('../shared/youtube');
+const { RESYNC_INTERVAL_MS, createMusicState, addTrack, removeTrack, advanceIfCurrent, endedIfCurrent, togglePause, toPublic } = require('../shared/music-state');
+const { PROTOCOL_VERSION, VERSION_MISMATCH_MESSAGE, isCompatible } = require('../shared/protocol');
+const chat = require('../shared/chat-state');
 const { createSessionStore } = require('./sessions');
 const { createTunnel } = require('./tunnel');
 const { createAddressPublisher } = require('./address-publisher');
-const { TOKEN_PAGE } = require('./fixed-address');
+const { TOKEN_PAGE } = require('../shared/fixed-address');
 
 // ---------- Dados do antigo Concord ----------
 // O app se chamava Concord. Na primeira execução como Vox, copia a pasta de dados
@@ -51,7 +51,9 @@ migrateLegacyUserData();
 // ---------- Banco simples (arquivos JSON) ----------
 // Em desenvolvimento os dados ficam na pasta do projeto.
 // No app instalado, ficam na pasta de dados do usuário (o app.asar é somente leitura).
-const DATA_DIR = app.isPackaged ? app.getPath('userData') : __dirname;
+// Raiz do projeto (src/main/../..): em desenvolvimento os dados ficam nela, como antes.
+const ROOT_DIR = path.join(__dirname, '..', '..');
+const DATA_DIR = app.isPackaged ? app.getPath('userData') : ROOT_DIR;
 fs.mkdirSync(DATA_DIR, { recursive: true });
 const DB_PATH = path.join(DATA_DIR, 'messages.json');
 const USERS_PATH = path.join(DATA_DIR, 'users.json');
@@ -223,7 +225,7 @@ function createWindow() {
     minWidth: 900,
     minHeight: 600,
     backgroundColor: '#0d0f13',
-    icon: path.join(__dirname, 'assets', 'icon.png'),
+    icon: path.join(ROOT_DIR, 'assets', 'icon.png'),
     show: !startHidden, // aberto pela inicialização do Windows: fica só na bandeja
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -232,7 +234,7 @@ function createWindow() {
     },
     autoHideMenuBar: true
   });
-  mainWindow.loadFile('index.html');
+  mainWindow.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
   // O X da janela manda o Vox para a bandeja (a opção pode ser desligada nas configurações).
   mainWindow.on('close', (e) => {
     if (quitting || !closeToTray || !tray) return;
@@ -595,7 +597,7 @@ function updateTray() {
 }
 
 function createTray() {
-  tray = new Tray(path.join(__dirname, 'assets', process.platform === 'win32' ? 'tray.ico' : 'icon.png'));
+  tray = new Tray(path.join(ROOT_DIR, 'assets', process.platform === 'win32' ? 'tray.ico' : 'icon.png'));
   tray.on('click', showWindow);
   updateTray();
 }
@@ -1375,7 +1377,7 @@ app.whenReady().then(() => {
 
   // ---------- Túnel (abrir para amigos) ----------
   const tunnel = createTunnel({
-    binDirs: [path.join(__dirname, 'tools'), path.join(app.getPath('userData'), 'tools')],
+    binDirs: [path.join(ROOT_DIR, 'tools'), path.join(app.getPath('userData'), 'tools')],
     downloadDir: path.join(app.getPath('userData'), 'tools'),
     onStatus: (s) => {
       sendToWindow('tunnel-status', s);

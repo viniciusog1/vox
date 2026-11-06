@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const chat = require('../chat-state.js');
+const chat = require('../src/shared/chat-state.js');
 
 test('cleanText apara, aceita vazio e recusa longo ou não-texto', () => {
   assert.equal(chat.cleanText('  oi  '), 'oi');
