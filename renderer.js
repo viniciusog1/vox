@@ -4775,6 +4775,20 @@ closeToTrayToggle.addEventListener('change', () => {
   try { localStorage.setItem('vox-close-to-tray', closeToTray ? '1' : '0'); } catch (e) {}
   window.electronAPI.setCloseToTray(closeToTray);
 });
+// Iniciar com o Windows (quem guarda é o próprio Windows; o main responde o estado real)
+const autostartToggle = document.getElementById('autostart');
+function renderAutostart(s) {
+  autostartToggle.checked = !!(s && s.enabled);
+  autostartToggle.disabled = !(s && s.supported);
+  if (s && !s.supported) {
+    document.getElementById('autostart-hint').textContent = 'Disponível só no Vox instalado (não no modo de desenvolvimento).';
+  }
+}
+window.electronAPI.getAutostart().then(renderAutostart);
+autostartToggle.addEventListener('change', async () => {
+  renderAutostart(await window.electronAPI.setAutostart(autostartToggle.checked));
+});
+
 // "Mutar microfone" no menu do ícone
 window.electronAPI.onTrayToggleMic(() => { if (currentVoiceRoom) toggleMic(); });
 pushTrayState();
