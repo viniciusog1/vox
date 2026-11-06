@@ -212,6 +212,7 @@ function createWindow() {
     minHeight: 600,
     backgroundColor: '#0d0f13',
     icon: path.join(__dirname, 'assets', 'icon.png'),
+    show: !startHidden, // aberto pela inicialização do Windows: fica só na bandeja
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -562,6 +563,33 @@ function createTray() {
 }
 
 app.on('before-quit', () => { quitting = true; });
+
+// ---------- Iniciar com o Windows ----------
+// Entra pelo registro de inicialização do usuário com --hidden: abre direto na bandeja.
+// Só no app instalado (em desenvolvimento registraria o electron.exe solto).
+const AUTOSTART_ARGS = ['--hidden'];
+const startHidden = process.argv.includes('--hidden');
+const autostartSupported = () => app.isPackaged && ['win32', 'darwin'].includes(process.platform);
+
+function autostartState() {
+  const supported = autostartSupported();
+  return { supported, enabled: supported && app.getLoginItemSettings({ args: AUTOSTART_ARGS }).openAtLogin };
+}
+
+function setAutostart(on) {
+  if (!autostartSupported()) return autostartState();
+  app.setLoginItemSettings({ openAtLogin: !!on, args: AUTOSTART_ARGS });
+  return autostartState();
+}
+
+// Ligado por padrão: na primeira execução do app instalado liga uma vez; depois vale a escolha da pessoa.
+function autostartFirstRun() {
+  if (!autostartSupported()) return;
+  const marker = path.join(app.getPath('userData'), '.inicio-automatico-configurado');
+  if (fs.existsSync(marker)) return;
+  setAutostart(true);
+  try { fs.writeFileSync(marker, new Date().toISOString()); } catch (e) {}
+}
 
 // Um Vox por perfil: abrir de novo com ele na bandeja só mostra a janela (e não briga pela porta 3000).
 if (!app.requestSingleInstanceLock()) app.exit(0);
@@ -1269,6 +1297,9 @@ app.whenReady().then(() => {
 
   // ---------- Bandeja ----------
   createTray();
+  autostartFirstRun();
+  ipcMain.handle('autostart-get', () => autostartState());
+  ipcMain.handle('autostart-set', (event, on) => setAutostart(on));
   ipcMain.on('set-close-to-tray', (event, on) => { closeToTray = !!on; });
   ipcMain.on('tray-state', (event, s) => {
     trayState = {

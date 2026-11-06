@@ -11,6 +11,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   focusWindow: () => ipcRenderer.send('focus-window'),
   setCloseToTray: (on) => ipcRenderer.send('set-close-to-tray', !!on),
+  getAutostart: () => ipcRenderer.invoke('autostart-get'),
+  setAutostart: (on) => ipcRenderer.invoke('autostart-set', !!on),
   reportTrayState: (s) => ipcRenderer.send('tray-state', { muted: !!s.muted, inVoice: !!s.inVoice, unread: Number(s.unread) || 0 }),
   onTrayToggleMic: (cb) => ipcRenderer.on('tray-toggle-mic', () => cb()),
   flashFrame: (on) => ipcRenderer.send('flash-frame', !!on),
