@@ -68,13 +68,35 @@ test('playBuiltin agenda as vozes num contexto de áudio', () => {
   const node = () => ({ connect(n) { return n; } });
   const ctx = {
     currentTime: 0, sampleRate: 8000,
-    createOscillator: () => ({ ...node(), frequency: param(), start() { started++; }, stop() {} }),
+    createOscillator: () => ({ ...node(), frequency: param(), setPeriodicWave() {}, start() { started++; }, stop() {} }),
+    createPeriodicWave: (real, imag) => ({ real, imag }),
     createBufferSource: () => ({ ...node(), start() { started++; }, stop() {} }),
     createBuffer: (ch, len, sr) => ({ sampleRate: sr, getChannelData: () => new Float32Array(len) }),
-    createGain: () => ({ ...node(), gain: param() }),
-    createBiquadFilter: () => ({ ...node(), frequency: param() })
+    createGain: () => ({ ...node(), gain: param() })
   };
   for (const { id } of synth.BUILTIN) assert.equal(synth.playBuiltin(ctx, node(), id, 0.5), true);
   assert.ok(started > synth.BUILTIN.length);
   assert.equal(synth.playBuiltin(ctx, node(), 'nada'), false);
+});
+
+test('sons de fábrica só usam ondas de console 8-bit, com valores válidos', () => {
+  const waves = new Set(['pulse', 'square', 'triangle', 'chipnoise']);
+  for (const s of synth.VOICES) {
+    for (const v of s.voices) {
+      assert.ok(waves.has(v.wave), `${s.id} usa ${v.wave}`);
+      if (v.wave === 'pulse') assert.ok([0.125, 0.25, 0.5].includes(v.duty), `${s.id} duty ${v.duty}`);
+      if (v.wave === 'chipnoise') assert.ok(v.rate >= 500 && v.rate <= 48000, `${s.id} rate ${v.rate}`);
+      assert.ok(v.gain > 0 && v.gain <= 1, `${s.id} gain ${v.gain}`);
+      assert.ok(v.dur > 0 && v.start >= 0, s.id);
+      assert.ok(!v.sustain || v.sustain <= v.dur, `${s.id} sustain`);
+      for (const f of [v.freq, v.to].filter(Boolean)) assert.ok(f >= 20 && f <= 12000, `${s.id} ${f} Hz`);
+    }
+  }
+});
+
+test('aplausos saem sempre iguais (sorteio com semente)', () => {
+  delete require.cache[require.resolve('../soundboard-synth.js')];
+  const again = require('../soundboard-synth.js');
+  const pick = (m) => JSON.stringify(m.VOICES.find((s) => s.id === 'aplausos').voices);
+  assert.equal(pick(again), pick(synth));
 });
