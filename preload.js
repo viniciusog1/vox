@@ -10,6 +10,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   cancelDisplaySource: () => ipcRenderer.send('display-source-cancelled'),
 
   focusWindow: () => ipcRenderer.send('focus-window'),
+  setCloseToTray: (on) => ipcRenderer.send('set-close-to-tray', !!on),
+  reportTrayState: (s) => ipcRenderer.send('tray-state', { muted: !!s.muted, inVoice: !!s.inVoice, unread: Number(s.unread) || 0 }),
+  onTrayToggleMic: (cb) => ipcRenderer.on('tray-toggle-mic', () => cb()),
   flashFrame: (on) => ipcRenderer.send('flash-frame', !!on),
 
   tunnelStart: () => ipcRenderer.invoke('tunnel-start'),

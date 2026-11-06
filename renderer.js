@@ -633,7 +633,16 @@ async function acquireLocalMedia() {
   return localStream;
 }
 
+// Menu do ícone da bandeja: mudo, se está na voz e quantas mensagens não lidas.
+function pushTrayState() {
+  if (!window.electronAPI.reportTrayState) return;
+  let pending = 0;
+  try { pending = Object.values(unread).reduce((n, u) => n + u.count, 0); } catch (e) {} // `unread` ainda não existe no começo da carga
+  window.electronAPI.reportTrayState({ muted: !micEnabled, inVoice: !!currentVoiceRoom, unread: pending });
+}
+
 function updateControlButtons() {
+  pushTrayState();
   VoxIcons.setIcon(btnMic, micEnabled ? 'mic' : 'mic-off', 'Mic');
   btnMic.classList.toggle('off', !micEnabled);
   btnMic.classList.toggle('primary', micEnabled);
@@ -649,6 +658,7 @@ function updateControlButtons() {
 // Câmera, tela, música e ✕ só funcionam com voz conectada; o microfone continua livre.
 // Cam e Tela também ficam travados enquanto um pedido de câmera/tela está em andamento.
 function updateVoiceDependentControls() {
+  pushTrayState();
   const noVoice = !currentVoiceRoom;
   btnSoundboard.disabled = noVoice;
   btnSoundboard.title = noVoice ? 'Entre em um canal de voz' : 'Soundboard';
@@ -3531,6 +3541,7 @@ notifyModeSelect.addEventListener('change', () => {
 });
 
 function renderUnread() {
+  pushTrayState();
   let total = 0;
   document.querySelectorAll('.channel:not(.voice)').forEach((el) => {
     const u = unread[el.dataset.room];
@@ -4753,6 +4764,20 @@ async function sendSound() {
 }
 $sb('soundboard-send').addEventListener('click', sendSound);
 $sb('soundboard-name').addEventListener('keydown', (e) => { if (e.key === 'Enter') sendSound(); });
+
+/* ================= BANDEJA (ÍCONE AO LADO DO RELÓGIO) ================= */
+const closeToTrayToggle = document.getElementById('close-to-tray');
+let closeToTray = localStorage.getItem('vox-close-to-tray') !== '0';
+closeToTrayToggle.checked = closeToTray;
+window.electronAPI.setCloseToTray(closeToTray);
+closeToTrayToggle.addEventListener('change', () => {
+  closeToTray = closeToTrayToggle.checked;
+  try { localStorage.setItem('vox-close-to-tray', closeToTray ? '1' : '0'); } catch (e) {}
+  window.electronAPI.setCloseToTray(closeToTray);
+});
+// "Mutar microfone" no menu do ícone
+window.electronAPI.onTrayToggleMic(() => { if (currentVoiceRoom) toggleMic(); });
+pushTrayState();
 
 /* ================= DIAGNÓSTICO DE VÍDEO (Ctrl+Shift+D) ================= */
 // Mostra, por participante, o que sai e o que chega: fps, resolução, banda,

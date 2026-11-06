@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, session, desktopCapturer } = require('electron');
+const { app, BrowserWindow, ipcMain, session, desktopCapturer, Tray, Menu } = require('electron');
 const path = require('path');
 const http = require('http');
 const { Server } = require('socket.io');
@@ -230,6 +230,20 @@ function createWindow() {
     autoHideMenuBar: true
   });
   mainWindow.loadFile('index.html');
+  // O X da janela manda o Vox para a bandeja (a opção pode ser desligada nas configurações).
+  mainWindow.on('close', (e) => {
+    if (quitting || !closeToTray || !tray) return;
+    e.preventDefault();
+    mainWindow.hide();
+    if (!trayHintShown && process.platform === 'win32') {
+      trayHintShown = true;
+      tray.displayBalloon({
+        iconType: 'info',
+        title: 'O Vox continua aberto',
+        content: 'Ele fica aqui, perto do relógio. Para sair, clique com o botão direito no ícone → Sair do Vox.'
+      });
+    }
+  });
 }
 
 // ---------- Utilidades de presença ----------
@@ -514,7 +528,7 @@ function setupAutoUpdate() {
   autoUpdater.on('download-progress', (p) => set({ ...updateStatus, state: 'downloading', percent: Math.round(p.percent) }));
   autoUpdater.on('update-downloaded', (info) => set({ state: 'ready', version: info.version }));
   autoUpdater.on('error', (e) => console.error('[UPDATE]', e.message));
-  ipcMain.on('update-install', () => autoUpdater.quitAndInstall());
+  ipcMain.on('update-install', () => { quitting = true; autoUpdater.quitAndInstall(); });
   const check = () => autoUpdater.checkForUpdates().catch((e) => console.error('[UPDATE]', e.message));
   check();
   setInterval(check, 4 * 60 * 60 * 1000);
@@ -522,6 +536,46 @@ function setupAutoUpdate() {
 
 // Sem isso o Windows não mostra as notificações (o id é o mesmo do instalador).
 if (process.platform === 'win32') app.setAppUserModelId(app.isPackaged ? 'com.seunome.concord' : process.execPath);
+
+// ---------- Bandeja (ícone ao lado do relógio) ----------
+// Fechar a janela só esconde: o Vox (e o servidor, no PC de quem hospeda) continua
+// rodando na bandeja. Sair de verdade é pelo menu do ícone.
+let tray = null;
+let quitting = false;
+let closeToTray = true;     // opção em Configurações → Conta (vem do renderer)
+let trayHintShown = false;  // aviso "continua aberto" uma vez por execução
+let trayState = { muted: false, inVoice: false, unread: 0 };
+
+function showWindow() {
+  if (!mainWindow) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+}
+
+function updateTray() {
+  if (!tray) return;
+  const { muted, inVoice, unread } = trayState;
+  tray.setToolTip(unread ? `Vox — ${unread} mensagem(ns) não lida(s)` : 'Vox');
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: 'Abrir o Vox', click: showWindow },
+    { label: muted ? 'Ativar microfone' : 'Mutar microfone', enabled: inVoice, click: () => sendToWindow('tray-toggle-mic') },
+    { type: 'separator' },
+    { label: 'Sair do Vox', click: () => { quitting = true; app.quit(); } }
+  ]));
+}
+
+function createTray() {
+  tray = new Tray(path.join(__dirname, 'assets', process.platform === 'win32' ? 'tray.ico' : 'icon.png'));
+  tray.on('click', showWindow);
+  updateTray();
+}
+
+app.on('before-quit', () => { quitting = true; });
+
+// Um Vox por perfil: abrir de novo com ele na bandeja só mostra a janela (e não briga pela porta 3000).
+if (!app.requestSingleInstanceLock()) app.exit(0);
+app.on('second-instance', showWindow);
 
 // ---------- App ----------
 app.whenReady().then(() => {
@@ -1235,6 +1289,18 @@ app.whenReady().then(() => {
   ipcMain.handle('tunnel-stop', () => { tunnel.stop(); return tunnel.status(); });
   ipcMain.handle('tunnel-status', () => tunnel.status());
   app.on('before-quit', () => tunnel.stop());
+
+  // ---------- Bandeja ----------
+  createTray();
+  ipcMain.on('set-close-to-tray', (event, on) => { closeToTray = !!on; });
+  ipcMain.on('tray-state', (event, s) => {
+    trayState = {
+      muted: !!(s && s.muted),
+      inVoice: !!(s && s.inVoice),
+      unread: Math.max(0, Math.min(9999, Number(s && s.unread) || 0))
+    };
+    updateTray();
+  });
 
   // ---------- Notificações ----------
   ipcMain.on('focus-window', () => {

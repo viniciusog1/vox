@@ -135,6 +135,14 @@ Saída: `dist\Vox-Setup-<versão>.exe`, `.blockmap` e `latest.yml` (versão de `
   - `messages`: objeto carregado de `messages.json`.
 - Usa `desktopCapturer` + `session.setDisplayMediaRequestHandler` para o seletor de tela personalizado.
 
+### Bandeja (`main.js`)
+
+- `createTray` põe o ícone `assets/tray.ico` (16 a 48 px, gerado por `scripts/gerar-icone.js`) ao lado do relógio. Clique abre a janela; o menu tem Abrir o Vox, Mutar/Ativar microfone (só com voz; o renderer recebe `tray-toggle-mic`) e Sair do Vox. A dica do ícone mostra as mensagens não lidas.
+- O renderer manda `tray-state` (`pushTrayState`: mudo, na voz, não lidas) e `set-close-to-tray` (opção `vox-close-to-tray`, padrão ligada).
+- `close` da janela: com a opção ligada, `preventDefault` + `hide` (o servidor continua no ar) e, na primeira vez, um balão avisando. `quitting` (Sair do Vox, `before-quit`, `update-install`) deixa fechar de verdade.
+- `requestSingleInstanceLock`: abrir o Vox de novo com o mesmo perfil só mostra a janela (`second-instance`) e não briga pela porta 3000. Perfis diferentes (`--user-data-dir` nos testes) continuam independentes.
+- **Medido** (clique no X simulado com `CloseMainWindow`): a janela some, o processo e a porta 3000 continuam; abrir de novo encerra a segunda cópia e mostra a janela; com a opção desligada o X fecha o Vox. O Windows 11 põe ícones novos na área escondida (seta ^) até a pessoa fixá-los.
+
 ### Renderer (`renderer.js`)
 
 - Conexão Socket.io no topo:
@@ -352,6 +360,7 @@ Em `users.json`, `avatar` (opcional) é o arquivo da foto em `avatars/`. `sessio
 - `vox-music-volume` (volume local do player de música, 0–100, padrão 50; só neste computador)
 - `vox-sound-effects` (`0` desliga os efeitos sonoros; ausente ou `1` = ligados)
 - `vox-notify-mode` (`all` padrão, `mentions` ou `off`)
+- `vox-close-to-tray` (`0` = o X da janela fecha o Vox em vez de mandar para a bandeja)
 - `vox-soundboard-volume` (0–100, padrão 70) e `vox-soundboard-enabled` (`0` = não ouvir o soundboard); só neste computador
 
 Ficam no perfil do Electron em `%APPDATA%\Vox` (no macOS em desenvolvimento: `~/Library/Application Support/vox`). Antes do Vox as chaves começavam com `concord-`; `migrateLegacyStorage` copia para `vox-*` sem sobrescrever.
@@ -389,6 +398,7 @@ Manter estas decisões, salvo pedido explícito do usuário:
 - Música: sem download; o player oficial do YouTube toca em cada pessoa; fila de até 50 músicas por sala de voz; sair da voz para a música de quem saiu. O painel tem as abas Fila e Sugestões; as sugestões vêm só do histórico do próprio servidor (sem API nem raspagem do YouTube).
 - Ícones SVG (Lucide) em vez de emojis, para ficar igual em qualquer sistema.
 - A janela usa os botões nativos do sistema (sem minimizar/maximizar/fechar próprios).
+- O X da janela manda o Vox para a bandeja (ícone ao lado do relógio), salvo se a pessoa desligar em Configurações → Conta; sair de vez é pelo menu do ícone.
 - Efeitos de tema nunca ficam por cima dos vídeos nem do player do YouTube (os termos do YouTube proíbem cobrir o player).
 - Temas inspirados em obras (Anime) sem imagens, logos nem nomes oficiais: o repositório é público.
 - Não usar serviços pagos.

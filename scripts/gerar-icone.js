@@ -1,4 +1,4 @@
-// Gera assets/icon.png (256 px) e build/icon.ico (16 a 256 px) a partir de assets/icon.svg
+// Gera assets/icon.png (256 px), assets/tray.ico (bandeja) e build/icon.ico (16 a 256 px) a partir de assets/icon.svg
 // (32 px para cima) e assets/icon-small.svg (até 24 px, desenho simplificado).
 // Uso: npx electron scripts/gerar-icone.js
 // O SVG é desenhado num canvas de uma janela escondida do próprio Electron.
@@ -77,6 +77,9 @@ app.whenReady().then(async () => {
   fs.mkdirSync(path.join(ROOT, 'build'), { recursive: true });
   fs.writeFileSync(path.join(ROOT, 'build', 'icon.ico'), buildIco(images));
   fs.writeFileSync(path.join(ROOT, 'assets', 'icon.png'), Buffer.from(result[256].png.split(',')[1], 'base64'));
-  console.log('Gerados: build/icon.ico (' + SIZES.join(', ') + ' px) e assets/icon.png (256 px)');
+  // Bandeja do Windows (ao lado do relógio): só os tamanhos pequenos, que vão no instalador.
+  const TRAY_SIZES = [16, 20, 24, 32, 40, 48];
+  fs.writeFileSync(path.join(ROOT, 'assets', 'tray.ico'), buildIco(images.filter((im) => TRAY_SIZES.includes(im.size))));
+  console.log('Gerados: build/icon.ico (' + SIZES.join(', ') + ' px), assets/tray.ico (' + TRAY_SIZES.join(', ') + ' px) e assets/icon.png (256 px)');
   app.quit();
 });
