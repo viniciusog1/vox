@@ -77,7 +77,9 @@
 - 🎚️ Volume do soundboard só no seu PC, ou desligue se preferir
 
 ### 🎨 Aparência e perfil
-- 🌈 **18 temas** em 4 grupos: Escuros, Neon, Anime e Claros
+- 🌈 **20 temas** em 5 grupos: Escuros, Neon, Anime, Especiais e Claros
+- 🧩 Tema **Azulejo**: outra disposição da tela, com um mural que gira e acende em volta de quem fala
+- 📻 Tema **Rádio**: as salas de voz viram estações num visor; clique ou arraste o ponteiro para trocar de sala
 - ✨ Temas Anime com efeitos animados (dá para reduzir as animações)
 - 🧑‍🎤 Foto de perfil, visível para todos
 - 🟢 Status: Online, Ausente (automático após 5 min), Ocupado e Invisível
@@ -168,7 +170,7 @@ Engrenagem ao lado do seu nome, no canto inferior esquerdo.
 | --- | --- |
 | 🎙️ **Áudio** | Microfone e saída, redução de ruído, volume e sensibilidade do microfone, efeito de voz, ouvir o próprio microfone, sons |
 | 👤 **Conta** | Foto de perfil, abrir com o Windows, manter o Vox ao lado do relógio ao fechar e sair da conta |
-| 🎨 **Aparência** | 18 temas e reduzir animações |
+| 🎨 **Aparência** | 20 temas e reduzir animações |
 | 🔔 **Notificações** | Avisar de todas as mensagens, só de menções ou nunca |
 | 🌍 **Servidor** | Abrir o túnel para os amigos, copiar o endereço e configurar o link fixo |
 

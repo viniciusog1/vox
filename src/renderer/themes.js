@@ -32,6 +32,9 @@
     ['manga', 'Mangá', 'light', 'anime', '#ffffff #f4f4f4 #e6e6e6 #ececec #1a1a1a #111111 #2b2b2b #555555 #111111 #ffffff #111111 #111111 #111111 #111111'],
     ['ninja', 'Ninja', 'dark', 'anime', '#0c0a09 #14100d #1f1813 #080605 #3a2a1f #fff1e0 #f0d6bb #b39a85 #ff6a00 #1a0800 #ff9f43 #ff8c1a #ff5a48 #c0261b',
       '0 0 12px rgba(255,106,0,.6)', 'inset 2px 0 0 #ff6a00, 0 0 8px rgba(192,38,27,.3)'],
+    // Especiais: mudam também a disposição da tela (azulejo.css/js e radio.css/js)
+    ['azulejo', 'Azulejo', 'dark', 'especiais', '#0a1a50 #0d2163 #15307f #0b1c55 #27449c #f2f6ff #d5e0ff #a9bbef #ffc531 #101d55 #9ccfff #ffc531 #ff7d72 #c9333a'],
+    ['radio', 'Rádio', 'dark', 'especiais', '#25130c #351b10 #47271a #1d0d07 #6a402c #fff1dc #f0d9bd #d3b196 #ffb84a #2a1405 #ffcf87 #7fe39a #ff8a70 #b5301f'],
     ['claro', 'Claro', 'light', 'claros', '#ffffff #f3f4f7 #e6e8ee #e3e5eb #d7dae2 #1d2129 #3a404c #616774 #4f5bd5 #ffffff #3b47c4 #23934a #d3292c #d7393c'],
     ['sepia', 'Sépia', 'light', 'claros', '#f6efdf #ede3cb #e2d5b7 #e0d2b0 #d3c39f #3b2f22 #544433 #695945 #8f4e22 #fff7ec #7a4a1f #5f8a3a #af3f2c #b3402d'],
     ['lavanda', 'Lavanda / Sakura', 'light', 'claros', '#fcf8fd #f3ebf7 #e9dcf0 #eadcf2 #dccbe6 #2e2236 #4a3b54 #6e5c78 #8e56b5 #ffffff #b73c73 #d9578f #c3324d #cc3a55'],
@@ -39,7 +42,7 @@
   ];
 
   // Grupos do seletor de tema, na ordem em que aparecem
-  const THEME_GROUPS = [['escuros', 'Escuros'], ['neon', 'Neon'], ['anime', 'Anime'], ['claros', 'Claros']];
+  const THEME_GROUPS = [['escuros', 'Escuros'], ['neon', 'Neon'], ['anime', 'Anime'], ['especiais', 'Especiais'], ['claros', 'Claros']];
 
   // Temas só em preto, branco e cinza: status em tons de cinza (a diferença de
   // forma entre os status fica no CSS por [data-theme])

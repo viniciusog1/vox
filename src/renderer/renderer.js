@@ -2738,7 +2738,7 @@ function buildThemeOption(theme, currentId) {
   name.textContent = theme.name;
   btn.appendChild(name);
 
-  btn.addEventListener('click', () => {
+  const choose = () => {
     const applied = applyTheme(theme.id);
     saveThemeId(themeStorage, applied);
     themeGrid.querySelectorAll('.theme-option').forEach((el) => {
@@ -2746,6 +2746,11 @@ function buildThemeOption(theme, currentId) {
       el.classList.toggle('selected', on);
       el.setAttribute('aria-pressed', String(on));
     });
+  };
+  // Entrar ou sair do Azulejo troca com animação (azulejo.js); os outros temas trocam direto.
+  btn.addEventListener('click', () => {
+    if (window.VoxAzulejo) window.VoxAzulejo.transition(theme.id, thumb, choose);
+    else choose();
   });
   return btn;
 }
