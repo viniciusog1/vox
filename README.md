@@ -59,6 +59,7 @@
 - 🔈 Áudio do PC na transmissão — **sem** o som do próprio Vox (nada de eco)
 - 🔇 Redução de ruído (Desligada, Padrão ou Forte)
 - 🎚️ Volume e **sensibilidade do microfone**, com medidor ao vivo e ajuste automático
+- 🪄 **Efeitos de voz**: Robô, Vilão espacial, Grave, Esquilo, Rádio, Megafone, Caverna e Alien — troque na hora pelo botão da varinha, ao lado do microfone
 - 🟢 Anel em quem está falando, ping de cada pessoa e selo **AO VIVO**
 - 🔔 Sons ao entrar, sair, mutar e desmutar
 
@@ -165,7 +166,7 @@ Engrenagem ao lado do seu nome, no canto inferior esquerdo.
 
 | Aba | O que tem |
 | --- | --- |
-| 🎙️ **Áudio** | Microfone e saída, redução de ruído, volume e sensibilidade do microfone, ouvir o próprio microfone, sons |
+| 🎙️ **Áudio** | Microfone e saída, redução de ruído, volume e sensibilidade do microfone, efeito de voz, ouvir o próprio microfone, sons |
 | 👤 **Conta** | Foto de perfil, abrir com o Windows, manter o Vox ao lado do relógio ao fechar e sair da conta |
 | 🎨 **Aparência** | 18 temas e reduzir animações |
 | 🔔 **Notificações** | Avisar de todas as mensagens, só de menções ou nunca |

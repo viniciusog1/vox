@@ -92,6 +92,7 @@ const myStatusEl = document.getElementById('my-status');
 const myStatusDot = document.getElementById('my-status-dot');
 const btnStatus = document.getElementById('btn-status');
 const statusMenu = document.getElementById('status-menu');
+const voiceFxMenu = document.getElementById('voice-fx-menu');
 
 const btnSettings = document.getElementById('btn-settings');
 const btnLogout = document.getElementById('btn-logout');
@@ -200,6 +201,10 @@ let micGainPercent = clampNumber(localStorage.getItem('vox-mic-gain') ?? 100, 0,
 let micAuto = localStorage.getItem('vox-mic-auto') !== '0';
 let micThresholdDb = clampNumber(localStorage.getItem('vox-mic-threshold') ?? -50, -70, -10, -50);
 const noiseGateContexts = new WeakSet();
+// Efeito de voz (robô, vilão espacial…): sai pronto deste PC, todos ouvem.
+let voiceFxId = localStorage.getItem('vox-voice-fx') || 'normal';
+if (!VoxVoiceFx.isVoiceFx(voiceFxId)) voiceFxId = 'normal';
+const pitchContexts = new WeakSet();
 
 // Música do YouTube na chamada
 let musicState = null;     // último music-state recebido (+ receivedAt = Date.now() local); null = sem música
@@ -363,7 +368,7 @@ function updateMyStatusUI() {
 }
 
 function sendStatus() {
-  socket.emit('update-state', { muted: !micEnabled, status: effectiveStatus(), sharing: sharingScreen });
+  socket.emit('update-state', { muted: !micEnabled, status: effectiveStatus(), sharing: sharingScreen, voiceFx: voiceFxId });
 }
 
 function resetIdleTimer() {
@@ -392,6 +397,7 @@ function markActive() {
 
 btnStatus.addEventListener('click', (e) => {
   e.stopPropagation();
+  voiceFxMenu.classList.add('hidden');
   statusMenu.classList.toggle('hidden');
 });
 
@@ -414,6 +420,67 @@ document.querySelectorAll('#status-menu button').forEach((btn) => {
     resetIdleTimer();
   });
 });
+
+/* ================= EFEITO DE VOZ ================= */
+const btnVoiceFx = document.getElementById('btn-voice-fx');
+const voiceFxSelect = document.getElementById('voice-fx');
+
+for (const fx of VoxVoiceFx.EFFECTS) {
+  const opt = document.createElement('option');
+  opt.value = fx.id;
+  opt.textContent = fx.name;
+  voiceFxSelect.appendChild(opt);
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.dataset.fx = fx.id;
+  b.setAttribute('role', 'menuitemradio');
+  b.textContent = fx.name;
+  voiceFxMenu.appendChild(b);
+}
+const voiceFxHint = document.createElement('div');
+voiceFxHint.className = 'popover-hint';
+voiceFxHint.textContent = 'Todos na chamada ouvem sua voz com o efeito.';
+voiceFxMenu.appendChild(voiceFxHint);
+
+function updateVoiceFxUI() {
+  const name = VoxVoiceFx.nameOf(voiceFxId);
+  voiceFxSelect.value = voiceFxId;
+  btnVoiceFx.classList.toggle('fx-on', voiceFxId !== 'normal');
+  btnVoiceFx.title = `Efeito de voz: ${name}`;
+  voiceFxMenu.querySelectorAll('button[data-fx]').forEach((b) => {
+    const on = b.dataset.fx === voiceFxId;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-checked', on ? 'true' : 'false');
+  });
+}
+
+function setVoiceFx(id) {
+  if (!VoxVoiceFx.isVoiceFx(id) || id === voiceFxId) return;
+  voiceFxId = id;
+  try { localStorage.setItem('vox-voice-fx', id); } catch (e) {}
+  applyVoiceFxToPipeline();
+  updateVoiceFxUI();
+  if (currentUser) sendStatus();
+}
+
+btnVoiceFx.addEventListener('click', (e) => {
+  e.stopPropagation();
+  statusMenu.classList.add('hidden');
+  voiceFxMenu.classList.toggle('hidden');
+});
+voiceFxMenu.addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-fx]');
+  if (!b) return;
+  setVoiceFx(b.dataset.fx);
+  voiceFxMenu.classList.add('hidden');
+});
+voiceFxSelect.addEventListener('change', () => setVoiceFx(voiceFxSelect.value));
+document.addEventListener('click', (e) => {
+  if (!voiceFxMenu.classList.contains('hidden') && !voiceFxMenu.contains(e.target) && !btnVoiceFx.contains(e.target)) {
+    voiceFxMenu.classList.add('hidden');
+  }
+});
+updateVoiceFxUI();
 
 /* ================= TELAS ================= */
 function hideOverlays() {
@@ -1528,6 +1595,13 @@ function renderMembers() {
       line.appendChild(name);
       const icons = document.createElement('span');
       icons.className = 'vu-icons';
+      if (u.voiceFx && u.voiceFx !== 'normal' && VoxVoiceFx.isVoiceFx(u.voiceFx)) {
+        const fxIcon = document.createElement('span');
+        fxIcon.className = 'vu-fx';
+        fxIcon.title = `Efeito de voz: ${VoxVoiceFx.nameOf(u.voiceFx)}`;
+        fxIcon.appendChild(VoxIcons.icon('wand-sparkles', 13));
+        icons.appendChild(fxIcon);
+      }
       if (u.muted) icons.appendChild(VoxIcons.icon('mic-off', 13));
       if (u.sharing) {
         const live = document.createElement('span');
@@ -2369,6 +2443,69 @@ async function ensureNoiseGateWorklet(ctx) {
   }
 }
 
+// Worklet que muda o tom da voz (createPitchShifter de voice-fx.js, testada no Node).
+const PITCH_WORKLET = `
+const createPitchShifter = ${VoxVoiceFx.createPitchShifter.toString()};
+class VoxPitch extends AudioWorkletProcessor {
+  static get parameterDescriptors() {
+    return [{ name: 'ratio', defaultValue: 1, minValue: 0.25, maxValue: 4, automationRate: 'k-rate' }];
+  }
+  constructor() {
+    super();
+    this.shifter = createPitchShifter(sampleRate, 60);
+    this.stopped = false;
+    // Ao trocar de efeito o nó é descartado; sem isto o processador rodaria para sempre.
+    this.port.onmessage = (e) => { if (e.data === 'stop') this.stopped = true; };
+  }
+  process(inputs, outputs, parameters) {
+    if (this.stopped) return false;
+    const output = outputs[0] && outputs[0][0];
+    if (!output) return true;
+    const input = inputs[0] && inputs[0][0];
+    this.shifter.process(input || null, output, parameters.ratio[0]);
+    return true;
+  }
+}
+registerProcessor('vox-pitch', VoxPitch);
+`;
+
+async function ensurePitchWorklet(ctx) {
+  if (pitchContexts.has(ctx)) return;
+  const url = URL.createObjectURL(new Blob([PITCH_WORKLET], { type: 'application/javascript' }));
+  try {
+    await ctx.audioWorklet.addModule(url);
+    pitchContexts.add(ctx);
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+// Troca o efeito no meio da cadeia sem recriar a faixa enviada aos outros.
+function applyVoiceFxToPipeline() {
+  const f = micPipeline && micPipeline.fx;
+  if (!f) return;
+  try { f.in.disconnect(); } catch (e) {}
+  if (f.built) {
+    f.built.dispose();
+    f.built = null;
+  }
+  try {
+    const built = VoxVoiceFx.buildEffect(f.ctx, voiceFxId, {
+      pitchNode: f.pitchReady
+        ? (ratio) => new AudioWorkletNode(f.ctx, 'vox-pitch', {
+          numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1], parameterData: { ratio }
+        })
+        : null
+    });
+    f.in.connect(built.input);
+    built.output.connect(f.out);
+    f.built = built;
+  } catch (e) {
+    console.warn('Efeito de voz indisponível, voz normal:', e);
+    f.in.connect(f.out);
+  }
+}
+
 function currentGateParams() {
   return window.VoxMicGate.gateParams({ auto: micAuto, thresholdDb: micThresholdDb, mode: noiseSuppressionMode });
 }
@@ -2383,6 +2520,7 @@ function destroyMicProcessing() {
     micProcessedTrack = null;
   }
   if (micPipeline) {
+    if (micPipeline.fx && micPipeline.fx.built) micPipeline.fx.built.dispose();
     for (const node of micPipeline.nodes) { try { node.disconnect(); } catch (e) {} }
     if (micPipeline.gate) micPipeline.gate.port.onmessage = null;
     micPipeline = null;
@@ -2446,12 +2584,25 @@ async function rebuildMicProcessing() {
       chain(ctx.createGain()).gain.value = 1.25; // repõe o volume tirado pelo compressor
     }
 
+    // Efeito de voz por último: o ruído cortado pelo gate não vira "robô".
+    let pitchReady = false;
+    try {
+      await ensurePitchWorklet(ctx);
+      pitchReady = true;
+    } catch (e) {
+      console.warn('Mudança de tom indisponível:', e);
+    }
+    const fxIn = chain(ctx.createGain());
+    const fxOut = ctx.createGain();
+    nodes.push(fxOut);
+
     const dest = ctx.createMediaStreamDestination();
     dest.channelCount = 1;
     dest.channelCountMode = 'explicit';
-    nodes[nodes.length - 1].connect(dest);
+    fxOut.connect(dest);
 
-    micPipeline = { nodes, inputGain, gate, dest };
+    micPipeline = { nodes, inputGain, gate, dest, fx: { ctx, in: fxIn, out: fxOut, built: null, pitchReady } };
+    applyVoiceFxToPipeline();
     micProcessedTrack = dest.stream.getAudioTracks()[0];
   } catch (e) {
     console.warn('Falha ao criar processamento de áudio:', e);

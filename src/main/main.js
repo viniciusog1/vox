@@ -838,7 +838,8 @@ app.whenReady().then(() => {
       const previous = joinVoiceRoom(roomUsers, socket.id, room, {
         username,
         muted: !!socket.data.muted,
-        status: socket.data.status || 'online'
+        status: socket.data.status || 'online',
+        voiceFx: socket.data.voiceFx || 'normal'
       });
       if (previous) {
         socket.leave(previous);
@@ -1206,11 +1207,13 @@ app.whenReady().then(() => {
       // Fora da voz o estado só é espelhado em socket.data
       const target = entry || {
         muted: !!socket.data.muted,
-        status: socket.data.status || 'online'
+        status: socket.data.status || 'online',
+        voiceFx: socket.data.voiceFx || 'normal'
       };
       applyStatePatch(target, patch);
       socket.data.muted = !!target.muted;
       socket.data.status = target.status || 'online';
+      socket.data.voiceFx = target.voiceFx || 'normal';
       const after = socket.data.status;
 
       if (!entry) { broadcastServerMembers(); return; }
