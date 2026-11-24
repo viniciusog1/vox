@@ -181,6 +181,7 @@ function setPeerVolume(name, vol) {
 }
 const analysers = new Map();      // socketId -> AnalyserNode
 const videoElements = new Map();  // stream.id -> <video> reaproveitado entre renders
+const remoteVideos = new WeakMap(); // faixa de vídeo remota -> estado de remote-video.js
 const usedVideoIds = new Set();
 const speakingStates = new Map(); // socketId (inclusive o próprio) -> estado do anel de fala
 let localAnalyser = null;         // { trackId, analyser } do microfone enviado
@@ -984,19 +985,7 @@ function createPeer(id) {
       stream.addTrack(e.track);
     }
     if (e.track.kind === 'audio') setupAnalyser(id, stream);
-    if (e.track.kind === 'video') {
-      // "mute" dispara em qualquer pausa curta de frames; só troca para o
-      // avatar se a pausa durar, senão um engasgo vira tela piscando.
-      let muteTimer = null;
-      e.track.addEventListener('mute', () => {
-        clearTimeout(muteTimer);
-        muteTimer = setTimeout(() => { if (e.track.muted) renderTiles(); }, 1500);
-      });
-      e.track.addEventListener('unmute', () => {
-        clearTimeout(muteTimer);
-        if (!videoElements.has(stream.id)) renderTiles();
-      });
-    }
+    if (e.track.kind === 'video') remoteVideos.set(e.track, VoxRemoteVideo.createRemoteVideo());
     renderTiles();
   };
 
@@ -1363,6 +1352,33 @@ setInterval(async () => {
     } catch (e) {}
   }
 }, 2000);
+
+// Vídeo de cada pessoa: o tile troca entre <video> e avatar conforme chegam quadros
+// (ver remote-video.js; track.muted não serve para isso).
+setInterval(async () => {
+  if (!currentVoiceRoom) return;
+  let changed = false;
+  for (const [id, pc] of [...peers]) {
+    const transceiver = getVideoTransceiver(pc);
+    const track = transceiver && transceiver.receiver.track;
+    const state = track && remoteVideos.get(track);
+    if (!state || track.muted) continue; // nenhum pacote de vídeo ainda
+    try {
+      let frames = 0;
+      (await transceiver.receiver.getStats()).forEach((r) => {
+        if (r.type === 'inbound-rtp') frames += r.framesDecoded || 0;
+      });
+      if (peers.get(id) !== pc) continue; // conexão substituída durante a espera
+      const user = userMap.get(id);
+      const was = state.active;
+      const active = VoxRemoteVideo.updateRemoteVideo(state, frames, performance.now(), !!(user && user.sharing));
+      if (active === was) continue;
+      changed = true;
+      if (!active && fullscreenStream && fullscreenStream === remoteStreams.get(id)) closeFullscreenView();
+    } catch (e) {}
+  }
+  if (changed) renderTiles();
+}, VoxRemoteVideo.VIDEO_POLL_MS);
 
 // Canais de voz com música tocando (vem do servidor em 'music-rooms')
 let musicRooms = new Set();
@@ -2191,7 +2207,8 @@ function buildTile(name, stream, opts = {}) {
 
   const hasVideo = !!(
     stream &&
-    stream.getVideoTracks().some((t) => t.readyState === 'live' && !t.muted)
+    stream.getVideoTracks().some((t) => t.readyState === 'live' &&
+      (opts.remote ? !!(remoteVideos.get(t) || {}).active : !t.muted))
   );
 
   if (stream && hasVideo) {
