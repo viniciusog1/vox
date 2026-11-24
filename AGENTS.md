@@ -110,8 +110,9 @@ Na raiz ficam só `assets/`, `build/`, `docs/`, `scripts/`, `src/`, `test/`, `pa
 | `src/shared/music-history.js` | Histórico de músicas pedidas por servidor (ou por chamada direta) para a aba Sugestões: `recordRequest` (até 300 por servidor), `suggestionsFor` (`recent` sem repetir e `top` com 2+ pedidos, 12 cada, marcando `inQueue`) e `dropScope`. Gravado em `music-history.json` (fora do Git e do instalador; apagado junto com o servidor). Usado por `main.js` (evento `music-suggestions`). Também é módulo Node (testes). |
 | `src/shared/soundboard-state.js` | Soundboard por servidor: `addSound` (qualquer membro; nome até 24, arquivo até 1 MB, até 8 s, 40 sons por servidor), `deleteSound` (quem enviou ou dono/admin), `dropServer`, `canPlay` (1,5 s entre toques da mesma pessoa), `audioExtension` (MP3, OGG, WAV, WebM) e `isSoundFile`. Gravado em `soundboard.json`; arquivos em `soundboard/`. Usado por `main.js` e `renderer.js` (`VoxSoundboard`). Também é módulo Node (testes). |
 | `src/shared/soundboard-synth.js` | Sons de fábrica do soundboard, sintetizados com Web Audio (sem arquivos nem direitos autorais), todos em estilo 8-bit — o usuário achou as versões "realistas" ruins: Buzina, Ba dum tss, Tchan tchan tchaaan, Aplausos, Vitória 8-bit, Trombone triste, Sino e Boing. Só ondas de console: pulso (`duty` 12,5/25/50%, via `createPeriodicWave`), quadrada, triângulo e `chipnoise` (ruído ±1 que troca `rate` vezes por segundo). O envelope começa em silêncio desde `currentTime`: o ganho padrão é 1 e o primeiro valor do ruído escapava cheio (medido). `BUILTIN`, `isBuiltin`, `durationOf` e `playBuiltin(ctx, dest, id, volume)`. Usado por `main.js` e `renderer.js` (`VoxSoundboardSynth`). Também é módulo Node (testes). |
+| `src/shared/voice-fx.js` | Efeitos de voz do microfone (Robô, Vilão espacial, Grave, Esquilo, Rádio, Megafone, Caverna, Alien), gerados com Web Audio, sem arquivos: `EFFECTS`, `isVoiceFx`, `nameOf`, `createPitchShifter` (muda o tom sem mudar a velocidade; o worklet recebe o texto da função), `makeDriveCurve`, `makeCaveImpulse` e `buildEffect` (monta o grafo e devolve `{ input, output, dispose }`). Usado por `renderer.js` (`VoxVoiceFx`) e por `room-state.js` (valida o id). Também é módulo Node (testes). |
 | `src/shared/presence.js` | Regras de status: modo escolhido (`online`, `away`, `busy`, `invisible`), ausente automático só a partir de Online e atividade que desfaz só o automático. Também é módulo Node (testes). |
-| `src/shared/room-state.js` | Estado público do usuário na sala de voz (`publicUser`, `applyStatePatch`: `muted`, `status`, `sharing`) e troca de canais (`joinVoiceRoom`, `leaveVoiceRoom`, `canUseTextRoom`, `socketRoomsToLeave`); `canUseTextRoom` não depende de lista de canais (quem decide o acesso é `main.js`). Usado por `main.js`. |
+| `src/shared/room-state.js` | Estado público do usuário na sala de voz (`publicUser`, `applyStatePatch`: `muted`, `status`, `sharing`, `voiceFx`) e troca de canais (`joinVoiceRoom`, `leaveVoiceRoom`, `canUseTextRoom`, `socketRoomsToLeave`); `canUseTextRoom` não depende de lista de canais (quem decide o acesso é `main.js`). Usado por `main.js`. |
 | `test/` | Testes `node:test` (`npm test`): paletas e contraste, CSS sem cores fixas, estrutura das configurações, estado da sala, servidores (`servers-state`), amigos (`friends-state`), presença, protocolo, detecção de fala, YouTube, fila de música, efeitos sonoros, chat (menções, editar/apagar, não lidas, notificações), sessões e endereço do túnel. Fora do instalador. |
 | `src/main/preload.js` | Ponte segura `contextBridge` para o IPC do seletor de tela, do túnel (`tunnelStart`/`tunnelStop`/`tunnelStatus`/`onTunnelStatus`), do link fixo (`addressStatus`/`addressConnect`/`addressDisconnect`/`setAutoTunnel`/`openTokenPage`/`onAddressStatus`), da atualização (`updateStatus`/`onUpdateStatus`/`installUpdate`) e das notificações (`focusWindow`, `flashFrame`). Ainda expõe `minimize`/`maximize`/`close`, sem uso desde que a janela passou a usar os botões nativos. |
 | `assets/icon.svg`, `assets/icon-small.svg`, `assets/icon.png` | Ícone do Vox: barras de equalizador roxas cujas pontas (rosa nas bordas, ciano no meio) formam um V. `icon-small.svg` é a versão de 3 barras usada até 24 px. `icon.png` (256 px, gerado) é o ícone da janela; `icon.svg` aparece na tela de login. |
@@ -139,7 +140,7 @@ Na raiz ficam só `assets/`, `build/`, `docs/`, `scripts/`, `src/`, `test/`, `pa
 - Escuta em `0.0.0.0:3000` para permitir acesso pela rede local.
 - Mantém em memória:
   - `authenticated`: `socket.id -> username`;
-  - `roomUsers`: `voiceRoom -> Map(socket.id -> { username, muted, status, sharing })`, só para canais de voz (ids de canal são únicos entre servidores);
+  - `roomUsers`: `voiceRoom -> Map(socket.id -> { username, muted, status, sharing, voiceFx })`, só para canais de voz (ids de canal são únicos entre servidores);
   - `socket.data.textRoom` e `socket.data.voiceRoom`: canal de texto e de voz atuais do socket (`null` quando não há);
   - `users`: objeto carregado de `users.json`;
   - `servers` e `friends`: carregados de `servers.json` e `friends.json` (na primeira carga, `migrateLegacy` cria o servidor `casa`);
@@ -201,12 +202,18 @@ Na raiz ficam só `assets/`, `build/`, `docs/`, `scripts/`, `src/`, `test/`, `pa
   - Volume local em `localStorage['vox-music-volume']` (não é sincronizado).
   - Sincronização: o cliente estima a posição a partir de `positionMs`/`serverNow` e faz `seekTo` só se a diferença passar de `SYNC_TOLERANCE_MS`, respeitando `SEEK_COOLDOWN_MS`.
 - Áudio do microfone:
-  - Cadeia (`rebuildMicProcessing`): microfone → volume (`vox-mic-gain`, 0–200%) → passa-alta (80 Hz; 100 Hz no Forte) → passa-baixa 9 kHz (só Forte) → gate (AudioWorklet `vox-mic-gate`) → compressor + ganho 1,25 → `MediaStreamAudioDestination`. No modo `off` ficam só volume e gate.
+  - Cadeia (`rebuildMicProcessing`): microfone → volume (`vox-mic-gain`, 0–200%) → passa-alta (80 Hz; 100 Hz no Forte) → passa-baixa 9 kHz (só Forte) → gate (AudioWorklet `vox-mic-gate`) → compressor + ganho 1,25 → efeito de voz → `MediaStreamAudioDestination`. No modo `off` ficam só volume, gate e efeito.
   - Modos em `vox-noise-suppression`: `off` (pede `noiseSuppression: false` ao navegador), `browser` (Padrão) e `strong` (Forte). Trocar o modo reabre o microfone com `changeInputDevice(id, { stopFirst: true })`: **medido** que, com o mesmo dispositivo ainda aberto, o Chromium devolve a faixa nova com o processamento antigo.
   - Gate = sensibilidade do microfone. A lógica fica em `mic-gate.js` (`createGate`, testada no Node; o worklet recebe o texto da função). Nível RMS em ~10 ms, histerese de 4 dB, espera de 250 ms antes de fechar, ataque 3 ms, soltura 120 ms. Automático (`vox-mic-auto`, padrão ligado): limite = ruído de fundo (mínimo dos últimos 2 s, sobe no máximo 3 dB/s) + 8 dB (12 dB no Forte), entre −65 e −25 dB. Manual: `vox-mic-threshold` (−70 a −10 dB). O worklet manda nível/limite/aberto ~20×/s para o medidor das configurações.
   - **Medido** no gate antigo (limite fixo de pico ~−36 dBFS, sem espera): fala a −38 dB nunca abria (com `autoGainControl: false`, microfone baixo = pessoa muda) e pausas de 150 ms entre palavras abriam/fechavam 23 vezes em 5 s.
   - `micProcessedTrack` é a faixa enviada aos peers; `getOutboundAudioTracks()` decide entre processada e bruta.
   - O monitor do próprio microfone toca a faixa processada.
+- Efeitos de voz (`voice-fx.js` + `applyVoiceFxToPipeline`):
+  - O efeito é o último trecho da cadeia e sai pronto deste PC. Trocar só refaz esse trecho: a faixa enviada aos outros é a mesma (sem renegociar).
+  - Escolha no botão da varinha (`#btn-voice-fx`, ao lado do microfone) ou em Configurações → Áudio (`#voice-fx`); fica em `vox-voice-fx`. Dá para trocar fora da voz.
+  - O id vai em `update-state` (`voiceFx`, campo opcional: não mudou o protocolo); o servidor ignora ids desconhecidos e `room-users`/`voice-rooms` repassam. A lista da voz mostra o ícone com o nome do efeito. Com um servidor antigo a voz sai com efeito, mas sem ícone.
+  - Os efeitos que mudam o tom usam o worklet `vox-pitch` (30 ms a mais de atraso). `dispose` manda `'stop'` para ele: **medido** que um worklet que devolve `true` continua rodando depois de desconectado.
+  - **Medido** com duas instâncias e voz sintética no microfone: os 8 efeitos chegam ao outro lado a até 2,2 dB do volume da voz normal e sem estourar; mudo, troca da redução de ruído, sair/voltar da voz e queda de conexão mantêm o efeito. **Não verificado:** com voz de verdade e entre PCs diferentes.
 - Quem está falando aparece pelo anel no avatar da lista da voz (`speaking.js`), inclusive você. A antiga barra "Ninguém falando" foi removida.
 - Efeitos sonoros (`sounds.js` + `playSoundEffect`):
   - Tocam ao entrar/sair alguém da sua voz (inclusive você) e ao mutar/desmutar. Sem evento novo: a entrada e a saída saem da diferença entre listas de `room-users` (`soundRoster`). A primeira lista depois de `join-voice` toca só a sua entrada, não a de quem já estava; a sua saída toca em `leaveVoice`.
@@ -223,7 +230,7 @@ Na raiz ficam só `assets/`, `build/`, `docs/`, `scripts/`, `src/`, `test/`, `pa
 - `server-members` (servidor → cada cliente autenticado: todas as contas, com `online`, `status`, `voiceRoom`, `muted`; reenviado após login, logout, desconexão, mudanças de voz e de status)
 - `music-rooms` (servidor → clientes autenticados: lista de canais de voz com música)
 - `user-joined`, `user-left`
-- `update-state` (mudo/status/`sharing` — compartilhando tela)
+- `update-state` (mudo/status/`sharing` — compartilhando tela/`voiceFx` — efeito de voz)
 - `resume` ({ token, protocol }, callback): reconexão sem senha. `register`/`login`/`resume` respondem `{ success, username, token, protocol }`; o token vem de `sessions.js`
 - `signal` (offer, answer, candidate); só é repassado para sockets autenticados
 - `save-message` ({ room, text, image? }, callback → `{ success, id }`): o autor é **sempre** o usuário autenticado do socket (o campo `user` do cliente é ignorado). `image` = `{ data: ArrayBuffer, type, width, height }`, até 2 MB (`maxHttpBufferSize` 3 MB); o arquivo vai para `uploads/<uuid>.<ext>` e é servido em `GET /uploads/<nome>` pelo mesmo servidor HTTP
@@ -367,6 +374,7 @@ Em `users.json`, `avatar` (opcional) é o arquivo da foto em `avatars/`. `sessio
 - `audioInputId`, `audioOutputId`, `monitorEnabled`
 - `vox-noise-suppression` (`off`, `browser`, `strong`; padrão `strong`)
 - `vox-mic-gain` (volume do microfone, 0–200, padrão 100), `vox-mic-auto` (`0` desliga a sensibilidade automática), `vox-mic-threshold` (sensibilidade manual em dB, −70 a −10, padrão −50). A antiga `vox-noise-gate-level` não é mais lida.
+- `vox-voice-fx` (id do efeito de voz, padrão `normal`)
 - `vox-share-resolution`, `vox-share-fps`
 - `vox-peer-volumes` (volume de cada pessoa, só neste computador)
 - `vox-theme` (id do tema; inválido ou ausente → `escuro`)

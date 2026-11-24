@@ -162,6 +162,16 @@
     font-size: 13px; text-align: left;
   }
   #status-menu button:hover { background: color-mix(in srgb, var(--text) 6%, transparent); }
+  #voice-fx-menu { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; }
+  #voice-fx-menu .popover-hint { grid-column: 1 / -1; }
+  #voice-fx-menu button {
+    padding: 8px 10px; background: transparent; border: none; border-radius: 6px;
+    color: var(--text); cursor: pointer; font-size: 13px; text-align: left;
+  }
+  #voice-fx-menu button:hover { background: color-mix(in srgb, var(--text) 6%, transparent); }
+  #voice-fx-menu button.active { background: var(--accent-soft); color: var(--link); font-weight: 700; }
+  .mini-btn.fx-on { color: var(--link); background: var(--accent-soft); }
+  .vu-icons .vu-fx { color: var(--link); display: inline-flex; }
   .popover-hint {
     font-size: 11px; color: var(--muted); padding: 8px 10px 4px; line-height: 1.4;
   }
@@ -1165,6 +1175,7 @@
         <div class="name" id="my-name">—</div>
         <div class="sub" id="my-status">Online</div>
       </button>
+      <button class="mini-btn" id="btn-voice-fx" title="Efeito de voz: Normal" aria-haspopup="menu"><i data-icon="wand-sparkles"></i></button>
       <button class="mini-btn" id="btn-mic-mini" title="Microfone"><i data-icon="mic"></i></button>
       <button class="mini-btn" id="btn-settings" title="Configurações"><i data-icon="settings"></i></button>
 
@@ -1175,6 +1186,8 @@
         <button data-status="invisible"><span class="status-dot invisible"></span> Invisível</button>
         <div class="popover-hint">Você ficará ausente automaticamente após 5 minutos sem atividade.</div>
       </div>
+
+      <div id="voice-fx-menu" class="popover hidden" role="menu" aria-label="Efeito de voz"></div>
     </div>
   </aside>
 
@@ -1523,6 +1536,12 @@
     <p class="settings-hint">“Padrão” usa a redução de ruído do navegador. “Forte” soma filtros de graves e chiado e deixa a sensibilidade automática mais exigente. “Desligada” manda o som do microfone sem tratamento.</p>
 
     <div class="field">
+      <label for="voice-fx">Efeito de voz</label>
+      <select id="voice-fx"></select>
+    </div>
+    <p class="settings-hint">Todos na chamada ouvem sua voz com o efeito, e aparece um ícone ao lado do seu nome na voz. Para ouvir como fica, ligue “Ouvir meu microfone (teste)” com fones. Também dá para trocar pelo botão ao lado do microfone, no canto inferior esquerdo.</p>
+
+    <div class="field">
       <label for="mic-gain">Volume do microfone (<span id="mic-gain-value">100</span>%)</label>
       <input type="range" id="mic-gain" class="settings-range" min="0" max="200" step="5" value="100">
     </div>
@@ -1663,6 +1682,7 @@
 <script src="../shared/soundboard-state.js"></script>
 <script src="../shared/soundboard-synth.js"></script>
 <script src="../shared/fixed-address.js"></script>
+<script src="../shared/voice-fx.js"></script>
 <script src="renderer.js"></script>
 </body>
 </html>

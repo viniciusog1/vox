@@ -4,7 +4,7 @@ const { publicUser, applyStatePatch, joinVoiceRoom, leaveVoiceRoom, canUseTextRo
 
 test('publicUser preenche padrões', () => {
   assert.deepEqual(publicUser('a', { username: 'ana' }),
-    { id: 'a', username: 'ana', muted: false, status: 'online', sharing: false });
+    { id: 'a', username: 'ana', muted: false, status: 'online', sharing: false, voiceFx: 'normal' });
 });
 
 test('publicUser repassa sharing', () => {
@@ -90,4 +90,23 @@ test('socketRoomsToLeave lista só salas definidas', () => {
   assert.deepEqual(socketRoomsToLeave({ textRoom: 'geral', voiceRoom: 'voz-sala' }), ['voz-sala', 'geral']);
   assert.deepEqual(socketRoomsToLeave({ textRoom: 'geral', voiceRoom: null }), ['geral']);
   assert.deepEqual(socketRoomsToLeave({}), []);
+});
+
+test('efeito de voz: patch aceita só ids conhecidos e publicUser repassa', () => {
+  const entry = { username: 'ana' };
+  applyStatePatch(entry, { voiceFx: 'robo' });
+  assert.equal(entry.voiceFx, 'robo');
+  assert.equal(publicUser('a', entry).voiceFx, 'robo');
+  applyStatePatch(entry, { voiceFx: 'darth' });
+  applyStatePatch(entry, { voiceFx: 3 });
+  assert.equal(entry.voiceFx, 'robo');
+  applyStatePatch(entry, { voiceFx: 'normal' });
+  assert.equal(publicUser('a', entry).voiceFx, 'normal');
+  assert.equal(publicUser('b', { username: 'bia', voiceFx: '<script>' }).voiceFx, 'normal');
+});
+
+test('entrar na voz guarda o efeito escolhido antes', () => {
+  const rooms = new Map();
+  joinVoiceRoom(rooms, 's1', 'voz-sala', { username: 'ana', muted: false, status: 'online', voiceFx: 'alien' });
+  assert.equal(publicUser('s1', rooms.get('voz-sala').get('s1')).voiceFx, 'alien');
 });
