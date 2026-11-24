@@ -5,10 +5,12 @@ const themes = require('../src/renderer/themes.js');
 const IDS = ['escuro', 'grafite', 'dracula', 'nord', 'aquatico', 'natureza', 'por-do-sol',
   'cyberpunk', 'neon-verde', 'neon-vermelho', 'neon-azul',
   'bizarro', 'manga', 'ninja',
+  'azulejo', 'radio',
   'claro', 'sepia', 'lavanda', 'algodao-doce'];
 const NAMES = ['Escuro', 'Grafite', 'Drácula', 'Nord', 'Aquático', 'Natureza', 'Pôr do sol',
   'Cyberpunk', 'Neon Verde', 'Neon Vermelho', 'Neon Azul',
   'Bizarro', 'Mangá', 'Ninja',
+  'Azulejo', 'Rádio',
   'Claro', 'Sépia', 'Lavanda / Sakura', 'Algodão-doce'];
 const TOKENS = ['bg', 'bg2', 'bg3', 'rail', 'border', 'text', 'text2', 'muted', 'accent', 'onAccent', 'link', 'speak', 'red', 'dangerBg'];
 
@@ -22,16 +24,17 @@ function contrast(a, b) {
   return (hi + 0.05) / (lo + 0.05);
 }
 
-test('exporta 18 temas com ids, nomes e grupos', () => {
+test('exporta 20 temas com ids, nomes e grupos', () => {
   assert.deepEqual(themes.THEMES.map((t) => t.id), IDS);
   assert.deepEqual(themes.THEMES.map((t) => t.name), NAMES);
-  assert.equal(themes.THEMES.filter((t) => t.kind === 'dark').length, 13);
+  assert.equal(themes.THEMES.filter((t) => t.kind === 'dark').length, 15);
   assert.equal(themes.THEMES.filter((t) => t.kind === 'light').length, 5);
-  assert.deepEqual(themes.THEME_GROUPS, [['escuros', 'Escuros'], ['neon', 'Neon'], ['anime', 'Anime'], ['claros', 'Claros']]);
+  assert.deepEqual(themes.THEME_GROUPS, [['escuros', 'Escuros'], ['neon', 'Neon'], ['anime', 'Anime'], ['especiais', 'Especiais'], ['claros', 'Claros']]);
   const ids = (g) => themes.THEMES.filter((t) => t.group === g).map((t) => t.id);
   assert.deepEqual(ids('escuros'), ['escuro', 'grafite', 'dracula', 'nord', 'aquatico', 'natureza', 'por-do-sol']);
   assert.deepEqual(ids('neon'), ['cyberpunk', 'neon-verde', 'neon-vermelho', 'neon-azul']);
   assert.deepEqual(ids('anime'), ['bizarro', 'manga', 'ninja']);
+  assert.deepEqual(ids('especiais'), ['azulejo', 'radio']);
   assert.deepEqual(ids('claros'), ['claro', 'sepia', 'lavanda', 'algodao-doce']);
 });
 

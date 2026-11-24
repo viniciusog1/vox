@@ -1,0 +1,294 @@
+/* Tema Rádio: além das cores (themes.js), muda a disposição da tela. O visor, o olho mágico e
+   a vibração dos alto-falantes ficam em radio.js. Fora do bloco principal só há a miniatura. */
+
+.theme-thumb[data-preview="radio"] .tt-main {
+  background:
+    linear-gradient(#e5392b, #e5392b) 62% 7px / 2px 14px no-repeat,
+    linear-gradient(#ffb84a, #ffb84a) 50% 7px / calc(100% - 12px) 14px no-repeat,
+    radial-gradient(circle at 50% 70%, #ffb84a 3px, #3a2318 3.5px 8px, #1a0d08 8.5px 15px, transparent 15.5px),
+    #23392d;
+}
+.theme-thumb[data-preview="radio"] :is(.tt-line, .tt-btn) { display: none; }
+
+:root[data-theme="radio"] {
+  --rd-letra: 'Franklin Gothic Medium', 'Franklin Gothic', 'Gill Sans', 'Segoe UI', sans-serif;
+  --rd-caixa: #0f0704;
+  --rd-latao: #c9953f;
+  --rd-marfim: #f1dfbd;
+  --rd-tecido:
+    repeating-linear-gradient(0deg, transparent 0 3px, #16281f 3px 5px),
+    repeating-linear-gradient(90deg, #2c4737 0 3px, #20362a 3px 5px);
+
+  --accent-2: #ffcb78;
+  --accent-soft: #55301a;
+  --green: #7fe39a !important;
+  --yellow: #ffb84a !important;
+  --gray: #a58a74 !important;
+  --ok-text: #7fe39a !important;
+  --danger-hover: #97281a;
+  --panel: #3d2114;
+  --control: #573222;
+  --control-hover: #6b402c;
+  --radius: 6px;
+  --bottom-bar-h: 72px;
+  accent-color: var(--accent);
+
+  & :is(input, select, textarea) { font-family: inherit; }
+  & input::placeholder { color: #cfae92; }
+  & .member .you { margin-left: 5px; }
+  & ::selection { background: #ffb84a; color: #2a1405; }
+  & body { background: var(--rd-caixa); caret-color: #ffb84a; }
+  & ::-webkit-scrollbar { width: 10px; height: 8px; }
+  & ::-webkit-scrollbar-thumb { background: #6b4129; border: 2px solid transparent; background-clip: padding-box; border-radius: 6px; }
+  & ::-webkit-scrollbar-thumb:hover { background-color: #87553a; }
+  & :is(button, a, input, select, [tabindex]):focus-visible { outline: 2px solid #ffb84a; outline-offset: 2px; }
+  & .status-dot { box-shadow: none !important; }
+
+  /* ---------- Gabinete ---------- */
+  & #app {
+    grid-template-columns: 256px minmax(0, 1fr) 244px;
+    grid-template-rows: auto auto 112px 52px minmax(0, 1fr) var(--bottom-bar-h);
+    column-gap: 4px; background: var(--rd-caixa);
+  }
+  & #app:has(#voice-connection:not(.hidden)) { grid-template-columns: 256px minmax(0, 1fr) clamp(320px, 28vw, 430px); }
+  & #main, & #topbar { display: contents; }
+  & .app-banner { grid-column: 1 / -1; }
+  & .app-banner.warn { background: #e5392b; color: #fff; font-weight: 600; }
+  & #conn-banner { grid-row: 1; }
+  & #update-banner { grid-row: 2; }
+  & #server-rail { grid-column: 1; grid-row: 3; }
+  & #rd-dial { grid-column: 2 / -1; grid-row: 3; }
+  & #channels { grid-column: 1; grid-row: 4 / 7; }
+  & #channel-title { grid-column: 2; grid-row: 4; }
+  & #chat-wrap { grid-column: 2; grid-row: 5 / 7; }
+  & #members { grid-column: 3; grid-row: 4 / 7; }
+  & #call-area { display: none; }
+  & #topbar-actions { display: none; }
+  /* Conversa direta: a tecla Ligar sob a lista */
+  & #app:has(#voice-connection.hidden):has(#btn-dm-call:not(.hidden)) {
+    & #members { grid-row: 4 / 6; }
+    & #topbar-actions { display: flex; grid-column: 3; grid-row: 6; }
+    & .ctrl:not(#btn-dm-call) { display: none; }
+  }
+  & #app:has(#voice-connection:not(.hidden)) {
+    & #members { grid-column: 2; grid-row: 4; }
+    & #call-area { display: block; grid-column: 2; grid-row: 5; }
+    & #topbar-actions { display: flex; grid-column: 2; grid-row: 6; }
+    & #channel-title { grid-column: 3; }
+    & #chat-wrap { grid-column: 3; }
+  }
+
+  /* ---------- Visor ---------- */
+  & #rd-dial { display: flex; align-items: center; gap: 18px; padding: 0 22px; min-width: 0; background: var(--bg-2); border-bottom: 4px solid var(--rd-caixa); }
+  & .rd-glass {
+    position: relative; flex: 1; min-width: 0; height: 78px; overflow: hidden;
+    border-radius: 8px; border: 3px solid var(--rd-latao);
+    background: #4b2a10; color: #ffd9a0; transition: background-color .7s ease-out, color .4s;
+  }
+  & #rd-dial.on .rd-glass { background: #ffb84a; color: #2a1405; }
+  & .rd-note { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-family: var(--rd-letra); font-size: 16px; pointer-events: none; }
+  & .rd-track { position: relative; display: flex; height: 100%; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; touch-action: pan-y; cursor: grab; user-select: none; }
+  & #rd-dial.tuning .rd-track, & #rd-dial.tuning .rd-station { cursor: grabbing; }
+  & .rd-station {
+    position: relative; flex: 1 0 168px; min-width: 0; padding: 12px 6px 0 30px; border: none; background: none; color: inherit; cursor: pointer;
+    display: flex; flex-direction: column; align-items: flex-start; gap: 5px; font-family: var(--rd-letra); font-size: 17px;
+  }
+  /* Escala: risco alto na posição da estação (20 px, igual a STATION_X em radio.js), o nome ao lado */
+  & .rd-station::after {
+    content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 16px;
+    background:
+      linear-gradient(currentColor, currentColor) 19px 100% / 2px 16px no-repeat,
+      repeating-linear-gradient(90deg, currentColor 0 1px, transparent 1px 12.5%) 20px 100% / 100% 8px;
+    opacity: .75;
+  }
+  & .rd-name { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  & .rd-station:is(:hover, .near) .rd-name { text-decoration: underline; text-underline-offset: 4px; text-decoration-thickness: 2px; }
+  & .rd-station:focus-visible { outline-color: currentColor; outline-offset: -6px; border-radius: 8px; }
+  & .rd-lamps { display: flex; gap: 4px; height: 7px; }
+  & .rd-lamps i { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+  & .rd-needle { position: absolute; left: -2px; top: 0; bottom: 0; width: 4px; background: #e5392b; pointer-events: none; transition: transform .55s cubic-bezier(.22, 1, .36, 1); }
+  & #rd-dial.tuning .rd-needle { transition: none; }
+  & .rd-needle::before { content: ''; position: absolute; left: -4px; top: 0; width: 12px; height: 8px; background: inherit; border-radius: 0 0 3px 3px; }
+  & .rd-eye { width: 64px; height: 64px; border-radius: 50%; flex-shrink: 0; outline: 3px solid var(--rd-latao); }
+
+  /* ---------- Servidores: botões de baquelite ---------- */
+  & #server-rail { flex-flow: row wrap; align-content: center; justify-content: flex-start; padding: 0 16px; gap: 10px; border: none; border-bottom: 4px solid var(--rd-caixa); background: var(--rail); overflow-y: auto; scrollbar-width: none; }
+  & #server-list { flex-flow: row wrap; gap: 10px; }
+  & .rail-sep { display: none; }
+  & .rail-btn, & .rail-btn:hover, & .rail-btn.active { width: 44px; height: 44px; border-radius: 50%; flex-shrink: 0; font-family: var(--rd-letra); font-weight: 400; }
+  & .rail-btn { background: var(--control); transition: background .15s, color .15s; }
+  & .rail-btn:hover { background: var(--control-hover); color: var(--text); }
+  & .rail-btn.active { background: var(--accent); color: var(--on-accent); }
+  & .rail-btn.rail-server.active { background: transparent; outline: 3px solid var(--accent); outline-offset: 1px; }
+  & .rail-add { background: transparent; color: var(--muted); }
+  & .rail-btn.has-unread::before { left: auto; right: 0; top: 0; width: 12px; height: 12px; margin: 0; border-radius: 50%; background: var(--accent); }
+
+  /* ---------- Canais ---------- */
+  & #channels { border: none; background: var(--rail); }
+  & #guild-header { height: 52px; padding: 0 18px; border: none; background: transparent; font-family: var(--rd-letra); font-weight: 400; font-size: 20px; }
+  & #guild-header:not(.no-menu):hover { background: var(--bg-3); }
+  & #server-menu { top: 54px; }
+  & #channel-scroll { padding: 2px 10px 16px; }
+  & :is(.section-title, .members-section, .music-section, .sb-section, .friends-section, #members h4, .settings-card .settings-section) { text-transform: none; letter-spacing: 0; font-size: 13px; font-weight: 400; color: var(--muted); }
+  & .section-title { padding: 14px 8px 6px; }
+  & .channel { min-height: 36px; padding: 0 10px; border-radius: 6px; color: var(--text-2); }
+  & .channel:hover { background: var(--bg-3); }
+  & .channel.active { background: var(--bg-3); color: var(--accent); font-weight: 600; box-shadow: none; }
+  & .channel.active :is(.hash, .voice-icon) { color: var(--accent); }
+  & .voice-users { padding: 2px 0 8px 12px; }
+  & .voice-user { padding: 4px 8px; }
+  & .voice-user .vu-avatar { width: 26px; height: 26px; }
+  & .unread-badge.mention { background: var(--accent); color: var(--on-accent); }
+  & #voice-connection { margin: 0 10px 10px; padding: 8px 8px 8px 12px; border: none; border-radius: 6px; background: var(--bg-3); }
+  & #user-panel { border-top: 4px solid var(--rd-caixa); background: var(--rail); gap: 6px; }
+  & .user-meta .name { font-family: var(--rd-letra); font-weight: 400; font-size: 16px; }
+  & #my-avatar { width: 40px; height: 40px; }
+  & .mini-btn { width: 34px; height: 34px; }
+  & .mini-btn.fx-on, & #voice-fx-menu button.active { background: var(--accent); color: var(--on-accent); }
+  & .popover { border-radius: 8px; bottom: 76px; box-shadow: 0 14px 34px rgba(0, 0, 0, .6); }
+  & #server-menu { bottom: auto; }
+  & #mention-popup { bottom: calc(var(--bottom-bar-h) + 6px); }
+
+  /* ---------- Quem está por aí ---------- */
+  & #members { border: none; background: var(--rail); padding: 14px 10px 20px; }
+  & #members h4 { font-family: var(--rd-letra); font-size: 18px; color: var(--text); padding: 0 8px; margin-bottom: 4px; }
+  & .member { padding: 6px 8px; border-radius: 6px; }
+  & .member .avatar { width: 34px; height: 34px; }
+  & .member-name { font-size: 14px; }
+  & .member.offline { opacity: 1; color: var(--muted); }
+  & .member.offline .avatar { opacity: .45; }
+  & :is(.member, .channel.dm, .friend-row) .member-status-dot { border-color: var(--rail); }
+  & #app:has(#voice-connection:not(.hidden)) #members {
+    display: flex; align-items: center; gap: 12px; padding: 0 16px; overflow-x: auto; overflow-y: hidden; scrollbar-width: none;
+    & h4 { margin: 0; padding: 0; white-space: nowrap; font-size: 15px; }
+    & #member-list { display: flex; align-items: center; gap: 4px; }
+    & .members-section { display: none; }
+    & .member { flex-shrink: 0; padding: 4px 8px; gap: 8px; }
+    & .member .avatar { width: 30px; height: 30px; font-size: 11px; }
+    & :is(.member-name-box, .member-name) { max-width: 128px; flex: 0 1 auto; }
+    & .member.offline :is(.member-name-box, .member-name) { display: none; }
+  }
+
+  /* ---------- Alto-falantes ---------- */
+  & #call-area { flex: none; border: none; background: var(--rd-tecido); background-color: #20362a; }
+  & #video-grid { padding: 28px 32px; }
+  & .tile { border: 3px solid #2a160e; border-radius: 10px; background: #3d1f12; box-shadow: 0 8px 20px rgba(0, 0, 0, .45); transition: border-color .15s; }
+  & .tile.rd-falando { border-color: var(--speak); }
+  & .tile:has(> .avatar)::before {
+    content: ''; position: absolute; height: 84%; aspect-ratio: 1; border-radius: 50%;
+    background: radial-gradient(closest-side, #1a0d08 0 34%, #472a1b 34% 36%, #2a170e 36% 56%, #472a1b 56% 58%, #22120a 58% 78%, #472a1b 78% 80%, #140a06 80%);
+    transform: scale(calc(1 + var(--rd-nivel, 0) * .09)); transition: transform 70ms linear;
+  }
+  & .tile:has(> .avatar)::after { content: ''; position: absolute; height: 92%; aspect-ratio: 1; border-radius: 50%; border: 5px solid var(--rd-latao); pointer-events: none; }
+  & .tile > .avatar { position: relative; z-index: 1; width: auto; height: 32%; aspect-ratio: 1; font-size: clamp(15px, 2.2vw, 30px); transform: scale(calc(1 + var(--rd-nivel, 0) * .14)); transition: transform 70ms linear; }
+  & .tile-name { z-index: 2; left: 50%; bottom: 10px; transform: translateX(-50%); max-width: 80%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 4px 14px; border-radius: 3px; background: var(--rd-latao); color: #1f0f07; font-family: var(--rd-letra); font-weight: 400; font-size: 15px; backdrop-filter: none; }
+  & .tile:has(video) .tile-name { left: 10px; transform: none; }
+  & .tile.rd-falando .tile-name { background: var(--speak); color: #0c2413; }
+  & .tile-badge { z-index: 2; border-radius: 3px; font-family: var(--rd-letra); font-weight: 400; }
+  & .tile-btn { background: #160b07; backdrop-filter: none; }
+  & .tile-btn:hover { background: #4a2a1a; }
+  & .tile[style*="dashed"] { background: #24140d !important; border-color: #6b4129; }
+
+  /* ---------- Teclas ---------- */
+  & #topbar-actions { justify-content: center; align-items: flex-start; gap: 3px; padding: 10px 12px 0; min-width: 0; background: var(--rail); border-top: 4px solid var(--rd-caixa); }
+  & .ctrl {
+    height: 48px; min-width: 52px; padding: 0 16px 6px; justify-content: center; border-radius: 2px 2px 7px 7px;
+    font-family: var(--rd-letra); font-weight: 400; font-size: 15px; color: #2a1405; background: var(--rd-marfim);
+    box-shadow: inset 0 -6px 0 #c9ae80; transition: transform .1s, background .15s, box-shadow .1s;
+  }
+  & .ctrl:hover:not(:disabled) { background: #fff0d2; }
+  & .ctrl:active:not(:disabled) { transform: translateY(3px); box-shadow: inset 0 -2px 0 #c9ae80; }
+  & .ctrl.off { background: var(--rd-marfim); color: #2a1405; }
+  & .ctrl.off:hover:not(:disabled) { background: #fff0d2; }
+  & .ctrl.primary, & .ctrl.primary:hover:not(:disabled) { background: var(--accent); color: #2a1405; transform: translateY(3px); box-shadow: inset 0 -2px 0 #d48f22; }
+  & .ctrl.danger, & .ctrl.danger:hover:not(:disabled) { background: #b5301f; color: #fff; box-shadow: inset 0 -6px 0 #7c1d11; }
+  & .ctrl:disabled { opacity: .5; }
+
+  /* ---------- Chat ---------- */
+  & #channel-title { padding: 0 22px; min-width: 0; background: var(--bg); font-family: var(--rd-letra); font-weight: 400; font-size: 20px; }
+  & #channel-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  & #chat-wrap { background: var(--bg); }
+  & #messages { padding: 10px 22px 20px; gap: 16px; }
+  & .msg-row, & .msg-row.own { margin: 0; flex-direction: row; max-width: 76ch; gap: 12px; }
+  & .msg-row .avatar { width: 38px; height: 38px; }
+  & .msg-body, & .msg-row.own .msg-body { background: none; border: none; padding: 0; min-width: 0; }
+  & .msg-user { text-transform: none; letter-spacing: 0; font-family: var(--rd-letra); font-weight: 400; font-size: 16px; color: var(--text); margin-bottom: 1px; }
+  & .msg-row.own .msg-user { color: var(--accent); }
+  & .msg-text { font-size: 14.5px; line-height: 1.5; color: var(--text-2); }
+  & .msg-mention { color: #2a1405; background: var(--accent); border-radius: 3px; padding: 0 4px; }
+  & .msg-row.mentions-me .msg-body { box-shadow: none; background: var(--accent-soft); padding: 8px 12px; border-radius: 6px; }
+  & .msg-row.own .msg-actions { left: auto; right: 0; }
+  & .chat-input-row { border-top: 4px solid var(--rd-caixa); background: var(--bg); padding: 0 16px; gap: 8px; }
+  & #msg-input { height: 46px; border: 1px solid transparent; background: var(--bg-3); font-size: 14.5px; border-radius: 8px; }
+  & #msg-input:focus { border-color: var(--accent); box-shadow: none; }
+  & .msg-icon-btn { width: 46px; height: 46px; background: transparent; color: var(--muted); }
+  & .msg-icon-btn:hover { background: var(--bg-3); color: var(--text); }
+  & #send-btn { height: 46px; border-radius: 8px; font-family: var(--rd-letra); font-weight: 400; font-size: 16px; }
+  & :is(#music-panel, .side-panel) { border-left: none; box-shadow: none; width: 100%; background: var(--bg); }
+  & :is(.music-panel-head h3, .source-card h3, .settings-card h3) { font-family: var(--rd-letra); font-weight: 400; font-size: 21px; }
+  & .sound-btn { border-color: transparent; }
+  & .friend-row { border-top: none; }
+  & .friends-tab.add { background: var(--accent); color: var(--on-accent); }
+  & #friends-panel { padding: 14px 22px; }
+  & .friends-empty { text-align: left; }
+
+  /* ---------- Janelas ---------- */
+  & :is(#settings-modal, #form-modal, #server-modal, #source-picker) { background: rgba(10, 4, 2, .8); backdrop-filter: none; }
+  & :is(.settings-card, .source-card, .form-card) { border: 3px solid var(--rd-latao); border-radius: 10px; background: var(--bg-2); }
+  & .settings-hint { font-size: 12px; max-width: 68ch; }
+
+  /* ---------- Entrada ---------- */
+  & #auth-screen { justify-content: flex-end; align-items: stretch; background: var(--bg-2); }
+  & .overlay-card { position: relative; width: 452px; max-width: 100%; border: none; border-left: 4px solid var(--rd-caixa); border-radius: 0; background: var(--rail); padding: 36px 52px; box-shadow: none; overflow-y: auto; display: flex; flex-direction: column; }
+  & .brand { flex-direction: row; gap: 14px; margin: auto 0 30px; }
+  & .brand-logo { width: 48px; height: 48px; }
+  & .brand h1 { font-family: var(--rd-letra); font-weight: 400; font-size: 42px; letter-spacing: 0; line-height: 1; }
+  & .overlay-card h2 { font-family: var(--rd-letra); font-weight: 400; font-size: 26px; }
+  & .overlay-card .field input { height: 46px; border-color: transparent; background: var(--bg-3); }
+  & .server-row input { background: var(--bg-3); border-color: transparent; }
+  & .submit-btn { height: 50px; font-family: var(--rd-letra); font-weight: 400; font-size: 17px; }
+  & .server-box { margin-bottom: auto; }
+  & :is(.server-status, .server-hint) { font-size: 12px; }
+  & .rd-front { --rd-calor: 0; position: absolute; inset: 0 452px 0 0; display: flex; flex-direction: column; gap: 34px; padding: 40px; min-width: 0; }
+  & .rd-front-cones { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; gap: 8%; padding: 32px; border-radius: 12px; border: 4px solid var(--rd-latao); background: var(--rd-tecido); overflow: hidden; }
+  & .rd-front-cones i { flex: 0 1 auto; width: min(86%, 56vh); aspect-ratio: 1; border-radius: 50%; border: 8px solid var(--rd-latao); background: radial-gradient(closest-side, #1a0d08 0 24%, #472a1b 24% 25.5%, #2a170e 25.5% 50%, #472a1b 50% 51.5%, #22120a 51.5% 76%, #472a1b 76% 77.5%, #140a06 77.5%); }
+  & .rd-front-glass {
+    position: relative; flex: 0 0 120px; border-radius: 10px; overflow: hidden; border: 4px solid var(--rd-latao);
+    background-color: color-mix(in srgb, #ffb84a calc(var(--rd-calor) * 100%), #4b2a10);
+    color: color-mix(in srgb, #2a1405 clamp(0%, calc((var(--rd-calor) - .25) * 1000%), 100%), #ffd9a0);
+    transition: background-color .7s ease-out, color .7s;
+  }
+  & .rd-front-glass::before { content: ''; position: absolute; inset: auto 130px 0 0; height: 30px; background: repeating-linear-gradient(90deg, currentColor 0 2px, transparent 2px 20%) 24px 0 / 100% 100%, repeating-linear-gradient(90deg, currentColor 0 1px, transparent 1px 2%) 24px 100% / 100% 14px no-repeat; opacity: .75; }
+  & .rd-front-needle { position: absolute; top: 0; bottom: 0; left: 24px; width: 4px; background: #e5392b; transition: left .7s cubic-bezier(.22, 1, .36, 1); left: calc(24px + (100% - 190px) * var(--rd-calor)); }
+  & .rd-front-glass .rd-eye { position: absolute; right: 32px; top: 24px; }
+  & #app-version-corner { opacity: 1; color: #d9bfa4; }
+  & body:has(#auth-screen[style*="none"]) #app-version-corner { display: none; } /* na tela principal cobriria o Enviar; segue em Configurações */
+}
+
+/* Janela estreita: o chat fica embaixo dos alto-falantes */
+@media (max-width: 1180px) {
+  :root[data-theme="radio"] {
+    & #app { grid-template-columns: 224px minmax(0, 1fr) 204px; grid-template-rows: auto auto 92px 48px minmax(0, 1fr) var(--bottom-bar-h); }
+    & #app:has(#voice-connection:not(.hidden)) {
+      grid-template-columns: 224px minmax(0, 1fr);
+      grid-template-rows: auto auto 92px 46px minmax(0, 1.2fr) 64px 42px minmax(0, 1fr);
+      & #channels { grid-row: 4 / 9; }
+      & #topbar-actions { grid-row: 6; padding-top: 6px; }
+      & #channel-title { grid-column: 2; grid-row: 7; font-size: 17px; }
+      & #chat-wrap { grid-column: 2; grid-row: 8; }
+    }
+    & #rd-dial { padding: 0 14px; gap: 12px; }
+    & .rd-glass { height: 66px; }
+    & .rd-station { flex-basis: 132px; padding-top: 8px; font-size: 15px; }
+    & .rd-eye { width: 54px; height: 54px; }
+    & #video-grid { padding: 14px 18px; }
+    & .rail-btn, & .rail-btn:hover, & .rail-btn.active { width: 38px; height: 38px; }
+    & #chat-wrap { --bottom-bar-h: 60px; }
+    & .rd-front { inset: 0 420px 0 0; padding: 24px; gap: 20px; }
+    & .overlay-card { width: 420px; padding: 24px 36px; }
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  :root[data-theme="radio"] :is(.rd-needle, .rd-front-needle) { transition: none; }
+}
+:root[data-theme="radio"][data-reduce-motion="1"] :is(.rd-needle, .rd-front-needle) { transition: none; }
