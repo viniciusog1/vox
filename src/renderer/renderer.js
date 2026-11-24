@@ -163,22 +163,21 @@ function getPeerVolume(name) {
   return typeof v === 'number' && v >= 0 && v <= 1 ? v : 1;
 }
 
-function applyPeerVolume(name) {
-  const vol = getPeerVolume(name);
-  document.querySelectorAll('.tile[data-peer-key]').forEach((tile) => {
-    if (tile.dataset.peerKey !== name) return;
-    tile.querySelectorAll('video, audio').forEach((el) => { el.volume = vol; });
-  });
-  screenAudioEls.forEach((el, id) => {
-    const u = userMap.get(id);
-    if (u && u.username === name) el.volume = vol;
-  });
+// Volume de cada pessoa nos elementos que tocam (voz e áudio da tela). Chamada também quando
+// a lista da voz chega: a faixa pode vir antes do nome da pessoa.
+function applyPeerVolumes() {
+  for (const els of [voiceAudioEls, screenAudioEls]) {
+    els.forEach((el, id) => {
+      const u = userMap.get(id);
+      if (u) el.volume = getPeerVolume(u.username);
+    });
+  }
 }
 
 function setPeerVolume(name, vol) {
   peerVolumes[name] = vol;
   localStorage.setItem('vox-peer-volumes', JSON.stringify(peerVolumes));
-  applyPeerVolume(name);
+  applyPeerVolumes();
 }
 const analysers = new Map();      // socketId -> AnalyserNode
 const videoElements = new Map();  // stream.id -> <video> reaproveitado entre renders
@@ -227,6 +226,7 @@ let shareResolution = localStorage.getItem('vox-share-resolution') || '1080';
 let shareFps = Number(localStorage.getItem('vox-share-fps') || 30) === 60 ? 60 : 30;
 // Áudio do PC na tela: só o Windows tem captura 'loopback' no Electron.
 const SHARE_AUDIO_SUPPORTED = /Windows/.test(navigator.userAgent);
+const voiceAudioEls = new Map();  // socketId -> <audio> com a voz da pessoa (nunca no tile)
 const screenAudioEls = new Map(); // socketId -> <audio> com o áudio do PC de quem compartilha
 
 let statusMode = 'online'; // online | away | busy | invisible
@@ -884,7 +884,33 @@ function applyScreenAudio(pc) {
     .catch((e) => console.warn('Falha ao trocar áudio da tela:', e));
 }
 
-// Elemento próprio: o <audio>/<video> do tile só toca a primeira faixa de áudio do stream.
+// A voz toca num <audio> próprio, fora da grade: o <video> do tile só começa quando chega um
+// quadro, e até lá segurava a voz junto (pausado em 0 s, com o anel de fala aceso). Assim
+// também não é recriado a cada renderTiles().
+function attachVoiceAudio(id, track) {
+  removeVoiceAudio(id);
+  const audio = document.createElement('audio');
+  audio.autoplay = true;
+  audio.className = 'remote-audio voice-audio';
+  audio.style.display = 'none';
+  audio.srcObject = new MediaStream([track]);
+  const u = userMap.get(id);
+  audio.volume = getPeerVolume(u ? u.username : '');
+  if (typeof audio.setSinkId === 'function') audio.setSinkId(audioOutputId || '').catch(() => {});
+  document.body.appendChild(audio);
+  audio.play().catch(() => {});
+  voiceAudioEls.set(id, audio);
+}
+
+function removeVoiceAudio(id) {
+  const audio = voiceAudioEls.get(id);
+  if (!audio) return;
+  audio.srcObject = null;
+  audio.remove();
+  voiceAudioEls.delete(id);
+}
+
+// Áudio do PC de quem compartilha a tela, também num elemento próprio.
 function attachScreenAudio(id, track) {
   removeScreenAudio(id);
   const audio = document.createElement('audio');
@@ -1051,7 +1077,10 @@ function createPeer(id) {
     if (!stream.getTracks().some((t) => t.id === e.track.id)) {
       stream.addTrack(e.track);
     }
-    if (e.track.kind === 'audio') setupAnalyser(id, stream);
+    if (e.track.kind === 'audio') {
+      setupAnalyser(id, stream);
+      attachVoiceAudio(id, e.track);
+    }
     if (e.track.kind === 'video') remoteVideos.set(e.track, VoxRemoteVideo.createRemoteVideo());
     renderTiles();
   };
@@ -1139,6 +1168,7 @@ function dropPeer(id) {
   clearRecovery(id);
   peers.delete(id);
   remoteStreams.delete(id);
+  removeVoiceAudio(id);
   removeScreenAudio(id);
   analysers.delete(id);
 }
@@ -1170,6 +1200,7 @@ function closeAllPeers() {
   peers.clear();
   peerConn.clear();
   remoteStreams.clear();
+  [...voiceAudioEls.keys()].forEach(removeVoiceAudio);
   [...screenAudioEls.keys()].forEach(removeScreenAudio);
   analysers.clear();
   renderTiles();
@@ -1326,6 +1357,7 @@ socket.on('signal', async ({ from, data }) => {
 socket.on('room-users', (list) => {
   userMap.clear();
   list.forEach((u) => userMap.set(u.id, u));
+  applyPeerVolumes();
 
   if (currentVoiceRoom) {
     const listIds = list.map((u) => u.id);
@@ -1640,7 +1672,6 @@ function renderTiles() {
 
   videoGrid.appendChild(buildTile(currentUser || 'Você', localStreamToShow, {
     mirrored: !sharingScreen,
-    muted: true,
     badge: sharingScreen ? 'TELA' : null
   }));
 
@@ -1650,7 +1681,7 @@ function renderTiles() {
     videoGrid.appendChild(buildTile(
       user ? user.username : 'Participante',
       stream,
-      { muted: false, remote: true, userId: id, username: user ? user.username : 'Participante' }
+      { remote: true, userId: id, username: user ? user.username : 'Participante' }
     ));
   });
 
@@ -2297,21 +2328,9 @@ function buildTile(name, stream, opts = {}) {
       videoElements.set(stream.id, video);
     }
     usedVideoIds.add(stream.id);
-    video.muted = !!opts.muted;
-    video.volume = getPeerVolume(peerKey);
-    video.classList.toggle('remote-video', !!opts.remote);
+    video.muted = true; // a voz toca em attachVoiceAudio; o vídeo é só imagem
     tile.appendChild(video);
   } else {
-    if (stream && opts.remote) {
-      // Participante com câmera desligada: mantém o áudio e mostra o avatar.
-      const audio = document.createElement('audio');
-      audio.autoplay = true;
-      audio.volume = getPeerVolume(peerKey);
-      audio.srcObject = stream;
-      audio.className = 'remote-audio';
-      audio.style.display = 'none';
-      tile.appendChild(audio);
-    }
     tile.appendChild(makeAvatar(name));
   }
 
@@ -3108,7 +3127,7 @@ async function changeInputDevice(id, { stopFirst = false } = {}) {
 }
 
 async function applyOutputDevice() {
-  const targets = [...document.querySelectorAll('.remote-video, .remote-audio')];
+  const targets = [...document.querySelectorAll('.remote-audio')];
   if (monitorAudio) targets.push(monitorAudio);
   targets.push(soundAudio);
 
