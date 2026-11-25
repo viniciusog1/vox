@@ -106,6 +106,8 @@
   & #user-panel { border-top: 4px solid var(--az-rejunte); background: var(--rail); padding: 0 12px; gap: 6px; }
   & .user-meta .name { font-family: var(--az-titulo); font-size: 15px; font-weight: 600; }
   & .mini-btn { width: 34px; height: 34px; border-radius: 4px; }
+  & .profile-card, & .profile-photo, & .profile-actions button { border-radius: 4px; }
+  & .profile-banner { background: var(--accent); }
   & .popover { border-radius: 4px; box-shadow: 0 14px 34px rgba(3, 9, 34, .6); bottom: 76px; }
   & #server-menu { bottom: auto; }
   & #mention-popup { bottom: calc(var(--bottom-bar-h) + 6px); }
