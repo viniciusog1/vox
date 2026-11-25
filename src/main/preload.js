@@ -29,6 +29,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openTokenPage: () => ipcRenderer.send('address-token-page'),
   onAddressStatus: (cb) => ipcRenderer.on('address-status', (event, s) => cb(s)),
 
+  savedLoginGet: (server) => ipcRenderer.invoke('saved-login-get', String(server || '')),
+  savedLoginSet: (server, login) => ipcRenderer.invoke('saved-login-set', String(server || ''), login),
+  savedLoginClear: (server) => ipcRenderer.invoke('saved-login-clear', String(server || '')),
+
   appVersion: ipcRenderer.sendSync('app-version'),
   updateStatus: () => ipcRenderer.invoke('update-status'),
   onUpdateStatus: (cb) => ipcRenderer.on('update-status', (event, s) => cb(s)),

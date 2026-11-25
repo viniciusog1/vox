@@ -18,6 +18,7 @@ const chat = require('../shared/chat-state');
 const { createSessionStore } = require('./sessions');
 const { createTunnel } = require('./tunnel');
 const { createAddressPublisher } = require('./address-publisher');
+const { createSavedLogin } = require('./saved-login');
 const { TOKEN_PAGE } = require('../shared/fixed-address');
 
 // ---------- Dados do antigo Concord ----------
@@ -528,6 +529,24 @@ ipcMain.on('app-version', (event) => {
   event.returnValue = { version: app.getVersion(), packaged: app.isPackaged };
 });
 
+// Login mantido ao fechar o app. Em desenvolvimento o arquivo é outro: a pasta é a mesma do
+// app instalado, mas as contas não.
+const savedLogin = createSavedLogin({
+  file: path.join(app.getPath('userData'), app.isPackaged ? 'sessao.json' : 'sessao-dev.json'),
+  encrypt: (text) => {
+    if (!safeStorage.isEncryptionAvailable()) throw new Error('Sem cifra neste PC.');
+    return safeStorage.encryptString(text).toString('base64');
+  },
+  decrypt: (b64) => safeStorage.decryptString(Buffer.from(b64, 'base64'))
+});
+ipcMain.handle('saved-login-get', (event, server) => savedLogin.get(server));
+ipcMain.handle('saved-login-set', (event, server, login) => {
+  // Grava já o localStorage (endereço do servidor): o Windows pode desligar sem fechar o app
+  session.defaultSession.flushStorageData();
+  return savedLogin.set(server, login);
+});
+ipcMain.handle('saved-login-clear', (event, server) => savedLogin.clear(server));
+
 function setupAutoUpdate() {
   ipcMain.handle('update-status', () => updateStatus);
   if (!app.isPackaged) return;
@@ -790,7 +809,8 @@ app.whenReady().then(() => {
       if (typeof callback !== 'function') return;
       if (!isCompatible(protocol)) return callback({ success: false, message: VERSION_MISMATCH_MESSAGE });
       const username = sessions.resolve(token, (u) => Object.hasOwn(users, u));
-      if (!username) return callback({ success: false, message: 'Sua sessão expirou. Entre de novo.' });
+      if (!username) return callback({ success: false, expired: true, message: 'Sua sessão expirou. Entre de novo.' });
+      sessions.renew(token);
       signIn(username, callback, token);
     });
 

@@ -6,7 +6,7 @@
 
 **Chat, voz, vídeo e tela compartilhada para jogar e conversar com os amigos — rodando no seu próprio PC.**
 
-![Versão](https://img.shields.io/badge/vers%C3%A3o-1.5.6-7c4dff)
+![Versão](https://img.shields.io/badge/vers%C3%A3o-1.5.7-7c4dff)
 ![Windows 11](https://img.shields.io/badge/Windows-11-0078D4?logo=windows11&logoColor=white)
 ![Electron](https://img.shields.io/badge/Electron-45-47848F?logo=electron&logoColor=white)
 ![Node.js](https://img.shields.io/badge/Node.js-%E2%89%A5%2022.12-339933?logo=nodedotjs&logoColor=white)
@@ -41,6 +41,8 @@
 - 🔁 Passar a posse, promover, expulsar, sair e apagar o servidor
 
 ### 👥 Amigos e mensagens diretas
+- 🔑 **Login mantido**: o Vox abre já conectado, no último servidor usado (para sair de vez: Configurações → Conta → Sair da conta)
+- 🪪 **Cartão de perfil**: clique em alguém na chamada, em Membros ou no chat para ver a foto, o status e os servidores em comum, pedir amizade, mandar mensagem, ligar e ajustar o volume
 - 🙋 Pedidos de amizade: enviar, aceitar, recusar e cancelar
 - ✉️ Mensagens diretas com tudo que o chat tem
 - 📞 **Ligar** para um amigo: voz, câmera e tela, com aviso tocando para atender ou recusar
@@ -57,6 +59,7 @@
 - 🎧 Canais de voz independentes do chat — trocar de canal de texto não derruba a chamada
 - 📷 Câmera e 🖥️ tela compartilhada (480p a 1080p, 30 ou 60 fps)
 - 🔈 Áudio do PC na transmissão — **sem** o som do próprio Vox (nada de eco)
+- 🔊 Volume da voz e da transmissão de cada pessoa, separados, de 0 a **200%** e só no seu PC
 - 🔇 Redução de ruído (Desligada, Padrão ou Forte)
 - 🎚️ Volume e **sensibilidade do microfone**, com medidor ao vivo e ajuste automático
 - 🪄 **Efeitos de voz**: Robô, Vilão espacial, Grave, Esquilo, Rádio, Megafone, Caverna e Alien — troque na hora pelo botão da varinha, ao lado do microfone
@@ -213,7 +216,7 @@ Sai em `dist/`: `Vox-Setup-<versão>.exe`, `.blockmap` e `latest.yml`.
 ### 🚀 Publicar uma versão
 
 1. 🔢 Suba `version` em `package.json` e rode `npm run dist`.
-2. 🏷️ Crie uma release no GitHub com a tag `v<versão>` (ex.: `v1.5.6`).
+2. 🏷️ Crie uma release no GitHub com a tag `v<versão>` (ex.: `v1.5.7`).
 3. 📎 Anexe **os três arquivos** de `dist/`.
 4. ✅ Publique (rascunho não vale) — os Vox instalados avisam para atualizar.
 
@@ -239,6 +242,7 @@ Sai em `dist/`: `Vox-Setup-<versão>.exe`, `.blockmap` e `latest.yml`.
 | 🏠 `servers.json` | Servidores, canais, cargos e convites |
 | 👥 `friends.json` | Amizades e pedidos |
 | 🔑 `sessions.json` | Sessões para reconectar sem senha |
+| 🗝️ `sessao.json` | Login mantido neste PC, cifrado pelo Windows (a senha não é guardada) |
 | 🎵 `music-history.json` | Músicas pedidas em cada servidor (aba **Sugestões**) |
 | 🖼️ `uploads/` · `avatars/` | Imagens do chat e fotos de perfil |
 | 🔊 `soundboard.json` · `soundboard/` | Sons enviados ao soundboard de cada servidor |

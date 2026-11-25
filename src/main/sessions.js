@@ -1,9 +1,10 @@
-// Sessões para reconectar sem senha: o cliente guarda o token só na memória
-// (fechar o app volta para a tela de login); o servidor guarda o hash do token
-// em sessions.json, então reiniciar o Vox do host não derruba quem está conectado.
+// Sessões para entrar sem senha: o cliente guarda o token cifrado (saved-login.js) e o servidor
+// guarda só o hash em sessions.json, então reiniciar o Vox do host não derruba quem está conectado.
+// Cada uso renova o prazo.
 const crypto = require('crypto');
 
-const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
+const SESSION_TTL_MS = 30 * DAY_MS;
 
 const hashToken = (token) => crypto.createHash('sha256').update(String(token)).digest('hex');
 
@@ -34,6 +35,15 @@ function createSessionStore({ load = () => ({}), save = () => {}, now = () => Da
       const s = sessions[hashToken(token)];
       if (!s || s.expires <= now() || !userExists(s.username)) return null;
       return s.username;
+    },
+    // Volta a contar o prazo a partir de agora (no máximo uma gravação por dia).
+    renew(token) {
+      if (typeof token !== 'string') return;
+      const s = sessions[hashToken(token)];
+      const t = now();
+      if (!s || s.expires <= t || s.expires > t + ttlMs - DAY_MS) return;
+      s.expires = t + ttlMs;
+      save(sessions);
     },
     revoke(token) {
       if (typeof token !== 'string') return;

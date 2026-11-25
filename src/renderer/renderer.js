@@ -10,8 +10,10 @@ VoxIcons.hydrate();
 })();
 
 // O campo Servidor aceita o endereço direto ou o link fixo (Gist) do host.
-const SERVER_INPUT = localStorage.getItem('vox-server-url') || 'http://127.0.0.1:3000';
-const GIST_REF = VoxAddress.parseGistRef(SERVER_INPUT);
+// O último usado fica salvo e volta ao abrir o app (connectTo troca sem recarregar a tela).
+const DEFAULT_SERVER = 'http://127.0.0.1:3000';
+let SERVER_INPUT = localStorage.getItem('vox-server-url') || DEFAULT_SERVER;
+let GIST_REF = VoxAddress.parseGistRef(SERVER_INPUT);
 // Endereço real do servidor. Com link fixo, vem do Gist e muda quando o túnel do host reabre.
 let SERVER_URL = GIST_REF ? '' : SERVER_INPUT;
 const socket = io(GIST_REF ? 'http://127.0.0.1:3000' : SERVER_INPUT, { autoConnect: !GIST_REF });
@@ -138,7 +140,7 @@ const { PROTOCOL_VERSION, VERSION_MISMATCH_MESSAGE, isCompatible } = window.VoxP
 const { targetPositionMs, shouldCorrectSeek } = window.VoxMusic;
 
 let currentUser = '';
-let sessionToken = null;   // só na memória: reconecta sem senha, mas fechar o app pede login de novo
+let sessionToken = null;   // código da sessão: reconecta sem senha; guardado cifrado para a próxima abertura
 let currentTextRoom = '';  // sempre preenchido depois do login
 let currentVoiceRoom = ''; // '' = fora de canal de voz
 let voiceLeaves = 0;       // conta as saídas da voz; pedidos de mídia comparam para saber se a voz caiu
@@ -155,21 +157,27 @@ const peers = new Map();          // socketId -> RTCPeerConnection
 const remoteStreams = new Map();  // socketId -> MediaStream
 const userMap = new Map();        // socketId -> { username, muted }
 let voiceRooms = {};              // room -> [{ id, username, muted, status }]
-let peerVolumes = {};             // username -> volume (0..1)
-try { peerVolumes = JSON.parse(localStorage.getItem('vox-peer-volumes') || '{}') || {}; } catch (e) { peerVolumes = {}; }
-
-function getPeerVolume(name) {
-  const v = peerVolumes[name];
-  return typeof v === 'number' && v >= 0 && v <= 1 ? v : 1;
+// Dois volumes por pessoa, só neste computador: a voz e o som da transmissão de tela.
+// username -> volume (0..2; acima de 1 passa pelo amplificador de volume-boost.js)
+function readVolumes(key) {
+  try { return JSON.parse(localStorage.getItem(key) || '{}') || {}; } catch (e) { return {}; }
 }
+const peerVolumes = readVolumes('vox-peer-volumes');
+const screenVolumes = readVolumes('vox-screen-volumes');
 
-// Volume de cada pessoa nos elementos que tocam (voz e áudio da tela). Chamada também quando
-// a lista da voz chega: a faixa pode vir antes do nome da pessoa.
+function volumeOf(volumes, name) {
+  return VoxVolumeBoost.readVolume(volumes[name]);
+}
+function getPeerVolume(name) { return volumeOf(peerVolumes, name); }
+function getScreenVolume(name) { return volumeOf(screenVolumes, name); }
+
+// Aplica os volumes nos elementos que tocam. Chamada também quando a lista da voz chega:
+// a faixa pode vir antes do nome da pessoa.
 function applyPeerVolumes() {
-  for (const els of [voiceAudioEls, screenAudioEls]) {
+  for (const [els, get] of [[voiceAudioEls, getPeerVolume], [screenAudioEls, getScreenVolume]]) {
     els.forEach((el, id) => {
       const u = userMap.get(id);
-      if (u) el.volume = getPeerVolume(u.username);
+      if (u) volumeBooster.set(el, get(u.username));
     });
   }
 }
@@ -177,6 +185,12 @@ function applyPeerVolumes() {
 function setPeerVolume(name, vol) {
   peerVolumes[name] = vol;
   localStorage.setItem('vox-peer-volumes', JSON.stringify(peerVolumes));
+  applyPeerVolumes();
+}
+
+function setScreenVolume(name, vol) {
+  screenVolumes[name] = vol;
+  localStorage.setItem('vox-screen-volumes', JSON.stringify(screenVolumes));
   applyPeerVolumes();
 }
 const analysers = new Map();      // socketId -> AnalyserNode
@@ -494,12 +508,17 @@ function hideOverlays() {
 let pendingAutoJoin = false;
 function enterApp(username, token) {
   sessionToken = token || null;
+  savedLogin = null;
+  renderRestore();
+  if (token) window.electronAPI.savedLoginSet(SERVER_INPUT, { username, token }).catch(() => {});
   unread = {};
   renderUnread();
   setMyIdentity(username);
   micEnabled = true;
   updateControlButtons();
   hideOverlays();
+  renderTunnel(tunnelState); // o servidor pode ter sido trocado na tela de login
+  renderAddress(addressState);
   pendingAutoJoin = true;
 }
 
@@ -553,16 +572,16 @@ async function fetchWithTimeout(url, ms = 6000) {
   }
 }
 
-async function readFixedAddress() {
+async function readFixedAddress(ref) {
   try {
-    const res = await fetchWithTimeout(VoxAddress.apiUrl(GIST_REF.id));
+    const res = await fetchWithTimeout(VoxAddress.apiUrl(ref.id));
     if (res.ok) {
       const url = VoxAddress.readGistResponse(await res.json());
       if (url) return url;
     }
   } catch (e) {}
   // Reserva: a API do GitHub limita leituras sem login (60 por hora).
-  const raw = VoxAddress.rawUrl(GIST_REF.owner, GIST_REF.id, Date.now());
+  const raw = VoxAddress.rawUrl(ref.owner, ref.id, Date.now());
   if (!raw) return null;
   try {
     const res = await fetchWithTimeout(raw);
@@ -574,10 +593,12 @@ async function readFixedAddress() {
 // Atualiza o endereço do socket; a próxima tentativa de reconexão já usa o novo.
 function refreshServerAddress(force) {
   if (!GIST_REF) return Promise.resolve(SERVER_URL);
+  const ref = GIST_REF;
   if (resolving) return resolving;
   if (!force && Date.now() - lastResolveAt < RESOLVE_MIN_GAP_MS) return Promise.resolve(SERVER_URL);
   lastResolveAt = Date.now();
-  resolving = readFixedAddress().then((url) => {
+  resolving = readFixedAddress(ref).then((url) => {
+    if (ref !== GIST_REF) return ''; // o servidor foi trocado no meio da leitura
     resolving = null;
     if (url) {
       try { localStorage.setItem('vox-server-resolved', url); } catch (e) {}
@@ -596,50 +617,147 @@ function refreshServerAddress(force) {
 function startFixedAddress() {
   serverStatus.textContent = 'Procurando o servidor pelo link fixo...';
   serverStatus.style.color = 'var(--muted)';
+  const ref = GIST_REF;
   refreshServerAddress(true).then((url) => {
-    if (url) return socket.connect();
+    if (ref !== GIST_REF) return;
+    if (url) { socket.connect(); return; }
     serverStatus.textContent = 'Não foi possível ler o link fixo. Confira o link e a internet; tentando de novo...';
     serverStatus.style.color = 'var(--danger-text)';
-    setTimeout(startFixedAddress, RESOLVE_MIN_GAP_MS);
+    setTimeout(() => { if (ref === GIST_REF) startFixedAddress(); }, RESOLVE_MIN_GAP_MS);
   });
 }
 
-function applyServerUrl() {
-  let url = serverUrlInput.value.trim();
+// Endereço pronto para salvar, ou null se for inválido. Vazio = este computador.
+function normalizeServer(text) {
+  let url = text.trim();
   const gist = VoxAddress.parseGistRef(url);
-  if (gist) {
-    localStorage.setItem('vox-server-url', VoxAddress.gistLink(gist.owner, gist.id));
-    localStorage.removeItem('vox-server-resolved');
-    serverStatus.textContent = 'Conectando...';
-    serverStatus.style.color = 'var(--muted)';
-    location.reload();
-    return;
-  }
-  if (!url) url = 'http://127.0.0.1:3000';
+  if (gist) return VoxAddress.gistLink(gist.owner, gist.id);
+  if (!url) return DEFAULT_SERVER;
   if (!/^https?:\/\//i.test(url)) url = 'http://' + url;
   url = url.replace(/\/+$/, '');
-
-  try {
-    new URL(url);
-  } catch (e) {
-    serverStatus.textContent = 'Endereço inválido.';
-    serverStatus.style.color = 'var(--danger-text)';
-    return;
-  }
-
-  localStorage.setItem('vox-server-url', url);
-  serverStatus.textContent = 'Conectando...';
-  serverStatus.style.color = 'var(--muted)';
-  location.reload();
+  try { new URL(url); } catch (e) { return null; }
+  return url;
 }
 
-serverApply.addEventListener('click', applyServerUrl);
+// Salva o endereço do campo e conecta nele. restore: entra sozinho se houver login guardado lá.
+function applyServerUrl({ restore = true } = {}) {
+  const input = normalizeServer(serverUrlInput.value);
+  if (!input) {
+    serverStatus.textContent = 'Endereço inválido.';
+    serverStatus.style.color = 'var(--danger-text)';
+    return false;
+  }
+  localStorage.setItem('vox-server-url', input);
+  serverUrlInput.value = input;
+  if (input !== SERVER_INPUT) localStorage.removeItem('vox-server-resolved');
+  connectTo(input);
+  if (restore) loadSavedLogin();
+  return true;
+}
+
+function connectTo(input) {
+  SERVER_INPUT = input;
+  GIST_REF = VoxAddress.parseGistRef(input);
+  SERVER_URL = GIST_REF ? '' : input;
+  resolving = null;
+  savedLogin = null;
+  renderRestore();
+  socket.disconnect();
+  serverStatus.textContent = 'Conectando...';
+  serverStatus.style.color = 'var(--muted)';
+  if (GIST_REF) { startFixedAddress(); return; }
+  socket.io.uri = SERVER_URL;
+  socket.connect();
+}
+
+// Antes de entrar: se o endereço do campo ainda não foi aplicado, aplica e espera conectar.
+async function ensureServer(errorEl) {
+  errorEl.textContent = '';
+  if (normalizeServer(serverUrlInput.value) !== SERVER_INPUT) {
+    if (!applyServerUrl({ restore: false })) { errorEl.textContent = 'Endereço do servidor inválido.'; return false; }
+    await new Promise((resolve) => {
+      const timer = setTimeout(done, 15000);
+      function done() { clearTimeout(timer); socket.off('connect', done); resolve(); }
+      socket.on('connect', done);
+    });
+  }
+  if (!socket.connected) errorEl.textContent = 'Sem conexão com o servidor. Confira o endereço abaixo.';
+  return socket.connected;
+}
+
+serverApply.addEventListener('click', () => applyServerUrl());
 serverUrlInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') applyServerUrl(); });
+
+/* ================= LOGIN MANTIDO ================= */
+// Ao abrir o app (ou trocar de servidor), entra com a sessão guardada, sem senha.
+const authRestore = document.getElementById('auth-restore');
+const authRestoreName = document.getElementById('auth-restore-name');
+const authOther = document.getElementById('auth-other');
+let savedLogin = null;   // { username, token } guardado para este servidor
+let restoring = false;
+
+const sessionExpired = (res) => !!res && (res.expired === true || res.message === 'Sua sessão expirou. Entre de novo.');
+
+function renderRestore() {
+  authScreen.classList.toggle('restoring', !!savedLogin);
+  authRestore.classList.toggle('hidden', !savedLogin);
+  authRestoreName.textContent = savedLogin ? savedLogin.username : '';
+  authOther.disabled = restoring;
+}
+
+function forgetLogin() {
+  savedLogin = null;
+  renderRestore();
+  window.electronAPI.savedLoginClear(SERVER_INPUT).catch(() => {});
+}
+
+// Mostra o formulário sem apagar o que está guardado (outra conta, versão diferente).
+function showLoginForm(username, message) {
+  savedLogin = null;
+  renderRestore();
+  switchAuthTab('login');
+  loginUser.value = username || '';
+  errorLogin.textContent = message || '';
+  (username ? loginPass : loginUser).focus();
+}
+
+async function loadSavedLogin() {
+  const server = SERVER_INPUT;
+  const found = await window.electronAPI.savedLoginGet(server).catch(() => null);
+  if (server !== SERVER_INPUT || currentUser) return;
+  savedLogin = found;
+  renderRestore();
+  restoreLogin();
+}
+
+async function restoreLogin() {
+  if (restoring || !savedLogin || currentUser || !socket.connected) return;
+  const login = savedLogin;
+  restoring = true;
+  renderRestore();
+  const res = await request('resume', { token: login.token, protocol: PROTOCOL_VERSION });
+  restoring = false;
+  renderRestore();
+  if (savedLogin !== login || currentUser) return; // trocou de servidor enquanto esperava
+  if (res.success && isCompatible(res.protocol)) { enterApp(res.username, login.token); return; }
+  if (sessionExpired(res)) {
+    forgetLogin();
+    showLoginForm(login.username, res.message);
+  } else if (res.success || res.message === VERSION_MISMATCH_MESSAGE) {
+    showLoginForm(login.username, VERSION_MISMATCH_MESSAGE);
+  } else {
+    setTimeout(restoreLogin, 5000); // sem resposta: tenta de novo
+  }
+}
+
+authOther.addEventListener('click', () => showLoginForm('', ''));
+loadSavedLogin();
 
 socket.on('connect', () => {
   serverStatus.textContent = serverLabel();
   serverStatus.style.color = 'var(--ok-text)';
   if (currentUser && sessionToken) resumeSession();
+  else restoreLogin();
 });
 socket.on('connect_error', () => {
   serverStatus.textContent = GIST_REF
@@ -664,6 +782,7 @@ function resumeSession() {
   socket.emit('resume', { token: sessionToken, protocol: PROTOCOL_VERSION }, (res) => {
     if (!res || !res.success) {
       connBanner.classList.add('hidden');
+      if (sessionExpired(res)) forgetLogin();
       endSession((res && res.message) || 'Sua sessão expirou. Entre de novo.');
       return;
     }
@@ -695,16 +814,16 @@ if (GIST_REF) {
   serverStatus.style.color = 'var(--muted)';
 }
 
-btnRegister.addEventListener('click', () => {
+btnRegister.addEventListener('click', async () => {
   const username = regUser.value.trim();
   const password = regPass.value;
   const confirm = regPass2.value;
 
   if (!username || !password) { errorRegister.textContent = 'Preencha todos os campos'; return; }
   if (password !== confirm) { errorRegister.textContent = 'As senhas não coincidem'; return; }
-  if (!socket.connected) { errorRegister.textContent = 'Sem conexão com o servidor. Confira o endereço abaixo.'; return; }
 
   btnRegister.disabled = true;
+  if (!await ensureServer(errorRegister)) { btnRegister.disabled = false; return; }
   socket.emit('register', { username, password, protocol: PROTOCOL_VERSION }, (res) => {
     btnRegister.disabled = false;
     if (!res.success) { errorRegister.textContent = res.message; return; }
@@ -713,14 +832,15 @@ btnRegister.addEventListener('click', () => {
   });
 });
 
-function doLogin() {
+async function doLogin() {
   const username = loginUser.value.trim();
   const password = loginPass.value;
 
   if (!username || !password) { errorLogin.textContent = 'Preencha todos os campos'; return; }
-  if (!socket.connected) { errorLogin.textContent = 'Sem conexão com o servidor. Confira o endereço abaixo.'; return; }
 
+  if (btnLogin.disabled) return;
   btnLogin.disabled = true;
+  if (!await ensureServer(errorLogin)) { btnLogin.disabled = false; return; }
   socket.emit('login', { username, password, protocol: PROTOCOL_VERSION }, (res) => {
     btnLogin.disabled = false;
     if (!res.success) { errorLogin.textContent = res.message; return; }
@@ -884,6 +1004,21 @@ function applyScreenAudio(pc) {
     .catch((e) => console.warn('Falha ao trocar áudio da tela:', e));
 }
 
+// Amplificador de quem está acima de 100%. Usa o contexto dos sons do app, que nunca fecha.
+const volumeBooster = VoxVolumeBoost.createBooster({
+  getContext: () => ensureSoundOutput().ctx,
+  createOutput: (stream) => {
+    const out = document.createElement('audio');
+    out.autoplay = true;
+    out.className = 'remote-audio boost-audio';
+    out.style.display = 'none';
+    out.srcObject = stream;
+    if (typeof out.setSinkId === 'function') out.setSinkId(audioOutputId || '').catch(() => {});
+    document.body.appendChild(out);
+    return out;
+  }
+});
+
 // A voz toca num <audio> próprio, fora da grade: o <video> do tile só começa quando chega um
 // quadro, e até lá segurava a voz junto (pausado em 0 s, com o anel de fala aceso). Assim
 // também não é recriado a cada renderTiles().
@@ -895,16 +1030,17 @@ function attachVoiceAudio(id, track) {
   audio.style.display = 'none';
   audio.srcObject = new MediaStream([track]);
   const u = userMap.get(id);
-  audio.volume = getPeerVolume(u ? u.username : '');
   if (typeof audio.setSinkId === 'function') audio.setSinkId(audioOutputId || '').catch(() => {});
   document.body.appendChild(audio);
   audio.play().catch(() => {});
   voiceAudioEls.set(id, audio);
+  volumeBooster.set(audio, getPeerVolume(u ? u.username : ''));
 }
 
 function removeVoiceAudio(id) {
   const audio = voiceAudioEls.get(id);
   if (!audio) return;
+  volumeBooster.release(audio);
   audio.srcObject = null;
   audio.remove();
   voiceAudioEls.delete(id);
@@ -919,15 +1055,16 @@ function attachScreenAudio(id, track) {
   audio.style.display = 'none';
   audio.srcObject = new MediaStream([track]);
   const u = userMap.get(id);
-  audio.volume = getPeerVolume(u ? u.username : '');
   if (typeof audio.setSinkId === 'function') audio.setSinkId(audioOutputId || '').catch(() => {});
   document.body.appendChild(audio);
   screenAudioEls.set(id, audio);
+  volumeBooster.set(audio, getScreenVolume(u ? u.username : ''));
 }
 
 function removeScreenAudio(id) {
   const audio = screenAudioEls.get(id);
   if (!audio) return;
+  volumeBooster.release(audio);
   audio.srcObject = null;
   audio.remove();
   screenAudioEls.delete(id);
@@ -1391,7 +1528,7 @@ socket.on('room-users', (list) => {
 
   renderMembers();
 
-  const signature = list.map((u) => u.id).sort().join('|');
+  const signature = list.map((u) => u.id + (u.sharing ? '*' : '')).sort().join('|');
   if (removed || signature !== lastUsersSignature) {
     lastUsersSignature = signature;
     renderTiles();
@@ -1512,6 +1649,8 @@ function appendMemberRow(u) {
   const inMyCall = !!(currentVoiceRoom && u.voiceRoom === currentVoiceRoom);
   const row = document.createElement('div');
   row.className = 'member' + (u.online ? '' : ' offline');
+  row.tabIndex = 0; // abre o cartão de perfil (profile-card.js)
+  row.setAttribute('role', 'button');
   // Bolinha de status sobre o avatar, como na lista do canal de voz (offline: sem bolinha)
   const avatarWrap = document.createElement('span');
   avatarWrap.className = 'avatar-wrap';
@@ -1611,6 +1750,9 @@ function renderMembers() {
     list.forEach((u) => {
       const line = document.createElement('div');
       line.className = 'voice-user';
+      line.tabIndex = 0; // abre o cartão de perfil (profile-card.js)
+      line.setAttribute('role', 'button');
+      line.title = `Ver o perfil de ${u.username}`;
       line.dataset.id = u.id;
       const state = speakingStates.get(u.id);
       if (state && state.speaking) line.classList.add('speaking');
@@ -1681,7 +1823,7 @@ function renderTiles() {
     videoGrid.appendChild(buildTile(
       user ? user.username : 'Participante',
       stream,
-      { remote: true, userId: id, username: user ? user.username : 'Participante' }
+      { remote: true, userId: id, username: user ? user.username : 'Participante', sharing: !!(user && user.sharing) }
     ));
   });
 
@@ -2304,6 +2446,38 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
+// Controle de volume de uma pessoa (tile e cartão de perfil): ícone, barra e porcentagem.
+// kind: 'voice' (voz) ou 'screen' (transmissão). Os controles da mesma pessoa andam juntos.
+function makeUserVolume(kind, name) {
+  const screen = kind === 'screen';
+  const title = `Volume da ${screen ? 'transmissão' : 'voz'} de ${name}`;
+  const row = document.createElement('label');
+  row.className = 'tile-volume-row';
+  row.title = title;
+  row.dataset.volume = kind + ':' + name;
+  row.appendChild(VoxIcons.icon(screen ? 'monitor-up' : 'mic', 14));
+  const vol = document.createElement('input');
+  vol.type = 'range';
+  vol.min = '0';
+  vol.max = String(VoxVolumeBoost.MAX_VOLUME * 100);
+  vol.className = 'tile-volume';
+  vol.setAttribute('aria-label', title);
+  const percent = document.createElement('span');
+  row.append(vol, percent);
+  row.showVolume = (v) => { vol.value = String(v); percent.textContent = v + '%'; };
+  row.showVolume(Math.round((screen ? getScreenVolume(name) : getPeerVolume(name)) * 100));
+  vol.addEventListener('input', () => {
+    const v = Number(vol.value);
+    (screen ? setScreenVolume : setPeerVolume)(name, v / 100);
+    document.querySelectorAll('.tile-volume-row').forEach((r) => {
+      if (r.dataset.volume === row.dataset.volume) r.showVolume(v);
+    });
+  });
+  // Clicar duas vezes na barra não abre a tela cheia
+  row.addEventListener('dblclick', (ev) => ev.stopPropagation());
+  return row;
+}
+
 function buildTile(name, stream, opts = {}) {
   const tile = document.createElement('div');
   tile.className = 'tile' + (opts.mirrored ? ' mirrored' : '');
@@ -2351,19 +2525,11 @@ function buildTile(name, stream, opts = {}) {
   }
 
   if (opts.remote) {
-    const vol = document.createElement('input');
-    vol.type = 'range';
-    vol.min = '0';
-    vol.max = '100';
-    vol.className = 'tile-volume';
-    vol.title = 'Volume deste usuário';
-    vol.value = String(Math.round(getPeerVolume(peerKey) * 100));
-    vol.addEventListener('input', (ev) => {
-      ev.stopPropagation();
-      setPeerVolume(peerKey, Number(vol.value) / 100);
-    });
-    vol.addEventListener('click', (ev) => ev.stopPropagation());
-    actions.appendChild(vol);
+    const volumes = document.createElement('div');
+    volumes.className = 'tile-volumes';
+    volumes.appendChild(makeUserVolume('voice', peerKey));
+    if (opts.sharing) volumes.appendChild(makeUserVolume('screen', peerKey));
+    actions.appendChild(volumes);
   }
 
   if (actions.children.length) tile.appendChild(actions);
@@ -2371,6 +2537,7 @@ function buildTile(name, stream, opts = {}) {
   const label = document.createElement('div');
   label.className = 'tile-name';
   label.textContent = name + (opts.badge ? '' : '');
+  label.dataset.user = peerKey;
   tile.appendChild(label);
 
   if (opts.badge) {
@@ -2876,7 +3043,7 @@ avatarRemoveBtn.addEventListener('click', () => {
 
 /* ================= TÚNEL (ABRIR PARA AMIGOS) ================= */
 // Só faz sentido no PC que hospeda: o túnel aponta para o servidor deste processo.
-const IS_LOCAL_SERVER = !GIST_REF && /^https?:\/\/(127\.0\.0\.1|localhost)(:3000)?$/i.test(SERVER_INPUT);
+const isLocalServer = () => !GIST_REF && /^https?:\/\/(127\.0\.0\.1|localhost)(:3000)?$/i.test(SERVER_INPUT);
 let tunnelState = { state: 'off', url: null };
 
 function renderTunnel(s) {
@@ -2888,11 +3055,11 @@ function renderTunnel(s) {
     on: 'Aberto',
     error: tunnelState.message || 'Falhou'
   };
-  tunnelStateEl.textContent = IS_LOCAL_SERVER ? (labels[tunnelState.state] || '') : 'Disponível só no PC que hospeda o servidor (endereço 127.0.0.1).';
+  tunnelStateEl.textContent = isLocalServer() ? (labels[tunnelState.state] || '') : 'Disponível só no PC que hospeda o servidor (endereço 127.0.0.1).';
   tunnelStateEl.dataset.state = tunnelState.state;
   const active = ['downloading', 'starting', 'on'].includes(tunnelState.state);
   tunnelToggle.querySelector('span').textContent = active ? 'Fechar túnel' : 'Abrir para amigos';
-  tunnelToggle.disabled = !IS_LOCAL_SERVER;
+  tunnelToggle.disabled = !isLocalServer();
   tunnelUrlRow.classList.toggle('hidden', !tunnelState.url);
   tunnelUrlInput.value = tunnelState.url || '';
 }
@@ -2932,7 +3099,7 @@ function formatTime(ms) {
 function renderAddress(s) {
   addressState = s || addressState;
   if (!addressState) return;
-  const local = IS_LOCAL_SERVER;
+  const local = isLocalServer();
   tunnelAuto.checked = !!addressState.autoTunnel;
   tunnelAuto.disabled = !local;
   addressSetup.classList.toggle('hidden', addressState.connected);
@@ -3034,7 +3201,7 @@ function renderUpdate(s) {
   updateInstall.classList.toggle('hidden', s.state !== 'ready');
 }
 updateInstall.addEventListener('click', () => {
-  const hosting = IS_LOCAL_SERVER && serverMembers.some((m) => m.online && m.username !== currentUser);
+  const hosting = isLocalServer() && serverMembers.some((m) => m.online && m.username !== currentUser);
   if (hosting && !window.confirm('Você hospeda o servidor: reiniciar desconecta todo mundo por alguns segundos. Continuar?')) return;
   window.electronAPI.installUpdate();
 });
@@ -4073,6 +4240,7 @@ btnLeaveVoice.addEventListener('click', leaveVoice);
 
 function logout() {
   if (!window.confirm('Sair da conta?')) return;
+  forgetLogin();
   socket.emit('logout');
   endSession('');
 }
@@ -4087,6 +4255,7 @@ function endSession(message) {
   friendsState = { friends: [], incoming: [], outgoing: [], dms: [] };
   dmUsers.clear();
   stopRinging();
+  VoxProfile.close();
   serverModal.classList.add('hidden');
   closeFormModal();
   channelScroll.innerHTML = '';
@@ -4766,6 +4935,10 @@ async function friendAction(event, user, confirmText) {
   if (!res.success) showToast(res.message || 'Não foi possível.');
 }
 
+function unfriend(u) {
+  return friendAction('friend-remove', u, `Desfazer a amizade com ${u}? A conversa continua guardada, mas vocês não poderão mandar mensagens nem ligar.`);
+}
+
 function friendRow(user, sub, actions) {
   const row = document.createElement('div');
   row.className = 'friend-row';
@@ -4844,7 +5017,7 @@ function renderFriendsPanel() {
     friendsList.appendChild(friendRow(u, sub, [
       roundButton('message-circle', 'Mensagem', () => openDm(u)),
       roundButton('phone', 'Ligar', () => startCall(u), 'ok'),
-      roundButton('user-x', 'Desfazer amizade', () => friendAction('friend-remove', u, `Desfazer a amizade com ${u}? A conversa continua guardada, mas vocês não poderão mandar mensagens nem ligar.`), 'danger')
+      roundButton('user-x', 'Desfazer amizade', () => unfriend(u), 'danger')
     ]));
   }
 }
