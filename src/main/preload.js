@@ -22,6 +22,26 @@ contextBridge.exposeInMainWorld('electronAPI', {
   tunnelStatus: () => ipcRenderer.invoke('tunnel-status'),
   onTunnelStatus: (cb) => ipcRenderer.on('tunnel-status', (event, s) => cb(s)),
 
+  // LoL Arena (teste temporário)
+  arenaStatus: () => ipcRenderer.invoke('arena-status'),
+  arenaEnable: (on) => ipcRenderer.invoke('arena-enable', !!on),
+  arenaCrop: (crop) => ipcRenderer.invoke('arena-crop', {
+    x: Number(crop && crop.x), y: Number(crop && crop.y), w: Number(crop && crop.w), h: Number(crop && crop.h)
+  }),
+  arenaPreview: () => ipcRenderer.invoke('arena-preview'),
+  onArenaStatus: (cb) => ipcRenderer.on('arena-status', (event, s) => cb(s)),
+  onArenaShot: (cb) => ipcRenderer.on('arena-shot', (event, shot) => cb(shot)),
+
+  relayStatus: () => ipcRenderer.invoke('relay-status'),
+  relayConfigure: (cfg) => ipcRenderer.invoke('relay-configure', {
+    mode: String((cfg && cfg.mode) || ''),
+    keyId: String((cfg && cfg.keyId) || ''),
+    apiToken: String((cfg && cfg.apiToken) || ''),
+    urls: String((cfg && cfg.urls) || ''),
+    username: String((cfg && cfg.username) || ''),
+    credential: String((cfg && cfg.credential) || '')
+  }),
+
   addressStatus: () => ipcRenderer.invoke('address-status'),
   addressConnect: (token) => ipcRenderer.invoke('address-connect', String(token || '')),
   addressDisconnect: () => ipcRenderer.invoke('address-disconnect'),

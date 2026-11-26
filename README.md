@@ -6,7 +6,7 @@
 
 **Chat, voz, vídeo e tela compartilhada para jogar e conversar com os amigos — rodando no seu próprio PC.**
 
-![Versão](https://img.shields.io/badge/vers%C3%A3o-1.5.7-7c4dff)
+![Versão](https://img.shields.io/badge/vers%C3%A3o-1.5.8-7c4dff)
 ![Windows 11](https://img.shields.io/badge/Windows-11-0078D4?logo=windows11&logoColor=white)
 ![Electron](https://img.shields.io/badge/Electron-45-47848F?logo=electron&logoColor=white)
 ![Node.js](https://img.shields.io/badge/Node.js-%E2%89%A5%2022.12-339933?logo=nodedotjs&logoColor=white)
@@ -59,7 +59,9 @@
 - 🎧 Canais de voz independentes do chat — trocar de canal de texto não derruba a chamada
 - 📷 Câmera e 🖥️ tela compartilhada (480p a 1080p, 30 ou 60 fps)
 - 🔈 Áudio do PC na transmissão — **sem** o som do próprio Vox (nada de eco)
-- 🔊 Volume da voz e da transmissão de cada pessoa, separados, de 0 a **200%** e só no seu PC
+- 🔊 Volume da voz e da transmissão de cada pessoa, separados, de 0 a **200%** e só no seu PC (um ícone avisa quando você zerou alguém)
+- 🎮 **Prints do LoL Arena** (teste): quando você morre, o Vox manda um print do dano da rodada no canal **dano-arena-lol**, onde as mensagens somem em 30 minutos (Configurações → Jogos; atalho Ctrl+Alt+P)
+- 🛰️ **Retransmissão para redes difíceis** (TURN, opcional): a chamada funciona mesmo quando dois PCs não conseguem se ligar direto
 - 🔇 Redução de ruído (Desligada, Padrão ou Forte)
 - 🎚️ Volume e **sensibilidade do microfone**, com medidor ao vivo e ajuste automático
 - 🪄 **Efeitos de voz**: Robô, Vilão espacial, Grave, Esquilo, Rádio, Megafone, Caverna e Alien — troque na hora pelo botão da varinha, ao lado do microfone
@@ -216,7 +218,7 @@ Sai em `dist/`: `Vox-Setup-<versão>.exe`, `.blockmap` e `latest.yml`.
 ### 🚀 Publicar uma versão
 
 1. 🔢 Suba `version` em `package.json` e rode `npm run dist`.
-2. 🏷️ Crie uma release no GitHub com a tag `v<versão>` (ex.: `v1.5.7`).
+2. 🏷️ Crie uma release no GitHub com a tag `v<versão>` (ex.: `v1.5.8`).
 3. 📎 Anexe **os três arquivos** de `dist/`.
 4. ✅ Publique (rascunho não vale) — os Vox instalados avisam para atualizar.
 
@@ -272,7 +274,7 @@ Só um Vox pode usar a porta 3000 por PC. Feche o outro (por exemplo, o de desen
 <details>
 <summary>📵 O chat funciona, mas a voz do amigo não conecta ("Falhou")</summary>
 
-Voz e vídeo vão direto entre os PCs. Algumas redes bloqueiam isso e precisariam de um servidor TURN, que o Vox ainda não tem. Na mesma rede, sempre funciona.
+Voz e vídeo vão direto entre os PCs. Algumas redes bloqueiam isso; para elas, o host pode ligar a **retransmissão** em Configurações → Servidor (Cloudflare, grátis até 1.000 GB por mês, ou um servidor TURN próprio). Na mesma rede, sempre funciona.
 
 </details>
 

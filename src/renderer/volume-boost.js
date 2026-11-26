@@ -70,7 +70,15 @@
     return { set, release };
   }
 
-  const api = { MAX_VOLUME, readVolume, softClipCurve, createBooster };
+  // O que esta pessoa não está ouvindo de alguém por ter zerado a barra: 'voice', 'screen' ou null.
+  // Sem aviso, a voz zerada parece defeito: o anel de fala acende (mede o que chega) e não sai som.
+  function silencedFor(voiceVolume, screenVolume, sharing) {
+    if (voiceVolume === 0) return 'voice';
+    if (sharing && screenVolume === 0) return 'screen';
+    return null;
+  }
+
+  const api = { MAX_VOLUME, readVolume, softClipCurve, createBooster, silencedFor };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else window.VoxVolumeBoost = api;
 })();

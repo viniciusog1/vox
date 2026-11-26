@@ -248,6 +248,7 @@
   .tile video { width: 100%; height: 100%; object-fit: contain; display: block; }
   .tile.mirrored video { transform: scaleX(-1); }
   .tile-name {
+    display: flex; align-items: center;
     position: absolute; left: 10px; bottom: 10px;
     background: rgba(0,0,0,.65); color: #fff; padding: 4px 10px;
     border-radius: 20px; font-size: 12px; font-weight: 600;
@@ -597,6 +598,9 @@
   .member.offline { opacity: .45; }
   .member .you { color: var(--muted); font-size: 11px; font-weight: 400; }
   .member .muted-icon { color: var(--red); font-size: 12px; }
+  /* Volume zerado só para mim (lista da voz, Membros e nome no quadro) */
+  .silenced { display: inline-flex; align-items: center; color: var(--warn-text); flex-shrink: 0; }
+  .tile-name .silenced { color: #fff; margin-left: 6px; vertical-align: -2px; }
   .member-name-box { flex: 1; min-width: 0; display: flex; flex-direction: column; }
   .member-conn { font-size: 11px; color: var(--warn-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .member-conn[data-state="connected"] { color: var(--ok-text); }
@@ -889,6 +893,12 @@
     font-size: 13px; outline: none;
   }
   .settings-card select:focus { border-color: var(--accent); }
+  /* LoL Arena (teste temporário) */
+  .arena-crop { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 6px 0 10px; }
+  .arena-crop label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+  .arena-crop input { height: 34px; padding: 0 8px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 13px; width: 100%; }
+  .arena-preview { display: block; max-width: 100%; max-height: 320px; margin-top: 10px; border-radius: 8px; border: 1px solid var(--border); }
+  .arena-preview.hidden { display: none; }
   .toggle-row {
     display: flex; align-items: center; gap: 10px;
     font-size: 13px; color: var(--text); margin: 16px 0 6px; cursor: pointer;
@@ -1480,6 +1490,7 @@
       <button type="button" class="settings-tab" role="tab" id="settings-tabbtn-conta" aria-selected="false" aria-controls="settings-tab-conta" data-tab="conta">Conta</button>
       <button type="button" class="settings-tab" role="tab" id="settings-tabbtn-aparencia" aria-selected="false" aria-controls="settings-tab-aparencia" data-tab="aparencia">Aparência</button>
       <button type="button" class="settings-tab" role="tab" id="settings-tabbtn-notificacoes" aria-selected="false" aria-controls="settings-tab-notificacoes" data-tab="notificacoes">Notificações</button>
+      <button type="button" class="settings-tab" role="tab" id="settings-tabbtn-jogos" aria-selected="false" aria-controls="settings-tab-jogos" data-tab="jogos">Jogos</button>
       <button type="button" class="settings-tab" role="tab" id="settings-tabbtn-servidor" aria-selected="false" aria-controls="settings-tab-servidor" data-tab="servidor">Servidor</button>
     </div>
 
@@ -1493,6 +1504,29 @@
         </select>
       </div>
       <p class="settings-hint">Mensagens do canal aberto só avisam com o Vox minimizado ou em segundo plano. Menções (@seu nome) sempre avisam e tocam um som. No status Ocupado nada avisa.</p>
+    </div>
+
+    <!-- LoL Arena (teste temporário) -->
+    <div class="settings-panel hidden" id="settings-tab-jogos" role="tabpanel" aria-labelledby="settings-tabbtn-jogos">
+      <div class="settings-section">Prints do LoL Arena</div>
+      <p class="settings-hint">Quando você morre numa partida, o Vox tira um print do canto com o dano da rodada e manda no canal <b>dano-arena-lol</b> da Casa dos Amigos, onde as mensagens somem em 30 minutos. Também dá para mandar na hora com <b>Ctrl+Alt+P</b>, com o jogo aberto. O print sai só do seu PC, com o que estiver na sua tela.</p>
+      <label class="toggle-row">
+        <input type="checkbox" id="arena-enabled">
+        <span>Mandar prints do LoL Arena</span>
+      </label>
+      <div class="tunnel-row"><span id="arena-state" class="tunnel-state"></span></div>
+      <div class="settings-section">Recorte</div>
+      <p class="settings-hint">Parte da tela que vai no print, em % da largura e da altura. Abra uma partida, espere a telinha aparecer e use Testar recorte para ajustar.</p>
+      <div class="arena-crop">
+        <label>Esquerda <input type="number" id="arena-crop-x" min="0" max="95" step="1"></label>
+        <label>Topo <input type="number" id="arena-crop-y" min="0" max="95" step="1"></label>
+        <label>Largura <input type="number" id="arena-crop-w" min="5" max="100" step="1"></label>
+        <label>Altura <input type="number" id="arena-crop-h" min="5" max="100" step="1"></label>
+      </div>
+      <div class="tunnel-row">
+        <button type="button" id="arena-preview" class="btn-secondary">Testar recorte</button>
+      </div>
+      <img id="arena-preview-img" class="arena-preview hidden" alt="Prévia do recorte">
     </div>
 
     <div class="settings-panel hidden" id="settings-tab-servidor" role="tabpanel" aria-labelledby="settings-tabbtn-servidor">
@@ -1533,6 +1567,39 @@
           <span id="address-state" class="tunnel-state"></span>
           <button type="button" id="address-disconnect" class="link-btn address-disconnect">Desconectar</button>
         </div>
+      </div>
+
+      <div class="settings-section">Retransmissão para redes difíceis</div>
+      <p class="settings-hint">Algumas redes (internet móvel, operadoras com CGNAT, redes de empresa) não deixam dois PCs se ligarem direto, e a chamada fica sem som ou em "Falhou". Com a retransmissão, o áudio e o vídeo passam por um servidor TURN só nesses casos. A rota direta continua sendo a preferida.</p>
+      <div class="field">
+        <label for="relay-mode">Retransmissão</label>
+        <select id="relay-mode">
+          <option value="off">Desligada</option>
+          <option value="cloudflare">Cloudflare (grátis até 1.000 GB por mês)</option>
+          <option value="manual">Meu servidor TURN</option>
+        </select>
+      </div>
+      <div id="relay-cloudflare" class="hidden">
+        <p class="settings-hint">No painel da Cloudflare, crie uma chave em Realtime → TURN Server e cole os dois valores dela.</p>
+        <div class="tunnel-row">
+          <input type="text" id="relay-key-id" class="tunnel-input" placeholder="Turn Token ID" autocomplete="off" spellcheck="false" aria-label="Turn Token ID">
+        </div>
+        <div class="tunnel-row">
+          <input type="password" id="relay-api-token" class="tunnel-input" placeholder="API Token" autocomplete="off" spellcheck="false" aria-label="API Token da chave TURN">
+        </div>
+      </div>
+      <div id="relay-manual" class="hidden">
+        <div class="tunnel-row">
+          <input type="text" id="relay-urls" class="tunnel-input" placeholder="turn:meu.host:3478, turns:meu.host:5349" autocomplete="off" spellcheck="false" aria-label="Endereços do servidor TURN">
+        </div>
+        <div class="tunnel-row">
+          <input type="text" id="relay-username" class="tunnel-input" placeholder="Usuário" autocomplete="off" spellcheck="false" aria-label="Usuário do servidor TURN">
+          <input type="password" id="relay-credential" class="tunnel-input" placeholder="Senha" autocomplete="off" aria-label="Senha do servidor TURN">
+        </div>
+      </div>
+      <div class="tunnel-row">
+        <button type="button" id="relay-save" class="btn-secondary">Salvar</button>
+        <span id="relay-state" class="tunnel-state"></span>
       </div>
     </div>
 
@@ -1738,6 +1805,7 @@
 <script src="../shared/soundboard-synth.js"></script>
 <script src="../shared/fixed-address.js"></script>
 <script src="../shared/voice-fx.js"></script>
+<script src="../shared/ice-servers.js"></script>
 <script src="volume-boost.js"></script>
 <script src="renderer.js"></script>
 <script src="profile-card.js"></script>
