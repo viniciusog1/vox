@@ -19,6 +19,8 @@ function setup(stored = {}) {
   const ctx = vm.createContext({
     VoxVolumeBoost: require('../src/renderer/volume-boost.js'),
     volumeBooster: { set: (el, v) => { el.volume = v; } },
+    renderMembers: () => {},
+    document: { querySelectorAll: () => [] },
     localStorage: { getItem: (k) => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); } },
     userMap: new Map([['s1', { username: 'ana' }], ['s2', { username: 'bia' }]]),
     voiceAudioEls: new Map([['s1', { volume: 1 }], ['s2', { volume: 1 }]]),

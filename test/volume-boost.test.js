@@ -101,3 +101,23 @@ test('renderer usa o amplificador na voz e na transmissão, e o solta junto com 
   const html = fs.readFileSync(path.join(dir, 'index.html'), 'utf8');
   assert.ok(html.indexOf('src="volume-boost.js"') > 0 && html.indexOf('src="volume-boost.js"') < html.indexOf('src="renderer.js"'));
 });
+
+test('aviso de volume zerado: voz a 0%, ou transmissão a 0% enquanto a pessoa transmite', () => {
+  const { silencedFor } = require('../src/renderer/volume-boost.js');
+  assert.equal(silencedFor(1, 1, true), null);
+  assert.equal(silencedFor(0.05, 1, false), null, 'baixo não é zerado');
+  assert.equal(silencedFor(0, 1, false), 'voice');
+  assert.equal(silencedFor(0, 0, true), 'voice', 'a voz vem primeiro');
+  assert.equal(silencedFor(1, 0, false), null, 'sem transmitir, a transmissão zerada não importa');
+  assert.equal(silencedFor(1, 0, true), 'screen');
+});
+
+test('o aviso aparece na lista da voz, em Membros e no quadro, e acompanha a barra', () => {
+  const js = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'renderer.js'), 'utf8').replace(/\r\n/g, '\n');
+  const fn = (name) => js.match(new RegExp(`\\nfunction ${name}\\([\\s\\S]*?\\n}\\n`))[0];
+  assert.match(fn('appendMemberRow'), /silencedIcon\(/);
+  assert.match(js.slice(js.indexOf("icons.className = 'vu-icons'"), js.indexOf("icons.className = 'vu-icons'") + 600), /silencedIcon\(/);
+  assert.match(fn('buildTile'), /silencedIcon\(/);
+  for (const n of ['setPeerVolume', 'setScreenVolume']) assert.match(fn(n), /refreshSilenced\(/);
+  assert.match(fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'icons.js'), 'utf8'), /"volume-x"/);
+});

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, session, desktopCapturer, Tray, Menu, safeStorage, shell, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, session, desktopCapturer, Tray, Menu, safeStorage, shell, dialog, globalShortcut, screen } = require('electron');
 const path = require('path');
 const http = require('http');
 const { Server } = require('socket.io');
@@ -19,6 +19,10 @@ const { createSessionStore } = require('./sessions');
 const { createTunnel } = require('./tunnel');
 const { createAddressPublisher } = require('./address-publisher');
 const { createSavedLogin } = require('./saved-login');
+const { createRelay } = require('./relay');
+// LoL Arena (teste temporário): canal de prints com mensagens de 30 min
+const arena = require('../shared/lol-arena');
+const { createArenaWatcher } = require('./lol-arena-watcher');
 const { TOKEN_PAGE } = require('../shared/fixed-address');
 
 // ---------- Dados do antigo Concord ----------
@@ -339,16 +343,24 @@ function broadcastServerMembers() {
 // ---------- Retenção de mensagens (7 dias) ----------
 const RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 
+// Validade de cada sala: 7 dias, ou a do canal (o "dano-arena-lol" do LoL Arena tem 30 min).
+function retentionFor(room) {
+  const found = srv.findChannel(serversDb, room);
+  return arena.retentionMs(found && found.channel);
+}
+
 function purgeOldMessages() {
-  const cutoff = Date.now() - RETENTION_MS;
+  const now = Date.now();
   let changed = false;
+  const gone = [];
 
   for (const room of Object.keys(messages)) {
+    const cutoff = now - retentionFor(room);
     const before = messages[room].length;
     messages[room] = messages[room].filter((m) => {
       const t = Date.parse(m.created_at);
       const keep = Number.isNaN(t) ? true : t >= cutoff;
-      if (!keep) removeUpload(m);
+      if (!keep) { removeUpload(m); gone.push({ room, id: m.id }); }
       return keep;
     });
     if (messages[room].length !== before) changed = true;
@@ -360,7 +372,13 @@ function purgeOldMessages() {
 
   if (changed) {
     saveMessages(messages);
-    console.log('[RETENÇÃO] Mensagens com mais de 7 dias foram removidas.');
+    console.log('[RETENÇÃO] Mensagens vencidas foram removidas.');
+  }
+  // Quem está com o canal aberto vê a mensagem sumir
+  if (io) {
+    for (const g of gone) {
+      for (const [socketId, user] of authenticated) if (canSeeRoom(g.room, user)) io.to(socketId).emit('message-deleted', g);
+    }
   }
 }
 
@@ -370,6 +388,10 @@ pruneAvatars();
 pruneSoundFiles();
 sessions.prune();
 setInterval(() => { purgeOldMessages(); sessions.prune(); }, 60 * 60 * 1000);
+// Canais com validade curta (LoL Arena): confere a cada minuto
+setInterval(() => {
+  if (Object.keys(messages).some((room) => retentionFor(room) < 60 * 60 * 1000)) purgeOldMessages();
+}, 60 * 1000);
 
 // ---------- Música ----------
 function emptyMusicState() {
@@ -435,6 +457,26 @@ function dmListFor(username) {
     .filter((k) => fr.isDmKey(k) && fr.otherOf(k, username) && messages[k].length)
     .map((k) => ({ user: fr.otherOf(k, username), lastAt: messages[k][messages[k].length - 1].created_at }));
 }
+
+// ---------- Retransmissão (TURN) ----------
+// Configurada só no PC do host; a lista (com credenciais temporárias) vai para quem entrou.
+const relay = createRelay({
+  file: path.join(app.getPath('userData'), 'retransmissao.json'),
+  fetchImpl: (...args) => fetch(...args),
+  encrypt: (text) => {
+    if (!safeStorage.isEncryptionAvailable()) throw new Error('Não foi possível guardar a senha com segurança neste PC.');
+    return safeStorage.encryptString(text).toString('base64');
+  },
+  decrypt: (b64) => safeStorage.decryptString(Buffer.from(b64, 'base64'))
+});
+
+async function sendIceServers(target) {
+  const servers = await relay.iceServers();
+  if (target) target.emit('ice-servers', servers);
+  else for (const socketId of authenticated.keys()) io.to(socketId).emit('ice-servers', servers);
+}
+// As credenciais da Cloudflare vencem em 24 h: quem fica conectado recebe as novas antes.
+setInterval(() => { if (relay.status().mode === 'cloudflare' && io) sendIceServers(); }, 6 * 60 * 60 * 1000);
 
 function sendFriendsTo(username) {
   emitToUser(username, 'friends', {
@@ -763,6 +805,7 @@ app.whenReady().then(() => {
       sendServersTo(username);
       sendFriendsTo(username);
       socket.emit('music-rooms', musicRoomsList(username));
+      sendIceServers(socket);
       broadcastServerMembers();
     }
 
@@ -1263,6 +1306,65 @@ app.whenReady().then(() => {
       }
     }
 
+    // Grava a mensagem (e a imagem em uploads/). Quem chama avisa a sala depois de responder.
+    function storeMessage(room, user, clean, image) {
+      let imageInfo = null;
+      if (image) {
+        const ext = chat.imageExtension(image.type);
+        const data = Buffer.isBuffer(image.data) ? image.data : null;
+        if (!ext || !data || !data.length) return { ok: false, error: 'Imagem inválida.' };
+        if (data.length > chat.MAX_IMAGE_BYTES) return { ok: false, error: 'A imagem passa de 2 MB.' };
+        const file = `${crypto.randomUUID()}.${ext}`;
+        fs.writeFileSync(path.join(UPLOADS_DIR, file), data);
+        imageInfo = {
+          file,
+          width: Math.max(0, Math.min(10000, Number(image.width) || 0)),
+          height: Math.max(0, Math.min(10000, Number(image.height) || 0))
+        };
+      }
+      if (!clean && !imageInfo) return { ok: false, error: 'Mensagem vazia.' };
+
+      purgeOldMessages();
+      if (!messages[room]) messages[room] = [];
+      const msg = { id: crypto.randomUUID(), user, text: clean, created_at: new Date().toISOString() };
+      if (imageInfo) msg.image = imageInfo;
+      messages[room].push(msg);
+      if (messages[room].length > 200) messages[room].splice(0, messages[room].length - 200).forEach(removeUpload);
+      saveMessages(messages);
+      return { ok: true, msg };
+    }
+
+    // LoL Arena (teste temporário): print do dano da rodada no canal "dano-arena-lol" da
+    // Casa dos Amigos, criado na primeira vez. Não depende do canal aberto.
+    function ensureArena(user) {
+      const found = arena.ensureArenaChannel(serversDb, user);
+      if (found.ok && found.created) {
+        saveServers();
+        for (const m of found.server.members) sendServersTo(m);
+      }
+      return found;
+    }
+    // Ligar a opção já cria o canal (sem esperar o primeiro print).
+    socket.on('arena-channel', (callback) => {
+      const reply = typeof callback === 'function' ? callback : () => {};
+      if (!requireAuth(reply)) return;
+      const found = ensureArena(authenticated.get(socket.id));
+      reply(found.ok ? { success: true, room: found.channel.id } : { success: false, message: found.error });
+    });
+    socket.on('arena-shot', ({ image, text } = {}, callback) => {
+      const reply = typeof callback === 'function' ? callback : () => {};
+      if (!requireAuth(reply)) return;
+      const user = authenticated.get(socket.id);
+      const found = ensureArena(user);
+      if (!found.ok) return reply({ success: false, message: found.error });
+      const room = found.channel.id;
+      const clean = chat.cleanText(text) || '';
+      const stored = storeMessage(room, user, clean, image);
+      if (!stored.ok) return reply({ success: false, message: stored.error });
+      reply({ success: true, room });
+      broadcastChat('new-message', { room, ...stored.msg, mentions: chat.mentionsOf(clean, roomAudience(room)) });
+    });
+
     // Canal de texto aberto neste socket e ainda acessível (pode ter sido expulso).
     const inTextRoom = (room) => canUseTextRoom(socket.data.textRoom, room) && canUseText(room, authenticated.get(socket.id));
 
@@ -1277,29 +1379,9 @@ app.whenReady().then(() => {
       const clean = chat.cleanText(text);
       if (clean === null) return reply({ success: false, message: `A mensagem passa de ${chat.MAX_TEXT} caracteres.` });
 
-      let imageInfo = null;
-      if (image) {
-        const ext = chat.imageExtension(image.type);
-        const data = Buffer.isBuffer(image.data) ? image.data : null;
-        if (!ext || !data || !data.length) return reply({ success: false, message: 'Imagem inválida.' });
-        if (data.length > chat.MAX_IMAGE_BYTES) return reply({ success: false, message: 'A imagem passa de 2 MB.' });
-        const file = `${crypto.randomUUID()}.${ext}`;
-        fs.writeFileSync(path.join(UPLOADS_DIR, file), data);
-        imageInfo = {
-          file,
-          width: Math.max(0, Math.min(10000, Number(image.width) || 0)),
-          height: Math.max(0, Math.min(10000, Number(image.height) || 0))
-        };
-      }
-      if (!clean && !imageInfo) return reply({ success: false, message: 'Mensagem vazia.' });
-
-      purgeOldMessages();
-      if (!messages[room]) messages[room] = [];
-      const msg = { id: crypto.randomUUID(), user: authenticated.get(socket.id), text: clean, created_at: new Date().toISOString() };
-      if (imageInfo) msg.image = imageInfo;
-      messages[room].push(msg);
-      if (messages[room].length > 200) messages[room].splice(0, messages[room].length - 200).forEach(removeUpload);
-      saveMessages(messages);
+      const stored = storeMessage(room, authenticated.get(socket.id), clean, image);
+      if (!stored.ok) return reply({ success: false, message: stored.error });
+      const msg = stored.msg;
       reply({ success: true, id: msg.id });
       broadcastChat('new-message', { room, ...msg, mentions: chat.mentionsOf(clean, roomAudience(room)) });
     });
@@ -1422,6 +1504,16 @@ app.whenReady().then(() => {
     }
   });
   ipcMain.handle('address-disconnect', () => address.disconnect());
+  ipcMain.handle('relay-status', () => relay.status());
+  ipcMain.handle('relay-configure', async (event, cfg) => {
+    try {
+      const status = await relay.configure(cfg || {});
+      sendIceServers();
+      return { ok: true, status };
+    } catch (e) {
+      return { ok: false, message: e.message, status: relay.status() };
+    }
+  });
   ipcMain.handle('address-auto-tunnel', (event, on) => address.setAutoTunnel(on));
   ipcMain.on('address-token-page', () => shell.openExternal(TOKEN_PAGE));
   // Com o link fixo, o túnel abre sozinho junto com o Vox (inclusive ao iniciar com o Windows).
@@ -1429,6 +1521,75 @@ app.whenReady().then(() => {
     server.once('listening', () => tunnel.start());
     if (server.listening) tunnel.start();
   }
+
+  // ---------- LoL Arena (teste temporário) ----------
+  // API local e oficial da Riot (só existe com uma partida aberta; certificado próprio do jogo).
+  const riotJson = (p) => new Promise((resolve, reject) => {
+    const req = require('https').get({ host: '127.0.0.1', port: 2999, path: p, rejectUnauthorized: false, timeout: 900 }, (res) => {
+      let body = '';
+      res.setEncoding('utf8');
+      res.on('data', (c) => { body += c; });
+      res.on('end', () => {
+        if (res.statusCode !== 200) return reject(new Error('HTTP ' + res.statusCode));
+        try { resolve(JSON.parse(body)); } catch (e) { reject(e); }
+      });
+    });
+    req.on('timeout', () => req.destroy(new Error('timeout')));
+    req.on('error', reject);
+  });
+  // Print da janela do LoL, já recortado. Só o Testar recorte (que não manda nada) usa a tela
+  // principal quando o jogo não está aberto: um print mandado nunca mostra a área de trabalho.
+  async function arenaCapture(crop, { allowScreen = false } = {}) {
+    const display = screen.getPrimaryDisplay();
+    const size = { width: Math.round(display.size.width * display.scaleFactor), height: Math.round(display.size.height * display.scaleFactor) };
+    const sources = await desktopCapturer.getSources({ types: ['window', 'screen'], thumbnailSize: size });
+    const game = sources.find((s) => /^League of Legends \(TM\) Client/i.test(s.name));
+    if (!game && !allowScreen) throw new Error('O LoL não está aberto: nada foi mandado.');
+    const source = game ||
+      sources.find((s) => s.id.startsWith('screen:') && String(s.display_id) === String(display.id)) ||
+      sources.find((s) => s.id.startsWith('screen:'));
+    if (!source || source.thumbnail.isEmpty()) throw new Error('Não foi possível capturar a tela.');
+    const full = source.thumbnail.getSize();
+    const image = source.thumbnail.crop(arena.cropRect(full, crop));
+    // Jogo em tela cheia exclusiva sai preto na captura
+    const bmp = image.toBitmap();
+    let lit = 0;
+    for (let i = 0; i < bmp.length; i += 4 * 97) if (bmp[i] + bmp[i + 1] + bmp[i + 2] > 60) lit++;
+    if (lit < 3) throw new Error('O print saiu preto. No LoL, use o modo de janela "Sem bordas".');
+    const { width, height } = image.getSize();
+    return { data: image.toPNG(), width, height, fromGame: source.id.startsWith('window:') };
+  }
+  const arenaWatcher = createArenaWatcher({
+    file: path.join(app.getPath('userData'), 'lol-arena.json'),
+    fetchJson: riotJson,
+    capture: arenaCapture,
+    onShot: (shot) => sendToWindow('arena-shot', shot),
+    onStatus: (s) => sendToWindow('arena-status', s)
+  });
+  const ARENA_HOTKEY = 'CommandOrControl+Alt+P';
+  function arenaHotkey(on) {
+    if (on && !globalShortcut.isRegistered(ARENA_HOTKEY)) globalShortcut.register(ARENA_HOTKEY, () => arenaWatcher.shoot('atalho'));
+    if (!on && globalShortcut.isRegistered(ARENA_HOTKEY)) globalShortcut.unregister(ARENA_HOTKEY);
+  }
+  if (arenaWatcher.status().enabled) { arenaWatcher.start(); arenaHotkey(true); }
+  ipcMain.handle('arena-status', () => arenaWatcher.status());
+  ipcMain.handle('arena-enable', (event, on) => {
+    const s = arenaWatcher.setEnabled(on);
+    if (on) arenaWatcher.start();
+    arenaHotkey(!!on);
+    return s;
+  });
+  ipcMain.handle('arena-crop', (event, crop) => arenaWatcher.setCrop(crop));
+  // Testar recorte: mostra o print nas configurações sem mandar para o canal
+  ipcMain.handle('arena-preview', async () => {
+    try {
+      const shot = await arenaCapture(arenaWatcher.status().crop, { allowScreen: true });
+      return { ok: true, url: 'data:image/png;base64,' + shot.data.toString('base64'), fromGame: shot.fromGame };
+    } catch (e) {
+      return { ok: false, message: e.message };
+    }
+  });
+  app.on('will-quit', () => globalShortcut.unregisterAll());
 
   // ---------- Bandeja ----------
   createTray();

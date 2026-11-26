@@ -183,15 +183,48 @@ function applyPeerVolumes() {
 }
 
 function setPeerVolume(name, vol) {
+  const was = getPeerVolume(name);
   peerVolumes[name] = vol;
   localStorage.setItem('vox-peer-volumes', JSON.stringify(peerVolumes));
   applyPeerVolumes();
+  if ((was === 0) !== (vol === 0)) refreshSilenced();
 }
 
 function setScreenVolume(name, vol) {
+  const was = getScreenVolume(name);
   screenVolumes[name] = vol;
   localStorage.setItem('vox-screen-volumes', JSON.stringify(screenVolumes));
   applyPeerVolumes();
+  if ((was === 0) !== (vol === 0)) refreshSilenced();
+}
+
+// Ícone de "você zerou o volume desta pessoa" (só neste PC), ou null.
+function silencedIcon(name, sharing) {
+  const what = VoxVolumeBoost.silencedFor(getPeerVolume(name), getScreenVolume(name), !!sharing);
+  if (!what) return null;
+  const el = document.createElement('span');
+  el.className = 'silenced';
+  el.title = what === 'voice'
+    ? `Você zerou o volume da voz de ${name} (só para você). Clique para ajustar.`
+    : `Você zerou o volume da transmissão de ${name} (só para você). Clique para ajustar.`;
+  el.setAttribute('aria-label', el.title);
+  el.appendChild(VoxIcons.icon('volume-x', 13));
+  return el;
+}
+
+// Quem está na minha voz agora (para saber quem transmite).
+const inMyVoice = (name) => (currentVoiceRoom && voiceRooms[currentVoiceRoom] || []).find((u) => u.username === name) || null;
+
+// Refaz os avisos depois de mexer numa barra: listas inteiras; nos quadros, só o nome
+// (redesenhar a grade interromperia quem está arrastando a barra do quadro).
+function refreshSilenced() {
+  renderMembers();
+  document.querySelectorAll('#video-grid .tile-name[data-user]').forEach((label) => {
+    label.querySelectorAll('.silenced').forEach((s) => s.remove());
+    const u = inMyVoice(label.dataset.user);
+    const icon = u && label.dataset.user !== currentUser ? silencedIcon(u.username, u.sharing) : null;
+    if (icon) label.appendChild(icon);
+  });
 }
 const analysers = new Map();      // socketId -> AnalyserNode
 const videoElements = new Map();  // stream.id -> <video> reaproveitado entre renders
@@ -252,9 +285,12 @@ let monitorEnabled = localStorage.getItem('monitorEnabled') === '1';
 let audioInputId = localStorage.getItem('audioInputId') || '';
 let audioOutputId = localStorage.getItem('audioOutputId') || '';
 
-const ICE_CONFIG = {
-  iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
-};
+// STUN de sempre e, se o host configurou, a retransmissão (TURN) que ele manda em 'ice-servers'.
+// A rota direta continua preferida; a retransmissão só entra quando ela não existe.
+let iceServers = VoxIce.withDefaults([]);
+// Só para testes: 'relay' força a rota pela retransmissão.
+const forcedIcePolicy = localStorage.getItem('vox-ice-policy') === 'relay' ? 'relay' : 'all';
+const peerConfig = () => ({ iceServers, iceTransportPolicy: forcedIcePolicy });
 
 // Encoder de vídeo. Medido no Electron 28 (1080p, conteúdo em movimento):
 // VP8 em modo "tela" cai para 1–4 fps; H.264 + contentHint "motion" mantém ~60 fps.
@@ -519,6 +555,8 @@ function enterApp(username, token) {
   hideOverlays();
   renderTunnel(tunnelState); // o servidor pode ter sido trocado na tela de login
   renderAddress(addressState);
+  renderRelay(relayState);
+  setTimeout(ensureArenaChannel, 0); // LoL Arena: a opção pode já estar ligada
   pendingAutoJoin = true;
 }
 
@@ -1165,7 +1203,7 @@ async function applyVideoSenderParams(pc) {
 function createPeer(id) {
   if (peers.has(id)) return peers.get(id);
 
-  const pc = new RTCPeerConnection(ICE_CONFIG);
+  const pc = new RTCPeerConnection(peerConfig());
   peers.set(id, pc);
 
   const audioTracks = getOutboundAudioTracks();
@@ -1535,6 +1573,15 @@ socket.on('room-users', (list) => {
   }
 });
 
+socket.on('ice-servers', (list) => {
+  iceServers = VoxIce.withDefaults(list);
+  // Conexões abertas passam a ter a retransmissão (e credenciais novas) na próxima tentativa
+  // de rota, inclusive na recuperação automática (reinício do ICE).
+  peers.forEach((pc) => {
+    try { pc.setConfiguration({ ...pc.getConfiguration(), iceServers }); } catch (e) {}
+  });
+});
+
 socket.on('voice-rooms', (data) => {
   voiceRooms = data || {};
   renderMembers();
@@ -1555,7 +1602,7 @@ function setPeerConn(id, state) {
 function connLabelText(id) {
   const c = peerConn.get(id);
   if (!c) return CONN_LABELS.connecting; // ainda sem conexão criada
-  if (c.state === 'connected' && c.rttMs != null) return `Conectado · ${c.rttMs} ms`;
+  if (c.state === 'connected' && c.rttMs != null) return `Conectado · ${c.rttMs} ms${c.relay ? ' · retransmitido' : ''}`;
   return CONN_LABELS[c.state] || CONN_LABELS.connecting;
 }
 
@@ -1583,6 +1630,7 @@ setInterval(async () => {
       const c = peerConn.get(id);
       if (c && c.state === 'connected' && rtt != null) {
         c.rttMs = rtt;
+        c.relay = VoxIce.usesRelay(stats);
         updateConnLabel(id);
       }
     } catch (e) {}
@@ -1695,6 +1743,10 @@ function appendMemberRow(u) {
     status.style.opacity = u.muted ? '1' : '.35';
     row.appendChild(status);
   }
+  // Na mesma voz: aviso de volume zerado só para mim
+  const inCall = !isMe && inMyCall && inMyVoice(u.username);
+  const silenced = inCall && silencedIcon(u.username, inCall.sharing);
+  if (silenced) row.insertBefore(silenced, row.lastChild.classList.contains('muted-icon') ? row.lastChild : null);
   memberList.appendChild(row);
 }
 
@@ -1777,6 +1829,8 @@ function renderMembers() {
         icons.appendChild(fxIcon);
       }
       if (u.muted) icons.appendChild(VoxIcons.icon('mic-off', 13));
+      const silenced = room === currentVoiceRoom && u.username !== currentUser && silencedIcon(u.username, u.sharing);
+      if (silenced) icons.appendChild(silenced);
       if (u.sharing) {
         const live = document.createElement('span');
         live.className = 'live-badge';
@@ -2538,6 +2592,8 @@ function buildTile(name, stream, opts = {}) {
   label.className = 'tile-name';
   label.textContent = name + (opts.badge ? '' : '');
   label.dataset.user = peerKey;
+  const silenced = opts.remote && silencedIcon(peerKey, opts.sharing);
+  if (silenced) label.appendChild(silenced);
   tile.appendChild(label);
 
   if (opts.badge) {
@@ -3156,6 +3212,129 @@ document.getElementById('address-disconnect').addEventListener('click', async ()
   if (!window.confirm('Desconectar o link fixo? O Vox para de atualizar o Gist e seus amigos voltam a precisar do endereço novo toda vez que o túnel abrir.')) return;
   renderAddress(await window.electronAPI.addressDisconnect());
 });
+/* ---------- Retransmissão (TURN) ---------- */
+const relayMode = document.getElementById('relay-mode');
+const relayCf = document.getElementById('relay-cloudflare');
+const relayManual = document.getElementById('relay-manual');
+const relayKeyId = document.getElementById('relay-key-id');
+const relayApiToken = document.getElementById('relay-api-token');
+const relayUrls = document.getElementById('relay-urls');
+const relayUser = document.getElementById('relay-username');
+const relayPass = document.getElementById('relay-credential');
+const relaySave = document.getElementById('relay-save');
+const relayStateEl = document.getElementById('relay-state');
+let relayState = null;
+
+function showRelayFields() {
+  relayCf.classList.toggle('hidden', relayMode.value !== 'cloudflare');
+  relayManual.classList.toggle('hidden', relayMode.value !== 'manual');
+}
+
+function renderRelay(s) {
+  relayState = s || relayState;
+  if (!relayState) return;
+  const local = isLocalServer();
+  relayMode.value = relayState.mode;
+  relayKeyId.value = relayState.keyId || '';
+  relayUrls.value = relayState.urls || '';
+  relayUser.value = relayState.username || '';
+  // Os segredos ficam só no processo principal: o campo vazio mantém o que está guardado.
+  relayApiToken.placeholder = relayState.mode === 'cloudflare' ? 'Guardado (deixe vazio para manter)' : 'API Token';
+  relayPass.placeholder = relayState.mode === 'manual' ? 'Guardada (deixe vazio para manter)' : 'Senha';
+  [relayMode, relayKeyId, relayApiToken, relayUrls, relayUser, relayPass, relaySave].forEach((el) => { el.disabled = !local; });
+  showRelayFields();
+  const labels = {
+    off: 'Desligada: as chamadas usam só a rota direta.',
+    cloudflare: relayState.state === 'error' ? relayState.message : `Ligada pela Cloudflare${relayState.at ? ' (credenciais renovadas às ' + formatTime(relayState.at) + ')' : ''}.`,
+    manual: 'Ligada pelo seu servidor.'
+  };
+  relayStateEl.textContent = local ? labels[relayState.mode] || '' : 'Disponível só no PC que hospeda o servidor (endereço 127.0.0.1).';
+  relayStateEl.dataset.state = !local || relayState.mode === 'off' ? 'off' : relayState.state === 'error' ? 'error' : 'on';
+}
+
+relayMode.addEventListener('change', showRelayFields);
+relaySave.addEventListener('click', async () => {
+  relaySave.disabled = true;
+  relayStateEl.textContent = relayMode.value === 'cloudflare' ? 'Conferindo a chave na Cloudflare…' : 'Salvando…';
+  relayStateEl.dataset.state = 'starting';
+  const res = await window.electronAPI.relayConfigure({
+    mode: relayMode.value, keyId: relayKeyId.value, apiToken: relayApiToken.value,
+    urls: relayUrls.value, username: relayUser.value, credential: relayPass.value
+  });
+  relayApiToken.value = '';
+  relayPass.value = '';
+  relaySave.disabled = false;
+  renderRelay(res.status);
+  if (!res.ok) {
+    relayStateEl.textContent = res.message;
+    relayStateEl.dataset.state = 'error';
+  }
+});
+window.electronAPI.relayStatus().then(renderRelay);
+
+/* ---------- LoL Arena (teste temporário): prints do dano da rodada ---------- */
+const arenaEnabled = document.getElementById('arena-enabled');
+const arenaStateEl = document.getElementById('arena-state');
+const arenaPreviewBtn = document.getElementById('arena-preview');
+const arenaPreviewImg = document.getElementById('arena-preview-img');
+const arenaCropInputs = ['x', 'y', 'w', 'h'].map((k) => document.getElementById('arena-crop-' + k));
+let arenaState = null;
+
+function renderArena(s) {
+  arenaState = s || arenaState;
+  if (!arenaState) return;
+  arenaEnabled.checked = arenaState.enabled;
+  ['x', 'y', 'w', 'h'].forEach((k, i) => { arenaCropInputs[i].value = String(Math.round(arenaState.crop[k] * 100)); });
+  const labels = {
+    off: 'Desligado.',
+    waiting: 'Esperando uma partida do LoL…',
+    ingame: 'Em partida: o print sai sozinho quando você morrer.',
+    sent: arenaState.at ? `Último print mandado às ${formatTime(arenaState.at)}.` : 'Print mandado.',
+    error: arenaState.message || 'Não foi possível tirar o print.'
+  };
+  arenaStateEl.textContent = labels[arenaState.state] || '';
+  arenaStateEl.dataset.state = arenaState.state === 'error' ? 'error' : arenaState.state === 'off' ? 'off' : 'on';
+}
+
+// Com a opção ligada, o canal já aparece para todos (o host cria na Casa dos Amigos).
+function ensureArenaChannel() {
+  if (arenaState && arenaState.enabled && currentUser) request('arena-channel').catch(() => {});
+}
+arenaEnabled.addEventListener('change', async () => {
+  renderArena(await window.electronAPI.arenaEnable(arenaEnabled.checked));
+  ensureArenaChannel();
+});
+arenaCropInputs.forEach((input) => input.addEventListener('change', async () => {
+  const [x, y, w, h] = arenaCropInputs.map((i) => Number(i.value) / 100);
+  renderArena(await window.electronAPI.arenaCrop({ x, y, w, h }));
+}));
+arenaPreviewBtn.addEventListener('click', async () => {
+  arenaPreviewBtn.disabled = true;
+  const res = await window.electronAPI.arenaPreview();
+  arenaPreviewBtn.disabled = false;
+  arenaPreviewImg.classList.toggle('hidden', !res.ok);
+  if (res.ok) arenaPreviewImg.src = res.url;
+  arenaStateEl.textContent = res.ok
+    ? (res.fromGame ? 'Recorte da janela do LoL.' : 'O LoL não está aberto: este é o recorte da tela principal.')
+    : res.message;
+  arenaStateEl.dataset.state = res.ok ? 'on' : 'error';
+});
+
+// Print pronto no processo principal: reduz como as imagens do chat e manda para o canal.
+window.electronAPI.onArenaShot(async (shot) => {
+  if (!currentUser) return;
+  try {
+    const file = new File([shot.data], 'dano-arena.png', { type: 'image/png' });
+    const image = await prepareImage(file);
+    const res = await request('arena-shot', { image, text: shot.caption });
+    if (!res.success) showToast(res.message || 'O host do servidor precisa atualizar o Vox para receber os prints.');
+  } catch (e) {
+    showToast('Não foi possível mandar o print: ' + e.message);
+  }
+});
+window.electronAPI.onArenaStatus(renderArena);
+window.electronAPI.arenaStatus().then((s) => { renderArena(s); ensureArenaChannel(); });
+
 window.electronAPI.onAddressStatus(renderAddress);
 window.electronAPI.addressStatus().then(renderAddress);
 
@@ -4455,10 +4634,12 @@ function renderSidebar() {
     for (const [type, title] of [['text', 'Canais de texto'], ['voice', 'Canais de voz']]) {
       channelScroll.appendChild(sectionTitle(title, manager ? () => createChannelDialog(type) : null));
       server.channels.filter((c) => c.type === type).forEach((c) => {
-        channelScroll.appendChild(makeChannelItem({
+        const item = makeChannelItem({
           room: c.id, label: c.name, icon: type === 'text' ? '#' : 'volume-2', voice: type === 'voice', editable: manager,
           onClick: () => (type === 'voice' ? joinVoice(c.id) : joinText(c.id))
-        }));
+        });
+        if (c.ttlMinutes > 0) item.title = `As mensagens deste canal somem em ${c.ttlMinutes} minutos.`;
+        channelScroll.appendChild(item);
       });
     }
   } else {
