@@ -1,0 +1,83 @@
+/* Celular e janelas estreitas (até 760 px; carregado com media no index.html).
+   Uma coluna só: a área principal ocupa a tela; servidores + canais entram como gaveta
+   pela esquerda (botão ☰) e Membros pela direita. mobile-nav.js abre e fecha
+   (#app.nav-open / #app.members-open). Só variáveis do tema, nada de cor fixa. */
+
+#app {
+  grid-template-columns: minmax(0, 1fr);
+  height: 100dvh;
+  position: relative;
+}
+#main { grid-column: 1; grid-row: 1; }
+
+/* Gaveta da esquerda: rail de servidores + coluna de canais lado a lado. */
+#server-rail, #channels {
+  position: fixed; top: 0; bottom: 0; z-index: 40;
+  transform: translateX(-110vw);
+  transition: transform .2s ease;
+}
+#server-rail { left: 0; width: 72px; }
+#channels { left: 72px; width: min(280px, calc(100vw - 120px)); box-shadow: 8px 0 24px rgba(0, 0, 0, .35); }
+#app.nav-open #server-rail, #app.nav-open #channels { transform: none; }
+
+/* Gaveta da direita: membros. */
+#members {
+  position: fixed; top: 0; bottom: 0; right: 0; z-index: 40;
+  width: min(280px, 85vw);
+  transform: translateX(110%);
+  transition: transform .2s ease;
+  box-shadow: -8px 0 24px rgba(0, 0, 0, .35);
+}
+#app.members-open #members { transform: none; }
+
+#nav-backdrop {
+  position: fixed; inset: 0; z-index: 35;
+  background: rgba(0, 0, 0, .45);
+}
+#app.nav-open #nav-backdrop, #app.members-open #nav-backdrop { display: block; }
+
+/* Barra superior: botões só com ícone, título encurtado. */
+#topbar { padding: 0 8px; gap: 6px; padding-top: env(safe-area-inset-top); height: calc(52px + env(safe-area-inset-top)); }
+#channel-title { min-width: 0; flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+#channel-name { overflow: hidden; text-overflow: ellipsis; }
+#topbar-actions { gap: 4px; flex-shrink: 0; }
+#topbar .ctrl { padding: 0 9px; font-size: 0; gap: 0; height: 38px; }
+.nav-toggle {
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  width: 38px; height: 38px; border: none; border-radius: 8px;
+  background: transparent; color: var(--text); cursor: pointer;
+}
+.nav-toggle:active { background: var(--control-hover); }
+
+/* Chamada e chat empilhados; fora da voz a área da chamada não ocupa espaço. */
+#call-area { flex-basis: 45%; }
+#app:not(:has(#voice-connection:not(.hidden))) #call-area { display: none; }
+#video-grid { padding: 8px; }
+
+/* Campos com 16 px: abaixo disso o iPhone dá zoom ao tocar. */
+input, textarea, select { font-size: 16px !important; }
+
+/* Login e janelas: tela quase inteira. */
+#auth-screen { align-items: flex-start; overflow-y: auto; padding: 16px 0; }
+.overlay-card { width: calc(100vw - 32px) !important; max-width: 420px; padding: 22px 18px !important; }
+.settings-card {
+  width: 100vw !important; max-width: 100vw !important;
+  height: 100dvh !important; max-height: 100dvh !important;
+  border-radius: 0 !important; overflow-y: auto;
+}
+.settings-tabs { overflow-x: auto; flex-wrap: nowrap; }
+.settings-tab { flex-shrink: 0; }
+.profile-card { max-width: calc(100vw - 16px); }
+
+/* Painel do usuário e barra de mensagem acima da barra de gestos do celular. */
+#user-panel, #chat-wrap { padding-bottom: env(safe-area-inset-bottom); }
+
+/* Versão do app no canto cobriria a barra de mensagem. */
+#app-version-corner { display: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  #server-rail, #channels, #members { transition: none; }
+}
+:root[data-reduce-motion="1"] #server-rail,
+:root[data-reduce-motion="1"] #channels,
+:root[data-reduce-motion="1"] #members { transition: none; }

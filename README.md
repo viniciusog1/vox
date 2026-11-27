@@ -159,6 +159,17 @@ O Vox grava o endereço atual do túnel num **Gist secreto** do GitHub do host (
 
 Com o link fixo, o túnel abre sozinho junto com o Vox (dá para desligar em *Abrir para amigos sempre que o Vox iniciar*). Se o túnel reabrir com outro endereço, o Vox dos amigos acha o novo e reconecta sozinho, em cerca de 1 minuto. O token fica guardado cifrado pelo Windows neste PC.
 
+### 📱 Pelo navegador ou celular (sem instalar)
+
+O Vox do host também serve o Vox pelo navegador: é só abrir o **endereço do túnel** (`https://algo.trycloudflare.com`) no Chrome, Edge, Safari ou Firefox, no PC ou no celular.
+
+- 💬 Chat, voz, câmera, música, soundboard, amigos e chamadas diretas funcionam igual.
+- 📲 No celular, a tela vira uma coluna: **☰** abre servidores e canais, o ícone de pessoas abre Membros. Para virar um ícone na tela inicial: menu do navegador → **Adicionar à tela inicial** (Android) ou **Compartilhar → Adicionar à Tela de Início** (iPhone).
+- 🔒 Precisa ser o endereço **https** do túnel: pelo `http://192.168…` da rede local o navegador bloqueia microfone e câmera (só o próprio PC do host pode usar `http://127.0.0.1:3000`).
+- 🖥️ Compartilhar a tela só funciona no navegador do computador (celulares não deixam).
+- ⚠️ O **link fixo** (Gist) só funciona no app do Windows: no navegador, use o endereço atual do túnel.
+- 🪟 Ficam só no app do Windows: abrir o túnel, link fixo, retransmissão, bandeja, iniciar com o Windows e os prints do LoL Arena.
+
 ### 🎟️ Convidar para outros servidores
 
 1. 👑 Dono ou admin: clique no **nome do servidor** (topo da coluna de canais) → **Convidar pessoas**.

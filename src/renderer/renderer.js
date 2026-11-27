@@ -11,8 +11,10 @@ VoxIcons.hydrate();
 
 // O campo Servidor aceita o endereço direto ou o link fixo (Gist) do host.
 // O último usado fica salvo e volta ao abrir o app (connectTo troca sem recarregar a tela).
-const DEFAULT_SERVER = 'http://127.0.0.1:3000';
-let SERVER_INPUT = localStorage.getItem('vox-server-url') || DEFAULT_SERVER;
+// Na versão web (web-shim.js) a página vem do próprio host: o servidor é sempre a origem dela.
+const IS_WEB = !!window.VOX_WEB;
+const DEFAULT_SERVER = IS_WEB ? location.origin : 'http://127.0.0.1:3000';
+let SERVER_INPUT = IS_WEB ? DEFAULT_SERVER : (localStorage.getItem('vox-server-url') || DEFAULT_SERVER);
 let GIST_REF = VoxAddress.parseGistRef(SERVER_INPUT);
 // Endereço real do servidor. Com link fixo, vem do Gist e muda quando o túnel do host reabre.
 let SERVER_URL = GIST_REF ? '' : SERVER_INPUT;
@@ -994,6 +996,8 @@ function updateVoiceDependentControls() {
   btnHangup.disabled = noVoice;
 }
 [btnCam, btnScreen, btnMusic, btnHangup].forEach((btn) => { btn.dataset.title = btn.title; });
+// Celulares (e navegadores sem getDisplayMedia) não compartilham a tela: o botão some.
+if (!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia)) btnScreen.classList.add('hidden');
 
 /* ================= PEERS (WebRTC) ================= */
 // Transceiver de vídeo já negociado (com mid). No lado que responde à oferta,
@@ -4314,11 +4318,20 @@ function notifyMessage(m, mention) {
   const body = m.text ? m.text.slice(0, 140) : 'Enviou uma imagem';
   const info = channelInfo(m.room);
   const title = info ? `${m.user} em ${roomDisplayName(m.room)} (${info.server.name})` : m.user;
-  const n = new Notification(title, { body, silent: true });
-  n.onclick = () => {
+  showNotification(title, body, () => {
     window.electronAPI.focusWindow();
     openRoom(m.room);
-  };
+  });
+}
+
+// No Chrome do Android `new Notification` lança erro (lá só via service worker) e,
+// no navegador, sem permissão não aparece nada: nenhum dos dois pode quebrar o chat.
+function showNotification(title, body, onclick) {
+  if (typeof Notification === 'undefined' || Notification.permission === 'denied') return;
+  try {
+    const n = new Notification(title, { body, silent: true });
+    n.onclick = onclick;
+  } catch (e) { /* sem suporte */ }
 }
 
 socket.on('new-message', (m) => {
@@ -5272,8 +5285,7 @@ socket.on('call-incoming', ({ from, room } = {}) => {
   let beat = 0; // dois toques seguidos e uma pausa, como um telefone
   ringTimer = setInterval(() => { if (++beat % 3 !== 0) playSoundEffect('ring'); }, 500);
   if (effectiveStatus() !== 'busy' && typeof Notification !== 'undefined' && !document.hasFocus()) {
-    const n = new Notification(`${from} está te ligando`, { body: 'Abra o Vox para atender.', silent: true });
-    n.onclick = () => window.electronAPI.focusWindow();
+    showNotification(`${from} está te ligando`, 'Abra o Vox para atender.', () => window.electronAPI.focusWindow());
     window.electronAPI.flashFrame(true);
   }
 });

@@ -2,8 +2,16 @@
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
 <title>Vox</title>
+<!-- Versão web e celular (o host serve esta página): manifesto para instalar como app -->
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="../../assets/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="../../assets/icon.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Vox">
+<script src="web-shim.js"></script>
 <script src="themes.js"></script>
 <style>
   :root {
@@ -1192,9 +1200,19 @@
     #call-area::before, #call-area::after, .voice-user.speaking .vu-avatar,
     .voice-user.speaking::after, .voice-user.speaking::before { animation: none !important; }
   }
+
+  /* ================= VERSÃO WEB ================= */
+  /* Só no app do Windows: túnel, link fixo, retransmissão, LoL Arena, bandeja, início com o Windows. */
+  :root[data-platform="web"] .desktop-only,
+  :root[data-platform="web"] [data-desktop-only] { display: none !important; }
+  .web-insecure { color: var(--danger-text); margin-bottom: 10px; }
+  .nav-toggle { display: none; }
+  #nav-backdrop { display: none; }
 </style>
 <link rel="stylesheet" href="azulejo.css">
 <link rel="stylesheet" href="radio.css">
+<!-- Celular e janelas estreitas: uma coluna, canais e membros em gavetas (mobile-nav.js) -->
+<link rel="stylesheet" href="mobile.css" media="(max-width: 760px)">
 </head>
 <body>
 
@@ -1254,6 +1272,7 @@
   <!-- Área principal -->
   <main id="main">
     <header id="topbar">
+      <button type="button" class="nav-toggle" id="btn-nav" title="Servidores e canais" aria-label="Servidores e canais" aria-controls="channels" aria-expanded="false"><i data-icon="menu"></i></button>
       <div id="channel-title"><span class="hash" id="channel-icon">#</span><span id="channel-name">geral</span></div>
       <div id="topbar-actions">
         <button class="ctrl primary" id="btn-mic" title="Microfone"><i data-icon="mic"></i> Mic</button>
@@ -1263,6 +1282,7 @@
         <button class="ctrl off" id="btn-soundboard" title="Soundboard" aria-label="Soundboard" aria-expanded="false"><i data-icon="audio-lines"></i></button>
         <button class="ctrl off" id="btn-music" title="Música" aria-label="Música" aria-expanded="false"><svg class="yt-icon" viewBox="0 0 28 20" width="18" height="13" aria-hidden="true"><rect width="28" height="20" rx="5" fill="#FF0000"/><path d="M11 5.5v9l8-4.5z" fill="#FFFFFF"/></svg></button>
         <button class="ctrl danger" id="btn-hangup" title="Sair da chamada" aria-label="Sair da chamada"><i data-icon="phone-off"></i></button>
+        <button type="button" class="nav-toggle" id="btn-members-toggle" title="Membros" aria-label="Membros" aria-controls="members" aria-expanded="false"><i data-icon="users"></i></button>
       </div>
     </header>
 
@@ -1384,6 +1404,7 @@
   </main>
 
   <!-- Participantes -->
+  <div id="nav-backdrop"></div>
   <aside id="members">
     <h4><span id="member-heading">Membros</span> — <span id="member-count">0</span></h4>
     <div id="member-list"></div>
@@ -1429,7 +1450,8 @@
       <button class="submit-btn" id="btn-register">Criar conta</button>
     </div>
 
-    <div class="server-box">
+    <p id="web-insecure" class="server-hint web-insecure hidden">Este endereço não é seguro (http): o navegador bloqueia microfone e câmera. Use o endereço https do host (o link "Abrir para amigos").</p>
+    <div class="server-box desktop-only">
       <label for="server-url">Servidor</label>
       <div class="server-row">
         <input type="text" id="server-url" placeholder="http://127.0.0.1:3000 ou link fixo do host">
@@ -1490,8 +1512,8 @@
       <button type="button" class="settings-tab" role="tab" id="settings-tabbtn-conta" aria-selected="false" aria-controls="settings-tab-conta" data-tab="conta">Conta</button>
       <button type="button" class="settings-tab" role="tab" id="settings-tabbtn-aparencia" aria-selected="false" aria-controls="settings-tab-aparencia" data-tab="aparencia">Aparência</button>
       <button type="button" class="settings-tab" role="tab" id="settings-tabbtn-notificacoes" aria-selected="false" aria-controls="settings-tab-notificacoes" data-tab="notificacoes">Notificações</button>
-      <button type="button" class="settings-tab" role="tab" id="settings-tabbtn-jogos" aria-selected="false" aria-controls="settings-tab-jogos" data-tab="jogos">Jogos</button>
-      <button type="button" class="settings-tab" role="tab" id="settings-tabbtn-servidor" aria-selected="false" aria-controls="settings-tab-servidor" data-tab="servidor">Servidor</button>
+      <button type="button" class="settings-tab" role="tab" id="settings-tabbtn-jogos" aria-selected="false" aria-controls="settings-tab-jogos" data-tab="jogos" data-desktop-only>Jogos</button>
+      <button type="button" class="settings-tab" role="tab" id="settings-tabbtn-servidor" aria-selected="false" aria-controls="settings-tab-servidor" data-tab="servidor" data-desktop-only>Servidor</button>
     </div>
 
     <div class="settings-panel hidden" id="settings-tab-notificacoes" role="tabpanel" aria-labelledby="settings-tabbtn-notificacoes">
@@ -1621,6 +1643,7 @@
           <p class="settings-hint">Use uma imagem quadrada; nas outras, o Vox recorta o centro. Todo mundo do servidor vê a sua foto.</p>
         </div>
       </div>
+      <div class="desktop-only">
       <label class="toggle-row">
         <input type="checkbox" id="autostart">
         <span>Abrir o Vox quando o Windows iniciar</span>
@@ -1631,6 +1654,7 @@
         <span>Ao fechar a janela, manter o Vox perto do relógio</span>
       </label>
       <p class="settings-hint">O Vox continua aberto no ícone ao lado do relógio do Windows: você segue na voz, recebe mensagens e, se hospeda, seus amigos continuam conectados. Para sair de vez, clique com o botão direito no ícone → Sair do Vox.</p>
+      </div>
       <button type="button" id="btn-logout" class="btn-danger-outline">Sair da conta</button>
     </div>
 
@@ -1808,6 +1832,7 @@
 <script src="../shared/ice-servers.js"></script>
 <script src="volume-boost.js"></script>
 <script src="renderer.js"></script>
+<script src="mobile-nav.js"></script>
 <script src="profile-card.js"></script>
 <script src="voice-levels.js"></script>
 <script src="azulejo.js"></script>

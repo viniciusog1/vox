@@ -59,6 +59,8 @@ migrateLegacyUserData();
 // Raiz do projeto (src/main/../..): em desenvolvimento os dados ficam nela, como antes.
 const ROOT_DIR = path.join(__dirname, '..', '..');
 const DATA_DIR = app.isPackaged ? app.getPath('userData') : ROOT_DIR;
+// Versão web: a interface também é servida pelo servidor HTTP (navegador e celular).
+const serveWebApp = require('./web-app.js').createWebApp(ROOT_DIR);
 fs.mkdirSync(DATA_DIR, { recursive: true });
 const DB_PATH = path.join(DATA_DIR, 'messages.json');
 const USERS_PATH = path.join(DATA_DIR, 'users.json');
@@ -789,7 +791,7 @@ app.whenReady().then(() => {
 
   // ---------- Servidor HTTP + Socket.io ----------
   const server = http.createServer((req, res) => {
-    if (!handleHttp(req, res)) { res.writeHead(404); res.end(); }
+    if (!handleHttp(req, res) && !serveWebApp(req, res)) { res.writeHead(404); res.end(); }
   });
   // 3 MB: cabe uma imagem de até 2 MB (chat-state.MAX_IMAGE_BYTES) com folga.
   io = new Server(server, { cors: { origin: '*' }, maxHttpBufferSize: 3 * 1024 * 1024 });
